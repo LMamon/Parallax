@@ -19,10 +19,18 @@ bool CameraConfig::load(const std::string& path) {
 
         width = params["width"].as<int>();
         height = params["height"].as<int>();
-        fps = params["fps"].as<int>();
+        frame_rate = params["frame_rate"].as<int>();
 
         exposure = params["exposure"].as<int>();
-        gain = params["gain"].as<int>();
+
+        analogue_gain = params["analogue_gain"].as<int>();
+        trigger_mode = params["trigger_mode"].as<int>();
+        disable_frame_timeout = params["disable_frame_timeout"].as<int>();
+
+        frame_timeout = params["frame_timeout"].as<int>();
+
+        horizontal_flip = params["horizontal_flip"].as<int>();
+        vertical_flip = params["vertical_flip"].as<int>();
 
         return true;
     }

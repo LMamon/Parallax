@@ -62,6 +62,7 @@ namespace px_camera {
         std::vector<FrameSize> getFrameSizes(std::uint32_t pixel_format) const;
         
     protected:
+        int fileDescriptor() const { return fd_; }
         std::string device_;
         
     private:

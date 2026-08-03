@@ -1,21 +1,11 @@
 #include <px_camera/px_camera_node.hpp>
 #include <px_camera/logger.hpp>
+#include <px_camera/arducam_controls.hpp>
 
 #include <memory>
 #include <string>
 #include <cstring>
 #include <rclcpp/rclcpp.hpp>
-
-namespace arducam {
-    constexpr uint32_t EXPOSURE = 0x00980911;
-    constexpr uint32_t HORIZONTAL_FLIP = 0x00980914;
-    constexpr uint32_t VERTICAL_FLIP = 0x00980915;
-    constexpr uint32_t TRIGGER_MODE = 0x00981901;
-    constexpr uint32_t DISABLE_FRAME_TIMEOUT = 0x00981902;
-    constexpr uint32_t FRAME_TIMEOUT = 0x00981903;
-    constexpr uint32_t FRAME_RATE = 0x00981906;
-    constexpr uint32_t ANALOG_GAIN = 0x009e0903;
-}
 
 namespace px_camera {
     PxCameraNode::PxCameraNode(const rclcpp::NodeOptions& options) : Node("px_camera", options) {

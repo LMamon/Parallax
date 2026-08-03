@@ -2,6 +2,7 @@
 
 #include "px_camera/arducam_device.hpp"
 #include "px_camera/camera_config.hpp"
+#include <px_camera/arducam_controls.hpp>
 
 #include <memory>
 #include <string>

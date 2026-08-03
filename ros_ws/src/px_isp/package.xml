@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>px_isp</name>
+  <version>0.0.0</version>
+  <description>Image signal processor for Parallax using CUDA and Isaac ROS NITROS.</description>
+  <maintainer email="noemail@outlook.com">Louis M</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>image_transport</depend>
+  <depend>cv_bridge</depend>
+
+  <depend>OpenCV</depend>
+  <depend>yaml-cpp</depend>
+
+  <!-- Isaac ROS NITROS -->
+  <depend>isaac_ros_nitros</depend>
+  <depend>isaac_ros_nitros_image_type</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

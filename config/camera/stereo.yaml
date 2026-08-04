@@ -1,21 +1,18 @@
-camera:
-  ros__parameters:
+device: "/dev/video0"
+frame_id: "stereo"
 
-    device: "/dev/video0"
-    frame_id: "stereo"
+width: 3840
+height: 1200
 
-    width: 3840
-    height: 1200
+frame_rate: 38
 
-    frame_rate: 38
+exposure: 1000
+analogue_gain: 100
 
-    exposure: 1000
-    analogue_gain: 100
+trigger_mode: 0
 
-    trigger_mode: 0
+disable_frame_timeout: 0
+frame_timeout: 2000
 
-    disable_frame_timeout: 0
-    frame_timeout: 2000
-
-    horizontal_flip: 0
-    vertical_flip: 0
+horizontal_flip: 0
+vertical_flip: 0

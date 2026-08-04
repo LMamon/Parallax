@@ -3,10 +3,18 @@ project(px_isp)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_ARCHITECTURES 87)
+
+enable_language(CUDA)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+
 
 find_package(ament_cmake REQUIRED)
 
@@ -22,6 +30,7 @@ find_package(yaml-cpp REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
 find_package(isaac_ros_nitros REQUIRED)
+find_package(isaac_ros_managed_nitros REQUIRED)
 find_package(isaac_ros_nitros_image_type REQUIRED)
 
 include_directories(
@@ -31,15 +40,21 @@ include_directories(
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
     src/*.cpp
+    src/*.cu
 )
 
 add_library(${PROJECT_NAME}
     ${SOURCES}
 )
 
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+)
+
 target_include_directories(${PROJECT_NAME}
   PUBLIC
     include
+    /opt/nvidia/cvcuda0/include
 )
 
 ament_target_dependencies(${PROJECT_NAME}
@@ -50,6 +65,7 @@ ament_target_dependencies(${PROJECT_NAME}
   cv_bridge
 
   isaac_ros_nitros
+  isaac_ros_managed_nitros
   isaac_ros_nitros_image_type
 )
 
@@ -58,6 +74,8 @@ target_link_libraries(${PROJECT_NAME}
   yaml-cpp
 
   CUDA::cudart
+  cvcuda
+  nvcv
 )
 
 install(

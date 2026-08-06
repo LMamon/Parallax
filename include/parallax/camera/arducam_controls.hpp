@@ -16,5 +16,4 @@ namespace parallax::camera::controls {
     inline constexpr std::uint32_t FrameRate = 0x00981906;
 
     inline constexpr std::uint32_t AnalogGain = 0x009e0903;
-
 }

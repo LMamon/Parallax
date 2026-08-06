@@ -44,17 +44,12 @@ namespace parallax::cuda {
         }
 
         const std::size_t width_value = static_cast<std::size_t>(width);
-
         const std::size_t channels_value = static_cast<std::size_t>(channels);
 
         if (multiplicationWouldOverflow(width_value, channels_value)) return false;
-
         const std::size_t pixel_count_per_row = width_value * channels_value;
 
-        if (multiplicationWouldOverflow(pixel_count_per_row, element_size)) {
-            return false;
-        }
-
+        if (multiplicationWouldOverflow(pixel_count_per_row, element_size)) return false;
         const std::size_t row_bytes = pixel_count_per_row * element_size;
 
         void* allocation = nullptr;

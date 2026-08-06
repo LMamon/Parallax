@@ -31,15 +31,12 @@ namespace parallax::camera {
 
             [[nodiscard]] bool isOpen() const noexcept;
 
-            bool setFormat(
-                std::uint32_t width,
-                std::uint32_t height,
-                std::uint32_t fourcc
-            );
+            bool setFormat(std::uint32_t width, std::uint32_t height, std::uint32_t fourcc);
 
             bool setControl(std::uint32_t id, std::int32_t value);
+            bool getControl(std::uint32_t id, std::int32_t& value);
 
-            bool initializeStreaming(std::uint32_t buffer_count = 4);
+            bool initializeStreaming(std::uint32_t buffer_count = 2);
             void shutdownStreaming();
 
             bool startStreaming();
@@ -47,10 +44,10 @@ namespace parallax::camera {
 
             [[nodiscard]] bool isStreaming() const noexcept;
 
-            bool dequeue(RawFrame& frame, int timeout_ms = 3000);
+            bool dequeue(RawFrame& frame);
             bool queue(const RawFrame& frame);
 
-            [[nodiscard]] std::uint32_t getPixelFormat() const;
+            [[nodiscard]] std::uint32_t getPixelFormat();
             [[nodiscard]] std::vector<std::uint32_t> getPixelFormats() const;
 
             [[nodiscard]] std::vector<Resolution> getFrameSizes(std::uint32_t pixel_format) const;

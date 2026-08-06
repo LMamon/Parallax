@@ -12,7 +12,7 @@ analogue_gain: 1100
 trigger_mode: 0
 
 disable_frame_timeout: 0
-frame_timeout: 2000
+frame_timeout: 500
 
 horizontal_flip: 0
 vertical_flip: 0

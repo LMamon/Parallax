@@ -1,8 +1,9 @@
 #include <parallax/camera/v4l2_device.hpp>
-
+#include <parallax/camera/camera_config.hpp>
 #include <parallax/camera/logger.hpp>
 
 #include <cerrno>
+#include <iostream>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/ioctl.h>
@@ -14,7 +15,7 @@ namespace parallax::camera {
     V4L2Device::V4L2Device(const std::string& device) : device_(device) {}
 
     V4L2Device::~V4L2Device() { close(); }
-
+    parallax::camera::CameraConfig config;
     bool V4L2Device::open() {
         if (isOpen()) {
             logMessage("open: device is already open");
@@ -39,7 +40,6 @@ namespace parallax::camera {
         shutdownStreaming();
 
         if (::close(fd_) < 0) logError("close", device_.c_str());
-
         fd_ = -1;
     }
 
@@ -47,7 +47,7 @@ namespace parallax::camera {
         return fd_ >= 0;
     }
 
-    std::uint32_t V4L2Device::getPixelFormat() const {
+    std::uint32_t V4L2Device::getPixelFormat() {
         if (!isOpen()) return 0;
 
         v4l2_format format{};
@@ -58,7 +58,11 @@ namespace parallax::camera {
             return 0;
         }
 
-        return format.fmt.pix.pixelformat;
+        width_ = format.fmt.pix.width;
+        height_ = format.fmt.pix.height;
+        fourcc_ = format.fmt.pix.pixelformat;
+
+        return fourcc_;
     }
 
     std::vector<std::uint32_t> V4L2Device::getPixelFormats() const {
@@ -74,19 +78,15 @@ namespace parallax::camera {
                 if (errno != EINVAL) {
                     logError("VIDIOC_ENUM_FMT");
                 }
-
                 break;
             }
-
             formats.push_back(description.pixelformat);
         }
-
         return formats;
     }
 
     std::vector<Resolution> V4L2Device::getFrameSizes(std::uint32_t pixel_format) const {
         std::vector<Resolution> sizes;
-
         if (!isOpen()) return sizes;
 
         v4l2_frmsizeenum frame_size{};
@@ -109,7 +109,6 @@ namespace parallax::camera {
                 sizes.push_back(resolution);
             }
         }
-
         return sizes;
     }
 
@@ -159,6 +158,17 @@ namespace parallax::camera {
             return false;
         }
 
+        return true;
+    }
+
+    bool V4L2Device::getControl(std::uint32_t id, std::int32_t& value) {
+        v4l2_control control{};
+        control.id = id;
+
+        if (::ioctl(fd_, VIDIOC_G_CTRL, &control) < 0)
+            return false;
+
+        value = control.value;
         return true;
     }
 
@@ -222,8 +232,7 @@ namespace parallax::camera {
                                     PROT_READ | PROT_WRITE,
                                     MAP_SHARED,
                                     fd_,
-                                    buffer.m.offset
-                                );
+                                    buffer.m.offset);
 
             if (address == MAP_FAILED) {
                 logError("mmap");
@@ -280,7 +289,13 @@ namespace parallax::camera {
         return true;
     }
 
-    bool V4L2Device::dequeue(RawFrame& frame, int timeout_ms) {
+    bool V4L2Device::dequeue(RawFrame& frame) {
+        /*
+        * Perform a single dequeue attempt.
+        *
+        * Startup retry policy belongs in StereoCamera::warmup().
+        * Runtime retry policy belongs to the caller.
+        */
         if (!isOpen() || !streaming_) {
             logMessage("dequeue: stream is not running");
             return false;
@@ -290,20 +305,23 @@ namespace parallax::camera {
         descriptor.fd = fd_;
         descriptor.events = POLLIN | POLLPRI;
 
-        int poll_result = 0;
+        int poll_result;
 
         do {
-            poll_result = ::poll(&descriptor, 1, timeout_ms);
+            poll_result = ::poll(&descriptor, 1, config.frame_timeout);
         } while (poll_result < 0 && errno == EINTR);
 
-        if (poll_result == 0) return false;
+        if (poll_result == 0) {
+            logMessage("poll: timeout waiting for frame");
+            return false;
+        }
 
         if (poll_result < 0) {
             logError("poll");
             return false;
         }
 
-        if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+        if (descriptor.events & (POLLERR | POLLHUP | POLLNVAL)) {
             logMessage("poll: camera device reported a stream error");
             return false;
         }
@@ -314,9 +332,8 @@ namespace parallax::camera {
 
         while (true) {
             if (::ioctl(fd_, VIDIOC_DQBUF, &buffer) == 0) break;
-
-            if (errno == EINTR) continue;
-            if (errno == EAGAIN) return false;
+            if (errno = EINTR) continue;
+            if (errno = EAGAIN) return false;
 
             logError("VIDIOC_DQBUF");
             return false;
@@ -331,24 +348,20 @@ namespace parallax::camera {
 
         if (buffer.bytesused > mapped.length) {
             logMessage("VIDIOC_DQBUF: bytesused exceeds mapped buffer length");
-
-            if (::ioctl(fd_, VIDIOC_QBUF, &buffer) < 0) {
-                logError("VIDIOC_QBUF after invalid frame size");
-            }
-
+            if (::ioctl(fd_, VIDIOC_QBUF, &buffer) < 0) logError("VIDIOC_QBUF after invalid frame size");
+            
             return false;
         }
 
-        if ((buffer.flags & V4L2_BUF_FLAG_ERROR) != 0) {
-            logMessage("VIDIOC_DQBUF: frame was marked as erroneous");
-
+        if (buffer.flags & V4L2_BUF_FLAG_ERROR) {
             if (::ioctl(fd_, VIDIOC_QBUF, &buffer) < 0) {
                 logError("VIDIOC_QBUF after erroneous frame");
+                return false;
             }
-
+            logMessage("VIDIOC_DQBUF: driver returned an error frame");
             return false;
         }
-
+        
         frame.width = width_;
         frame.height = height_;
         frame.fourcc = fourcc_;
@@ -357,7 +370,7 @@ namespace parallax::camera {
         frame.timestamp = toTimestamp(buffer.timestamp);
         frame.buffer_index = buffer.index;
 
-        return true;
+        return true;   
     }
 
     bool V4L2Device::queue(const RawFrame& frame) {
@@ -411,7 +424,6 @@ namespace parallax::camera {
         }
 
         buffers_.clear();
-
         if (!isOpen()) return;
 
         // count = 0 asks the driver to release its MMAP buffers.

@@ -29,13 +29,13 @@ find_package(yaml-cpp REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
 # Add OpenCV when the first component genuinely needs it.
-# find_package(OpenCV REQUIRED)
+find_package(OpenCV REQUIRED)
 
 add_subdirectory(src/camera)
 add_subdirectory(src/cuda)
 
 # Add these when their CMakeLists.txt files exist.
-# add_subdirectory(src/isp)
+add_subdirectory(src/isp)
 # add_subdirectory(src/stereo)
 # add_subdirectory(src/bindings)
 
@@ -43,8 +43,14 @@ add_executable(parallax
     src/main.cpp
 )
 
+target_include_directories(parallax
+    PRIVATE
+        ${OpenCV_INCLUDE_DIRS}
+)
 target_link_libraries(parallax
     PRIVATE
         parallax_camera
         parallax_cuda
+        parallax_isp
+        ${OpenCV_LIBS}
 )

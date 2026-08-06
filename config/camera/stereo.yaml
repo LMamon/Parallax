@@ -6,8 +6,8 @@ height: 1200
 
 frame_rate: 38
 
-exposure: 1000
-analogue_gain: 100
+exposure: 2000
+analogue_gain: 1100
 
 trigger_mode: 0
 
@@ -16,3 +16,5 @@ frame_timeout: 2000
 
 horizontal_flip: 0
 vertical_flip: 0
+
+bayer_pattern: GRBG

@@ -89,13 +89,13 @@ namespace parallax::camera {
         return device_ != nullptr && device_->isStreaming();
     }
 
-    bool StereoCamera::capture(RawFrame& frame, int timeout_ms) {
+    bool StereoCamera::capture(RawFrame& frame) {
         if (!initialized_ || !device_->isStreaming()) {
             logMessage("StereoCamera::capture: camera is not streaming");
             return false;
         }
 
-        return device_->dequeue(frame, timeout_ms);
+        return device_->dequeue(frame);
     }
 
     bool StereoCamera::release(const RawFrame& frame) {

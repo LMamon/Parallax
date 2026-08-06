@@ -1,5 +1,6 @@
 #pragma once
 
+#include <parallax/camera/pixel_formats.hpp>
 #include <string>
 
 namespace parallax::camera {
@@ -8,6 +9,7 @@ namespace parallax::camera {
         public:
             bool loadFromFile(const std::string& path);
 
+            BayerPattern bayer_pattern = BayerPattern::GRBG;
             std::string device;
             std::string frame_id;
 

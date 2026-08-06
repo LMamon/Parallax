@@ -231,15 +231,7 @@ namespace parallax::camera {
 
         while (Clock::now() < deadline) {
             ++attempts;
-
-            const auto remaining = std::chrono::duration_cast<Milliseconds>(deadline - Clock::now());
-            if (remaining.count() <= 0) break;
-            /*
-            * Keep individual waits bounded so startup can retry through
-            * transient timeouts and error-marked buffers.
-            */
-            const int attempt_timeout_ms = static_cast<int>(std::min<std::int64_t>(500, remaining.count()));
-            if (!capture(frame, attempt_timeout_ms)) continue;
+            if (!capture(frame)) continue;
 
             if (!release(frame)) {
                 logMessage("StereoCamera::warmup: failed to release startup frame");

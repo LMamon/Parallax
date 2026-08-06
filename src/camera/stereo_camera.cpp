@@ -1,10 +1,11 @@
 #include <parallax/camera/stereo_camera.hpp>
-
+#include <parallax/camera/pixel_formats.hpp>
 #include <parallax/camera/arducam_controls.hpp>
 #include <parallax/camera/logger.hpp>
+#include <parallax/camera/arducam_controls.hpp>
 
 #include <linux/videodev2.h>
-
+#include <iostream>
 #include <utility>
 
 namespace parallax::camera {
@@ -32,11 +33,12 @@ namespace parallax::camera {
             shutdown();
             return false;
         }
-
-        if (!configureControls()) {
-            shutdown();
-            return false;
-        }
+        
+             // NOTE:
+        // The Jetson/Arducam driver resets several sensor controls during
+        // VIDIOC_STREAMON, so controls are applied after startStreaming().
+        // Do not move configureControls() before STREAMON unless the driver
+        // behavior changes.
 
         if (!device_->initializeStreaming()) {
             shutdown();
@@ -47,8 +49,22 @@ namespace parallax::camera {
             shutdown();
             return false;
         }
-
+        /*
+        * The Arducam/Jetson driver resets exposure, gain, and frame rate
+        * to defaults during STREAMON. Reapply the YAML configuration after
+        * streaming has started.
+        */
+        if (!configureControls()) {
+            shutdown();
+            return false;
+        }
         initialized_ = true;
+
+        if (!warmup()) {
+            shutdown();
+            return false;
+        }
+
         return true;
     }
 
@@ -104,7 +120,8 @@ namespace parallax::camera {
         return config_;
     }
 
-    bool StereoCamera::configureFormat() {
+
+   bool StereoCamera::configureFormat() {
         /*
         * The Arducam stereo device currently exposes the packed stereo Bayer
         * stream as 10-bit RGGB data.
@@ -113,22 +130,37 @@ namespace parallax::camera {
         * additional sensors or pixel formats are introduced, add pixel_format
         * to CameraConfig instead of scattering format checks downstream.
         */
-        return device_->setFormat(static_cast<std::uint32_t>(config_.width),
-                                    static_cast<std::uint32_t>(config_.height),
-                                    V4L2_PIX_FMT_SRGGB10);
+        if (!device_->setFormat(static_cast<std::uint32_t>(config_.width),
+                                static_cast<std::uint32_t>(config_.height),
+                                V4L2_PIX_FMT_BA10)) {
+
+            return false;
+        }
+
+        // const auto format = device_->getPixelFormat();
+        const std::uint32_t actual_format = device_->getPixelFormat();
+        if (actual_format == 0) return false;
+
+        char fourcc[5] = {static_cast<char>(actual_format & 0xff),
+                        static_cast<char>((actual_format >> 8) & 0xff),
+                        static_cast<char>((actual_format >> 16) & 0xff),
+                        static_cast<char>((actual_format >> 24) & 0xff),
+                        '\0'};
+
+        std::cout
+            << "Camera: "
+            << config_.width << "x" << config_.height
+            << "  Pixel Format: "
+            << fourcc
+            << " (0x"
+            << std::hex << actual_format << std::dec << ")\n";
+
+        // return format != 0;
+        return actual_format == V4L2_PIX_FMT_BA10;
     }
 
     bool StereoCamera::configureControls() {
-        struct ControlSetting {
-            std::uint32_t id;
-            std::int32_t value;
-            const char* name;
-        };
-
-        const ControlSetting settings[] = {{controls::Exposure,
-                                            static_cast<std::int32_t>(config_.exposure),
-                                            "exposure"},
-                                        {controls::AnalogGain,
+        const ControlSetting settings[] = {{controls::AnalogGain,
                                             static_cast<std::int32_t>(config_.analogue_gain),
                                             "analogue_gain"},
                                         {controls::FrameRate,
@@ -148,15 +180,88 @@ namespace parallax::camera {
                                             "horizontal_flip"},
                                         {controls::VerticalFlip,
                                             static_cast<std::int32_t>(config_.vertical_flip),
-                                            "vertical_flip"}
+                                            "vertical_flip"},
+                                        {controls::Exposure,
+                                            static_cast<std::int32_t>(config_.exposure),
+                                            "exposure"}
         };
 
-        for (const ControlSetting& setting : settings) {
+        for (const auto& setting : settings) {
             if (!device_->setControl(setting.id, setting.value)) {
                 logError("Failed to configure camera control", setting.name);
                 return false;
             }
+            int32_t actual{};
+            if (device_->getControl(setting.id, actual)) {
+
+                std::cout
+                    << setting.name
+                    << ": requested " << setting.value
+                    << " actual " << actual
+                    << '\n';
+            }
         }
         return true;
+    }
+
+    bool StereoCamera::warmup() {
+        using Clock = std::chrono::steady_clock;
+        using Milliseconds = std::chrono::milliseconds;
+
+        RawFrame frame{};
+        const std::uint32_t frame_rate = std::max<std::uint32_t>(config_.frame_rate, 1);
+        const std::uint32_t frame_period_ms = (1000U + frame_rate - 1U) / frame_rate;
+        const std::uint32_t exposure_ms = (config_.exposure + 999U) / 1000U;
+
+        /*
+        * Startup may include:
+        * - driver frame timeout/reset behavior
+        * - control settling after STREAMON
+        * - several invalid startup frames
+        *
+        * Use two configured frame-timeout windows, while also ensuring
+        * exposure and several frame periods are covered.
+        */
+
+        const std::uint32_t startup_timeout_ms = std::max(2U * config_.frame_timeout,
+                                                        config_.frame_timeout + exposure_ms + 4U * frame_period_ms);
+
+        const auto deadline = Clock::now() + Milliseconds(startup_timeout_ms);
+        std::uint32_t attempts = 0;
+
+        while (Clock::now() < deadline) {
+            ++attempts;
+
+            const auto remaining = std::chrono::duration_cast<Milliseconds>(deadline - Clock::now());
+            if (remaining.count() <= 0) break;
+            /*
+            * Keep individual waits bounded so startup can retry through
+            * transient timeouts and error-marked buffers.
+            */
+            const int attempt_timeout_ms = static_cast<int>(std::min<std::int64_t>(500, remaining.count()));
+            if (!capture(frame, attempt_timeout_ms)) continue;
+
+            if (!release(frame)) {
+                logMessage("StereoCamera::warmup: failed to release startup frame");
+                return false;
+            }
+
+            if (attempts > 1) {
+                std::cout
+                    << "Camera warmup completed after "
+                    << attempts
+                    << " capture attempt(s)\n";
+            }
+            return true;
+        }
+
+        std::cout
+            << "Camera warmup timed out after "
+            << startup_timeout_ms
+            << " ms and "
+            << attempts
+            << " capture attempt(s)\n";
+
+        return false;
     }
 }

@@ -9,6 +9,12 @@
 
 namespace parallax::camera {
 
+    struct ControlSetting {
+            std::uint32_t id;
+            std::int32_t value;
+            const char* name;
+        };
+        
     class StereoCamera {
         public:
             explicit StereoCamera(CameraConfig config);
@@ -26,9 +32,10 @@ namespace parallax::camera {
             [[nodiscard]] bool isInitialized() const noexcept;
             [[nodiscard]] bool isStreaming() const noexcept;
 
-            bool capture(RawFrame& frame, int timeout_ms = 3000);
+            bool capture(RawFrame& frame, int timeout_ms = 500);
             bool release(const RawFrame& frame);
-
+            // bool warmup(std::uint32_t frame_count = 2);
+            bool warmup();
             bool setControl(std::uint32_t control_id, std::int32_t value);
 
             [[nodiscard]] const CameraConfig& config() const noexcept;

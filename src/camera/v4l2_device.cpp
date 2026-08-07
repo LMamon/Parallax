@@ -15,7 +15,7 @@ namespace parallax::camera {
     V4L2Device::V4L2Device(const std::string& device) : device_(device) {}
 
     V4L2Device::~V4L2Device() { close(); }
-    parallax::camera::CameraConfig config;
+
     bool V4L2Device::open() {
         if (isOpen()) {
             logMessage("open: device is already open");
@@ -289,7 +289,7 @@ namespace parallax::camera {
         return true;
     }
 
-    bool V4L2Device::dequeue(RawFrame& frame) {
+    bool V4L2Device::dequeue(RawFrame& frame, int timeout_ms) {
         /*
         * Perform a single dequeue attempt.
         *
@@ -308,7 +308,7 @@ namespace parallax::camera {
         int poll_result;
 
         do {
-            poll_result = ::poll(&descriptor, 1, config.frame_timeout);
+            poll_result = ::poll(&descriptor, 1, timeout_ms);
         } while (poll_result < 0 && errno == EINTR);
 
         if (poll_result == 0) {
@@ -332,8 +332,8 @@ namespace parallax::camera {
 
         while (true) {
             if (::ioctl(fd_, VIDIOC_DQBUF, &buffer) == 0) break;
-            if (errno = EINTR) continue;
-            if (errno = EAGAIN) return false;
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN) return false;
 
             logError("VIDIOC_DQBUF");
             return false;

@@ -44,7 +44,7 @@ namespace parallax::camera {
 
             [[nodiscard]] bool isStreaming() const noexcept;
 
-            bool dequeue(RawFrame& frame);
+            bool dequeue(RawFrame& frame, int timeout_ms);
             bool queue(const RawFrame& frame);
 
             [[nodiscard]] std::uint32_t getPixelFormat();

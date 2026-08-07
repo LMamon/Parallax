@@ -7,7 +7,7 @@ height: 1200
 frame_rate: 38
 
 exposure: 2000
-analogue_gain: 1100
+analogue_gain: 100
 
 trigger_mode: 0
 

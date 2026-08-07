@@ -95,7 +95,7 @@ namespace parallax::camera {
             return false;
         }
 
-        return device_->dequeue(frame);
+        return device_->dequeue(frame, config_.frame_timeout);
     }
 
     bool StereoCamera::release(const RawFrame& frame) {

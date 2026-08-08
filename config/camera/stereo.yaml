@@ -6,12 +6,12 @@ height: 1200
 
 frame_rate: 38
 
-exposure: 2000
-analogue_gain: 100
+exposure: 60000
+analogue_gain: 1100
 
 trigger_mode: 0
 
-disable_frame_timeout: 0
+disable_frame_timeout: 1
 frame_timeout: 500
 
 horizontal_flip: 0

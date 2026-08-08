@@ -7,6 +7,8 @@
 #include <linux/videodev2.h>
 #include <iostream>
 #include <utility>
+#include <thread>
+#include <chrono>
 
 namespace parallax::camera {
 
@@ -26,10 +28,12 @@ namespace parallax::camera {
         }
 
         if (!device_->open()) {
+            std::cout << "open\n";
             return false;
         }
 
         if (!configureFormat()) {
+            std::cout << "configure format\n";
             shutdown();
             return false;
         }
@@ -41,11 +45,13 @@ namespace parallax::camera {
         // behavior changes.
 
         if (!device_->initializeStreaming()) {
+            std::cout << "initialize streaming\n";
             shutdown();
             return false;
         }
 
         if (!device_->startStreaming()) {
+            std::cout << "start streaming\n";
             shutdown();
             return false;
         }
@@ -55,12 +61,15 @@ namespace parallax::camera {
         * streaming has started.
         */
         if (!configureControls()) {
+            std::cout << "configure controls\n";
             shutdown();
             return false;
         }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
         initialized_ = true;
 
         if (!warmup()) {
+            std::cout << "warmup\n";
             shutdown();
             return false;
         }
@@ -95,7 +104,8 @@ namespace parallax::camera {
             return false;
         }
 
-        return device_->dequeue(frame, config_.frame_timeout);
+        return device_->dequeue(frame, static_cast<int>(config_.frame_timeout));
+        // return device_->dequeue(frame);
     }
 
     bool StereoCamera::release(const RawFrame& frame) {
@@ -209,7 +219,7 @@ namespace parallax::camera {
         using Milliseconds = std::chrono::milliseconds;
 
         RawFrame frame{};
-        const std::uint32_t frame_rate = std::max<std::uint32_t>(config_.frame_rate, 1);
+        const std::uint32_t frame_rate = std::max<std::uint32_t>(config_.frame_rate, 1U);
         const std::uint32_t frame_period_ms = (1000U + frame_rate - 1U) / frame_rate;
         const std::uint32_t exposure_ms = (config_.exposure + 999U) / 1000U;
 
@@ -222,38 +232,32 @@ namespace parallax::camera {
         * Use two configured frame-timeout windows, while also ensuring
         * exposure and several frame periods are covered.
         */
+        // Add post-STREAMON stabilization delay
+        
 
-        const std::uint32_t startup_timeout_ms = std::max(2U * config_.frame_timeout,
-                                                        config_.frame_timeout + exposure_ms + 4U * frame_period_ms);
+        const std::uint32_t startup_timeout_ms = std::max(10U * config_.frame_timeout,
+                                                            config_.frame_timeout + exposure_ms + 8U * frame_period_ms);
 
         const auto deadline = Clock::now() + Milliseconds(startup_timeout_ms);
         std::uint32_t attempts = 0;
-
+        
         while (Clock::now() < deadline) {
             ++attempts;
-            if (!capture(frame)) continue;
-
+            // Use a shorter timeout for warmup attempts
+            if (!device_->dequeue(frame, config_.frame_timeout)) continue;  // 500ms instead of config_.frame_timeout
+            
             if (!release(frame)) {
                 logMessage("StereoCamera::warmup: failed to release startup frame");
                 return false;
             }
 
             if (attempts > 1) {
-                std::cout
-                    << "Camera warmup completed after "
-                    << attempts
-                    << " capture attempt(s)\n";
+                std::cout << "Camera warmup completed after " << attempts << " capture attempt(s)\n";
             }
             return true;
         }
 
-        std::cout
-            << "Camera warmup timed out after "
-            << startup_timeout_ms
-            << " ms and "
-            << attempts
-            << " capture attempt(s)\n";
-
+        std::cout << "Camera warmup timed out after " << startup_timeout_ms << "ms and " << attempts << " capture attempt(s)\n";
         return false;
     }
 }

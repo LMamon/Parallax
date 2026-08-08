@@ -305,7 +305,7 @@ namespace parallax::camera {
         descriptor.fd = fd_;
         descriptor.events = POLLIN | POLLPRI;
 
-        int poll_result;
+        int poll_result = 0;
 
         do {
             poll_result = ::poll(&descriptor, 1, timeout_ms);
@@ -320,8 +320,11 @@ namespace parallax::camera {
             logError("poll");
             return false;
         }
-
-        if (descriptor.events & (POLLERR | POLLHUP | POLLNVAL)) {
+        
+        if (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            std::cout << "  POLLERR: " << bool(descriptor.revents & POLLERR)
+                    << " POLLHUP: " << bool(descriptor.revents & POLLHUP)
+                    << " POLLNVAL: " << bool(descriptor.revents & POLLNVAL) << "\n";
             logMessage("poll: camera device reported a stream error");
             return false;
         }

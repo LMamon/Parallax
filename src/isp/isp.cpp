@@ -6,19 +6,13 @@
 namespace parallax::isp {
 
     ISP::ISP() = default;
-
-    ISP::~ISP() {
-        shutdown();
-    }
+    ISP::~ISP() { shutdown(); }
 
     bool ISP::initialize(const parallax::camera::CameraConfig& config) {
         if (initialized_) return true;
 
         // Allocate the GPU Bayer input buffer.
-        if (!gpu_input_.buffer.allocate(config.width,
-                                        config.height,
-                                        1,
-                                        sizeof(std::uint16_t))) {
+        if (!gpu_input_.buffer.allocate(config.width, config.height, 1, sizeof(std::uint16_t))) {
             return false;
         }
 
@@ -32,28 +26,25 @@ namespace parallax::isp {
         // gpu_input_.fourcc = device_->getPixelFormat();
         const std::uint32_t stereo_width = config.width / 2;
 
-        // Allocate reusable left RGB image.
-        if (!scratch_rgb_.left.allocate(stereo_width,
-                                        config.height,
-                                        StereoRgbFrame::Channels,
-                                        sizeof(std::uint8_t))) {
-
+        // Allocate reusable RGB images.
+        if (!rgb_output_.left.allocate(stereo_width, config.height, StereoRgbFrame::Channels, sizeof(std::uint8_t)) ||
+            !rgb_output_.right.allocate(stereo_width, config.height, StereoRgbFrame::Channels, sizeof(std::uint8_t))) {
             shutdown();
             return false;
         }
 
-        // Allocate reusable right RGB image.
-        if (!scratch_rgb_.right.allocate(stereo_width,
-                                        config.height,
-                                        StereoRgbFrame::Channels,
-                                        sizeof(std::uint8_t))) {
+        rgb_output_.width = stereo_width;
+        rgb_output_.height = config.height;
 
+        // Allocate reusable gray images
+        if (!gray_output_.left.allocate(stereo_width, config.height, StereoGrayFrame::Channels, sizeof(std::uint8_t)) ||
+            !gray_output_.right.allocate(stereo_width, config.height, StereoGrayFrame::Channels, sizeof(std::uint8_t))) {
             shutdown();
             return false;
         }
 
-        scratch_rgb_.width = stereo_width;
-        scratch_rgb_.height = config.height;
+        gray_output_.width = stereo_width;
+        gray_output_.height = config.height;
 
         if (cudaStreamCreate(&stream_) != cudaSuccess) {
             shutdown();
@@ -65,22 +56,16 @@ namespace parallax::isp {
     }
 
     bool ISP::downloadRaw(std::uint16_t* host_data, std::size_t host_pitch) const {
-        if (!initialized_ || host_data == nullptr) {
-            return false;
-        }
+        if (!initialized_ || host_data == nullptr) return false;
 
-        return gpu_input_.buffer.downloadAsync(
-            host_data,
-            host_pitch,
-            stream_
-        );
+        return gpu_input_.buffer.downloadAsync(host_data, host_pitch, stream_);
     }
 
     bool ISP::process(const parallax::camera::RawFrame& input) {
         if (!initialized_) return false;
         if (!upload(input)) return false;
 
-        return demosaicAndSplit(gpu_input_, scratch_rgb_, stream_);
+        return demosaicAndSplit(gpu_input_, rgb_output_, gray_output_, stream_);
     }
 
     bool ISP::upload(const parallax::camera::RawFrame& input) {
@@ -96,14 +81,20 @@ namespace parallax::isp {
         }
 
         gpu_input_.buffer.release();
-        scratch_rgb_.left.release();
-        scratch_rgb_.right.release();
-        
-        initialized_ = false;
-    }
 
-    const StereoRgbFrame& ISP::output() const noexcept {
-        return scratch_rgb_;
+        rgb_output_.left.release();
+        rgb_output_.right.release();
+
+        gray_output_.left.release();
+        gray_output_.right.release();
+
+        rgb_output_.width = 0;
+        rgb_output_.height = 0;
+
+        gray_output_.width = 0;
+        gray_output_.height = 0;
+
+        initialized_ = false;
     }
 
     bool ISP::synchronize() {

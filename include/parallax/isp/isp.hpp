@@ -25,10 +25,12 @@ namespace parallax::isp {
             bool process(const parallax::camera::RawFrame& input);
 
             bool synchronize();
-            const StereoRgbFrame& output() const noexcept;
             void shutdown();
 
             bool downloadRaw(std::uint16_t* host_data, std::size_t host_pitch) const;
+
+            const StereoRgbFrame& rgb() const noexcept { return rgb_output_; }
+            const StereoGrayFrame& gray() const noexcept { return gray_output_; }
 
         private:
             bool upload(const parallax::camera::RawFrame& input);
@@ -36,7 +38,8 @@ namespace parallax::isp {
             cudaStream_t stream_{};
 
             GpuBayerFrame gpu_input_;
-            StereoRgbFrame scratch_rgb_;
+            StereoRgbFrame rgb_output_{};
+            StereoGrayFrame gray_output_{};
 
             bool initialized_ = false;
         };

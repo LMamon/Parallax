@@ -10,9 +10,7 @@ namespace parallax::cuda {
     class CudaBuffer {
         public:
             CudaBuffer() = default;
-
             CudaBuffer(std::uint32_t width, std::uint32_t height, std::uint32_t channels, std::size_t element_size);
-
             ~CudaBuffer();
 
             CudaBuffer(const CudaBuffer&) = delete;
@@ -22,13 +20,10 @@ namespace parallax::cuda {
             CudaBuffer& operator=(CudaBuffer&& other) noexcept;
 
             bool allocate(std::uint32_t width, std::uint32_t height, std::uint32_t channels, std::size_t element_size);
-
             void release() noexcept;
 
             bool uploadAsync(const void* host_data, std::size_t host_pitch, cudaStream_t stream);
-
             bool downloadAsync(void* host_data, std::size_t host_pitch, cudaStream_t stream) const;
-
             bool copyFromAsync(const CudaBuffer& source, cudaStream_t stream);
 
             [[nodiscard]] bool isAllocated() const noexcept;
@@ -75,4 +70,4 @@ namespace parallax::cuda {
             std::size_t pitch_ = 0;
         };
 
-} // namespace parallax::cuda
+}

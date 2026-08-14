@@ -18,4 +18,4 @@ namespace parallax::isp {
                         StereoGrayFrame& gray_output, 
                         cudaStream_t stream);
 
-} // namespace parallax::isp
+}

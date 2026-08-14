@@ -19,6 +19,5 @@ target_compile_features(parallax_cuda
 )
 
 set_target_properties(parallax_cuda PROPERTIES
-    CUDA_SEPARABLE_COMPILATION ON
     POSITION_INDEPENDENT_CODE ON
 )

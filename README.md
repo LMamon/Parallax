@@ -1,56 +1,47 @@
 # Parallax
-multimodal perception for spatial reasoning and active tracking
 
+Active tracking infrastructure for spatial reasoning systems
 
-Parallax
-│
-├── Docker
-│
-├── ROS 2 workspace
-│
-├── Calibration package
-│
-├── Stereo package
-│
-├── Pan/Tilt package
-│
-├── LiDAR package
-│
-├── Fusion package
-│
-└── World Model package
+GPU-accelerated perception system built around stereo vision on NVIDIA Jetson. The `2.0` baseline establishes the native camera-to-stereo pipeline without ROS 2.
 
-Before you can meaningfully fuse stereo and LiDAR, you need to be comfortable with:
+## Current Pipeline
 
-* camera intrinsics
-* camera extrinsics
-* homogeneous coordinates
-* rigid transforms (SE(3))
-* projection
-* back-projection
-* coordinate frame transforms
+![](docs/imgs/pipeline2.0.png)
 
-Those become utilities you’ll reuse throughout the project.
-That package wouldn’t know anything about cameras yet. It would just answer questions like:
+The current implementation keeps image processing GPU-resident through ISP, rectification, and stereo matching. The ISP produces both RGB and grayscale outputs so downstream consumers can use the appropriate representation without redundant conversion.
 
-* Project a 3D point into image space.
-* Back-project a pixel into a ray.
-* Transform a point from camera → world.
-* Transform world → camera.
-* Compose transformations.
-* Load calibration YAML.
+## Components
 
----
-relevant:
-stereo_depth_demo/utils.py
- - camera access infrastructure 
+```text
+camera/     V4L2 capture, Arducam control, configuration
+cuda/       CUDA memory and processing utilities
+isp/        Bayer demosaic and RGB/grayscale output
+vpi/        CUDA image wrappers and stream management
+stereo/     calibration, rectification, disparity
+```
 
-stereo_depth_demo/arducam_camera.py
- - general opencv video capture wraper(mostly useful might need to use cvcuda/accelerated instead)
- - orientation logic not directly portable
- - need to verify AR0324 bayer pattern from actual driver-reported format than coping those register writes
+The stereo runtime consumes offline calibration artifacts including rectification maps, `R1`, `R2`, `P1`, `P2`, and `Q`.
 
-stereo_depth_demo/4_calibration.py
- - actual stereo calibration, reads captured frames and passes to third party python stereovision package
- - implement this using OpenCV’s standard APIs which will gives you direct control over K, D, R, T, E, F, R1, R2, P1, P2, and Q.
+## Build
 
+```bash
+cmake -S . -B build
+cmake --build build -j"$(nproc)"
+./build/parallax
+```
+
+Current native dependencies include C++17, CUDA, NVIDIA VPI, OpenCV, yaml-cpp, and CMake.
+
+## Engineering Documentation
+
+The current stereo implementation represents a verified baseline before the runtime pipeline refactor.
+
+- [`docs/architecture/stereo_pipeline.md`](docs/stereo_arch.md) — design decisions and component boundaries
+- [`docs/verification/stereo_pipeline.md`](docs/stereo_verification.md) — verification evidence, constraints, and known failure modes
+- [`docs/roadmap.md`](docs/roadmap.md) — current architectural direction
+
+## Direction
+
+The next stage moves orchestration out of `main.cpp` into a runtime pipeline capable of managing independently enabled processing modules.
+
+Planned downstream work includes depth and 3D geometry, Foxglove integration, nanobind bindings, object detection and tracking, VIO/VSLAM, LiDAR integration, and exploring shared spatial representation.

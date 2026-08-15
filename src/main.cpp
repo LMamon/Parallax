@@ -120,8 +120,6 @@ int main() {
             std::cerr << "Stereo matching failed\n";
             break;
         }
-        // Remove this when the live pipeline is ready.
-        break;
     }
 
 

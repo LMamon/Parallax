@@ -1,0 +1,23 @@
+name: parallax
+services:
+  parallax:
+    image: roylvzn/parallax:latest
+    container_name: parallax
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    network_mode: host
+    ipc: host
+
+    stdin_open: true
+    tty: true
+
+    privileged: true
+
+    volumes:
+      - .:/workspace/Parallax
+
+    working_dir: /workspace/Parallax
+
+    restart: unless-stopped

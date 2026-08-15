@@ -1,0 +1,17 @@
+enable: true
+black_level: 64
+gamma: 2.2
+
+white_balance:
+  red: 2.0
+  green: 1.0
+  blue: 1.8
+
+color_correction:
+  matrix:
+    [
+      1.0,0.0,0.0,
+      0.0,1.0,0.0,
+      0.0,0.0,1.0
+    ]
+publish_debug: false

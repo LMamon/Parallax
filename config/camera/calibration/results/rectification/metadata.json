@@ -1,0 +1,12 @@
+{
+  "image_width": 1920,
+  "image_height": 1200,
+  "virtual_fx": 1100.0,
+  "virtual_fy": 1100.0,
+  "virtual_cx": 960.0,
+  "virtual_cy": 600.0,
+  "rectification_alpha": 0.0,
+  "baseline_mm": 96.5988064299104,
+  "extrinsics_convention": "right_from_left",
+  "runtime_map_space": "distorted_camera_to_rectified"
+}

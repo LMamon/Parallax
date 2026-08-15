@@ -1,0 +1,20 @@
+device: "/dev/video0"
+frame_id: "stereo"
+
+width: 3840
+height: 1200
+
+frame_rate: 38
+
+exposure: 5500
+analogue_gain: 1100
+
+trigger_mode: 0
+
+disable_frame_timeout: 1
+frame_timeout: 500
+
+horizontal_flip: 0
+vertical_flip: 0
+
+bayer_pattern: GRBG

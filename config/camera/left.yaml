@@ -1,0 +1,9 @@
+#example
+
+device: "/dev/video0"
+frame_id: "left_camera"
+width: 1920
+height: 1200
+fps: 30
+exposure: 1000
+gain: 4

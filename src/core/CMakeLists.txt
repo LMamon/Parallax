@@ -1,5 +1,6 @@
 add_library(parallax_core STATIC
     pipeline.cpp
+    runtime.cpp
 )
 
 target_include_directories(parallax_core

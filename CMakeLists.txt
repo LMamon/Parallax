@@ -16,6 +16,8 @@ set(CMAKE_CUDA_EXTENSIONS OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+include(CTest)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(
         $<$<COMPILE_LANGUAGE:CXX>:-Wall>
@@ -56,6 +58,10 @@ add_subdirectory(src/stereo)
 
 # Add these when their CMakeLists.txt files exist.
 # add_subdirectory(src/bindings)
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
 
 add_executable(parallax
     src/main.cpp

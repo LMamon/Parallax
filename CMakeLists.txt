@@ -51,6 +51,7 @@ set_target_properties(VPI::VPI PROPERTIES
 )
 
 add_subdirectory(src/camera)
+add_subdirectory(src/core)
 add_subdirectory(src/cuda)
 add_subdirectory(src/vpi)
 add_subdirectory(src/isp)
@@ -74,6 +75,7 @@ target_include_directories(parallax
 target_link_libraries(parallax
     PRIVATE
         parallax_camera
+        parallax_core
         parallax_cuda
         parallax_isp
         parallax_stereo

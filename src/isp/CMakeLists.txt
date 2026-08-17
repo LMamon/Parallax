@@ -22,6 +22,5 @@ target_compile_features(parallax_isp
 )
 
 set_target_properties(parallax_isp PROPERTIES
-    CUDA_SEPARABLE_COMPILATION ON
     POSITION_INDEPENDENT_CODE ON
 )

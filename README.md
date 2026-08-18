@@ -18,6 +18,7 @@ cuda/       CUDA memory and processing utilities
 isp/        Bayer demosaic and RGB/grayscale output
 vpi/        CUDA image wrappers and stream management
 stereo/     calibration, rectification, disparity
+visualization/ foxglove visualizaiton of topics
 ```
 
 The stereo runtime consumes offline calibration artifacts including rectification maps, `R1`, `R2`, `P1`, `P2`, and `Q`.
@@ -30,7 +31,7 @@ cmake --build build -j"$(nproc)"
 ./build/parallax
 ```
 
-Current native dependencies include C++17, CUDA, NVIDIA VPI, OpenCV, yaml-cpp, and CMake.
+Current native dependencies include C++17, CUDA, NVIDIA VPI, OpenCV, yaml-cpp, CMake, GTest, Foxglove C++ sdk.
 
 ## Engineering Documentation
 

@@ -140,7 +140,7 @@ These ownership boundaries are intended to remain useful when orchestration move
 
 The `2.0` implementation establishes the processing components but still orchestrates them directly from the application entrypoint.
 
-The next refactor changes orchestration rather than the established stereo algorithms:
+next refactor changes orchestration rather than the established stereo algorithms:
 
 ```text
 main.cpp
@@ -155,4 +155,4 @@ runtime / pipeline
     └── future modules
 ```
 
-The stereo implementation documented here therefore serves as the baseline beneath the runtime architecture.
+The stereo implementation documented here serve as the baseline beneath the runtime architecture.

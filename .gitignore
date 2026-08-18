@@ -1,8 +1,8 @@
-.vscode
-
 build
 install
 log
+
+CMakeFiles
 
 *.md
 *.png

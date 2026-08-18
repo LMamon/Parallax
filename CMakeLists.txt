@@ -16,6 +16,18 @@ set(CMAKE_CUDA_EXTENSIONS OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+include(CTest)
+include(FetchContent)
+
+FetchContent_Declare(
+    foxglove_sdk
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    URL "https://github.com/foxglove/foxglove-sdk/releases/download/sdk%2Fv0.26.0/foxglove-v0.26.0-cpp-aarch64-unknown-linux-gnu.zip"
+    URL_HASH SHA256=0710f2ec5abc3954acf6203b93a96768dccd19d742af9b78fcd8fbbba5f6225a
+)
+
+FetchContent_MakeAvailable(foxglove_sdk)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(
         $<$<COMPILE_LANGUAGE:CXX>:-Wall>
@@ -28,6 +40,13 @@ find_package(Threads REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(
+    foxglove-sdk
+    CONFIG REQUIRED
+    HINTS "${foxglove_sdk_SOURCE_DIR}"
+)
+
+foxglove_sdk_add_cpp_library(foxglove_cpp TYPE STATIC)
 
 find_path(VPI_INCLUDE_DIR
     NAMES vpi/Image.h
@@ -49,13 +68,19 @@ set_target_properties(VPI::VPI PROPERTIES
 )
 
 add_subdirectory(src/camera)
+add_subdirectory(src/core)
 add_subdirectory(src/cuda)
 add_subdirectory(src/vpi)
 add_subdirectory(src/isp)
 add_subdirectory(src/stereo)
+add_subdirectory(src/visualization)
 
 # Add these when their CMakeLists.txt files exist.
 # add_subdirectory(src/bindings)
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
 
 add_executable(parallax
     src/main.cpp
@@ -68,9 +93,11 @@ target_include_directories(parallax
 target_link_libraries(parallax
     PRIVATE
         parallax_camera
+        parallax_core
         parallax_cuda
         parallax_isp
         parallax_stereo
+        parallax_visualization
         parallax_vpi
         ${OpenCV_LIBS}
 )

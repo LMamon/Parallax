@@ -5,6 +5,7 @@
 
 #include <parallax/core/pipeline.hpp>
 #include <parallax/core/sensor_frame.hpp>
+#include <parallax/visualization/foxglove_server.hpp>
 
 #include <csignal>
 #include <atomic>
@@ -40,5 +41,7 @@ namespace parallax::core {
             Pipeline pipeline_;
             std::atomic_bool running_{false};
             bool initialized_ = false;
+
+            parallax::visualization::FoxgloveServer foxglove_;
         };
 }

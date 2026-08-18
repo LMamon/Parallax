@@ -14,6 +14,7 @@ target_link_libraries(parallax_core
         parallax_isp
         parallax_stereo
         parallax_vpi
+        parallax_visualization
 )
 
 target_compile_features(parallax_core 

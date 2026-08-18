@@ -25,7 +25,13 @@ namespace parallax::core {
         if (!pipeline_.initialize(config_, calibration_directory)) {
             std::cerr << "Runtime: failed to initialize processing pipeline";
             shutdown();
-            return true;
+            return false;
+        }
+
+        if (!foxglove_.initialize()) {
+            std::cerr << "Runtime: Failed to initialize foxglove server\n";
+            shutdown();
+            return false;
         }
 
         initialized_ = true;
@@ -75,6 +81,8 @@ namespace parallax::core {
 
     void Runtime::shutdown() {
         stop();
+        
+        foxglove_.shutdown();
         pipeline_.shutdown();
 
         if (camera_) {

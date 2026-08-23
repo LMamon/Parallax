@@ -1,5 +1,6 @@
 add_library(parallax_core STATIC
     pipeline.cpp
+    product_store.cpp
     runtime.cpp
 )
 

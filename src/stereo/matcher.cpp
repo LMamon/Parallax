@@ -2,9 +2,13 @@
 
 #include <vpi/Status.h>
 #include <vpi/algo/StereoDisparity.h>
+#include <vpi/Image.h>
+#include <vpi/algo/ConvertImageFormat.h>
 
 #include <cstdint>
 #include <iostream>
+#include <chrono>
+#include <iomanip>
 
 namespace parallax::stereo {
     namespace {
@@ -12,10 +16,9 @@ namespace parallax::stereo {
             char buffer[VPI_MAX_STATUS_MESSAGE_LENGTH]{};
             vpiGetLastStatusMessage(buffer, sizeof(buffer));
 
-            std::cerr
-                << message << ": "
-                << vpiStatusGetName(status) << " - "
-                << buffer << '\n';
+            std::cerr << message << ": "
+                      << vpiStatusGetName(status) << " - "
+                      << buffer << '\n';
         }
     }
 
@@ -48,30 +51,64 @@ namespace parallax::stereo {
             return false;
         }
 
-        if (!output_.confidence.allocate(input.width, input.height, 1, sizeof(std::uint16_t))) {
-            std::cerr << "Failed to allocate confidence buffer\n";
-            shutdown();
-            return false;
-        }
+        // if (!output_.confidence.allocate(input.width, input.height, 1, sizeof(std::uint16_t))) {
+        //     std::cerr << "Failed to allocate confidence buffer\n";
+        //     shutdown();
+        //     return false;
+        // }
         
         // Wrap all CUDA allocations without copying
         if (!left_input_.create(input.left, VPI_IMAGE_FORMAT_Y8_ER) ||
             !right_input_.create(input.right, VPI_IMAGE_FORMAT_Y8_ER) ||
-            !disparity_image_.create(output_.disparity, VPI_IMAGE_FORMAT_S16) ||
-            !confidence_image_.create(output_.confidence, VPI_IMAGE_FORMAT_U16)) {
+            !disparity_image_.create(output_.disparity, VPI_IMAGE_FORMAT_S16)) {
 
             std::cerr << "Failed to create StereoMatcher VPI wrappers\n";
             shutdown();
             return false;
         }
 
+        VPIStatus status = vpiImageCreate(static_cast<int32_t>(input.width),
+                                          static_cast<int32_t>(input.height),
+                                          VPI_IMAGE_FORMAT_Y8_ER_BL,
+                                          VPI_BACKEND_VIC | VPI_BACKEND_OFA,
+                                          &left_block_linear_);
+
+        if (status != VPI_SUCCESS) {
+            logVpiError("Failed to create left block-linear image", status);
+            shutdown();
+            return false;
+        }
+
+        status = vpiImageCreate(static_cast<int32_t>(input.width),
+                                static_cast<int32_t>(input.height),
+                                VPI_IMAGE_FORMAT_Y8_ER_BL,
+                                VPI_BACKEND_VIC | VPI_BACKEND_OFA,
+                                &right_block_linear_);
+
+        if (status != VPI_SUCCESS) {
+            logVpiError("Failed to create right block-linear image", status);
+            shutdown();
+            return false;
+        }
+
+        status = vpiImageCreate(static_cast<int32_t>(input.width),
+                                static_cast<int32_t>(input.height),
+                                VPI_IMAGE_FORMAT_S16_BL,
+                                VPI_BACKEND_OFA | VPI_BACKEND_VIC,
+                                &disparity_block_linear_);
+
+        if (status != VPI_SUCCESS) {
+            logVpiError("Failed to create block-linear disparity image", status);
+            shutdown();
+            return false;
+        }
+
         // Stereo disparity estimator creation parameters.
         VPIStereoDisparityEstimatorCreationParams create_params{};
-        VPIStatus status = vpiInitStereoDisparityEstimatorCreationParams(&create_params);
+        status = vpiInitStereoDisparityEstimatorCreationParams(&create_params);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to initialize stereo disparity creation parameters", status);
-
             shutdown();
             return false;
         }
@@ -80,17 +117,18 @@ namespace parallax::stereo {
         // Tune later based on the working distance of the rig.
         create_params.maxDisparity = 128; //256 too large for Jetson Orin NanoSDK
         create_params.downscaleFactor = 1;
+        create_params.includeDiagonals = 1;
         // 
 
-        status = vpiCreateStereoDisparityEstimator(VPI_BACKEND_CUDA,
-                                                    static_cast<int32_t>(input.width),
-                                                    static_cast<int32_t>(input.height),
-                                                    VPI_IMAGE_FORMAT_Y8_ER,
-                                                    &create_params,
-                                                    &stereo_);
+        status = vpiCreateStereoDisparityEstimator(VPI_BACKEND_OFA,
+                                                   static_cast<int32_t>(input.width),
+                                                   static_cast<int32_t>(input.height),
+                                                   VPI_IMAGE_FORMAT_Y8_ER_BL,
+                                                   &create_params,
+                                                   &stereo_);
 
         if (status != VPI_SUCCESS) {
-            logVpiError("Failed to create VPI stereo disparity estimator", status);
+            logVpiError("Failed to create OFA stereo disparity estimator", status);
             shutdown();
             return false;
         }
@@ -104,27 +142,67 @@ namespace parallax::stereo {
             return false;
         }
 
+        submit_params_.numPasses = 3;
         initialized_ = true;
         return true;
     }
 
     bool StereoMatcher::process() {
         if (!initialized_) return false;
-        // Because this uses the same stream as StereoRectifier,
-        // VPI guarantees ordering after the preceding remap work
-        VPIStatus status = vpiSubmitStereoDisparityEstimator(stream_,
-                                                            VPI_BACKEND_CUDA,
-                                                            stereo_,
-                                                            left_input_.handle(),
-                                                            right_input_.handle(),
-                                                            disparity_image_.handle(),
-                                                            confidence_image_.handle(),
-                                                            &submit_params_);
 
-            if (status != VPI_SUCCESS) {
-                logVpiError("Failed to submit VPI stereo disparity estimator", status);
-                return false;
-            }
+        VPIStatus status;
+
+        status = vpiSubmitConvertImageFormat(
+            stream_,
+            VPI_BACKEND_VIC,
+            left_input_.handle(),
+            left_block_linear_,
+            nullptr);
+
+        if (status != VPI_SUCCESS) {
+            logVpiError("Failed to convert left image to block-linear", status);
+            return false;
+        }
+
+        status = vpiSubmitConvertImageFormat(
+            stream_,
+            VPI_BACKEND_VIC,
+            right_input_.handle(),
+            right_block_linear_,
+            nullptr);
+
+        if (status != VPI_SUCCESS) {
+            logVpiError("Failed to convert right image to block-linear", status);
+            return false;
+        }
+
+        status = vpiSubmitStereoDisparityEstimator(
+            stream_,
+            VPI_BACKEND_OFA,
+            stereo_,
+            left_block_linear_,
+            right_block_linear_,
+            disparity_block_linear_,
+            nullptr,
+            &submit_params_);
+
+        if (status != VPI_SUCCESS) {
+            logVpiError("Failed to submit OFA stereo disparity estimator", status);
+            return false;
+        }
+
+        status = vpiSubmitConvertImageFormat(
+            stream_,
+            VPI_BACKEND_VIC,
+            disparity_block_linear_,
+            disparity_image_.handle(),
+            nullptr);
+
+        if (status != VPI_SUCCESS) {
+            logVpiError("Failed to convert disparity to pitch-linear", status);
+            return false;
+        }
+
         return true;
     }
 
@@ -136,6 +214,21 @@ namespace parallax::stereo {
             stereo_ = nullptr;
         }
 
+        if (left_block_linear_ != nullptr) {
+            vpiImageDestroy(left_block_linear_);
+            left_block_linear_ = nullptr;
+        }
+
+        if (right_block_linear_ != nullptr) {
+            vpiImageDestroy(right_block_linear_);
+            right_block_linear_ = nullptr;
+        }
+
+        if (disparity_block_linear_ != nullptr) {
+            vpiImageDestroy(disparity_block_linear_);
+            disparity_block_linear_ = nullptr;
+        }
+
         left_input_.release();
         right_input_.release();
 
@@ -143,7 +236,7 @@ namespace parallax::stereo {
         confidence_image_.release();
 
         output_.disparity.release();
-        output_.confidence.release();
+        // output_.confidence.release();
 
         output_.width = 0;
         output_.height = 0;

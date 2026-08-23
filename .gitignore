@@ -13,3 +13,5 @@ CMakeFiles
 *.pt
 
 pose_estimation.py
+
+*.zip

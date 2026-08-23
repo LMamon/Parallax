@@ -1,6 +1,7 @@
 #include <parallax/vpi/stream.hpp>
 
 #include <vpi/Status.h>
+#include <vpi/CUDAInterop.h>
 
 #include <iostream>
 #include <utility>
@@ -13,10 +14,9 @@ namespace {
         char buffer[VPI_MAX_STATUS_MESSAGE_LENGTH]{};
         vpiGetLastStatusMessage(buffer, sizeof(buffer));
 
-        std::cerr
-            << message << ": "
-            << vpiStatusGetName(status) << " - "
-            << buffer << '\n';
+        std::cerr << message << ": "
+                << vpiStatusGetName(status) << " - "
+                << buffer << '\n';
     }
 }
 
@@ -34,9 +34,19 @@ namespace {
     bool Stream::initialize(std::uint64_t backends) {
         if (stream_ != nullptr) { return true; }
 
-        const VPIStatus status = vpiStreamCreate(backends, &stream_);
+        if (cudaStreamCreate(&cuda_stream_) != cudaSuccess) {
+            std::cerr << "Failed to create CUDA stream\n";
+            return false;
+        }
+
+        const VPIStatus status = vpiStreamCreateWrapperCUDA(reinterpret_cast<CUstream>(cuda_stream_),
+                                                            backends,
+                                                            &stream_);
+
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to create VPI stream", status);
+            cudaStreamDestroy(cuda_stream_);
+            
             stream_ = nullptr;
             return false;
         }
@@ -58,6 +68,11 @@ namespace {
         if (stream_ != nullptr) {
             vpiStreamDestroy(stream_);
             stream_ = nullptr;
+        }
+
+        if (cuda_stream_ != nullptr) {
+            cudaStreamDestroy(cuda_stream_);
+            cuda_stream_ = nullptr;
         }
     }
 }

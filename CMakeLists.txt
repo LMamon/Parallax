@@ -70,10 +70,11 @@ set_target_properties(VPI::VPI PROPERTIES
 add_subdirectory(src/camera)
 add_subdirectory(src/core)
 add_subdirectory(src/cuda)
-add_subdirectory(src/vpi)
 add_subdirectory(src/isp)
 add_subdirectory(src/stereo)
+add_subdirectory(src/pose)
 add_subdirectory(src/visualization)
+add_subdirectory(src/vpi)
 
 # Add these when their CMakeLists.txt files exist.
 # add_subdirectory(src/bindings)
@@ -95,6 +96,7 @@ target_link_libraries(parallax
         parallax_camera
         parallax_core
         parallax_cuda
+        parallax_pose
         parallax_isp
         parallax_stereo
         parallax_visualization

@@ -1,10 +1,10 @@
 #include <parallax/core/runtime.hpp>
+#include <parallax/core/pipeline.hpp>
 
 #include <iostream>
 
 namespace parallax::core {
     Runtime::~Runtime() { shutdown(); }
-
 
     bool Runtime::initialize(const std::filesystem::path& camera_config_path,
                             const std::filesystem::path& calibration_directory) {
@@ -31,6 +31,18 @@ namespace parallax::core {
         if (!foxglove_.initialize()) {
             std::cerr << "Runtime: Failed to initialize foxglove server\n";
             shutdown();
+            return false;
+        }
+
+        const auto& rgb = pipeline_.rgb();
+        if (!publisher_.initialize(rgb.width, rgb.height, config_.frame_rate)) {
+            std::cerr << "Runtime: failed to initialize visualization publisher\n";
+            shutdown();
+            return false;
+        }
+    
+        if (!publisher_.publishLeftCalibration(pipeline_.calibration())) {
+            std::cerr << "Runtime: failed to publish left camera calibration\n";
             return false;
         }
 
@@ -62,12 +74,30 @@ namespace parallax::core {
                 camera_->release(raw_frame);
                 break;
             }
+            publisher_.publishLeftCalibration(pipeline_.calibration());
+            publisher_.publishLeftImage(*sensor_frame.rgb, sensor_frame.pose, sensor_frame.timestamp);
+            publisher_.publishDisparity(*sensor_frame.stereo);
+            publisher_.publishConfidence(*sensor_frame.stereo);
+            publisher_.publishDepth(*sensor_frame.depth);
 
             if (!camera_->release(raw_frame)) {
                 std::cerr << "Runtime: failed to release camera frame\n";
                 break;
             }
 
+            if (!pipeline_.synchronize()) {
+                std::cerr << "Runtime: pipeline synchronization failed\n";
+                break;
+            }
+
+            if (sensor_frame.rgb != nullptr) {
+                publisher_.publishLeftImage(*sensor_frame.rgb, sensor_frame.pose, sensor_frame.timestamp);
+            }
+
+            if (sensor_frame.stereo != nullptr) {
+                publisher_.publishDisparity(*sensor_frame.stereo);
+                publisher_.publishConfidence(*sensor_frame.stereo);
+            }
             // processCommands();
             // dispatch(sensor_frame);
         }
@@ -75,13 +105,12 @@ namespace parallax::core {
         running_.store(false);
     }
 
-    void Runtime::stop() noexcept {
-        running_.store(false);
-    }
+    void Runtime::stop() noexcept { running_.store(false); }
 
     void Runtime::shutdown() {
         stop();
         
+        publisher_.shutdown();
         foxglove_.shutdown();
         pipeline_.shutdown();
 

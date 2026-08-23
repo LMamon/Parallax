@@ -7,3 +7,9 @@ CMakeFiles
 *.md
 *.png
 *.npy
+
+*.engine
+*.onnx
+*.pt
+
+pose_estimation.py

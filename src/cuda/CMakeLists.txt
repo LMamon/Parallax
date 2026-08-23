@@ -1,5 +1,6 @@
 add_library(parallax_cuda
     cuda_buffer.cu
+    depth.cu
 )
 
 target_include_directories(parallax_cuda

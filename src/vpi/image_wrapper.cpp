@@ -46,9 +46,15 @@ namespace parallax::vpi {
 
         if (format == VPI_IMAGE_FORMAT_Y8_ER) params.colorSpec = VPI_COLOR_SPEC_BT601_ER;
 
-        status = vpiImageCreateWrapper(&data, &params, VPI_BACKEND_CUDA, &image_);
+        status = vpiImageCreateWrapper(&data, &params, VPI_BACKEND_CUDA | VPI_BACKEND_VIC, &image_);
         if (status != VPI_SUCCESS) {
-            std::cerr << "Failed to create VPI image wrapper\n";
+            char buffer[VPI_MAX_STATUS_MESSAGE_LENGTH]{};
+            vpiGetLastStatusMessage(buffer, sizeof(buffer));
+
+            std::cerr << "Failed to create VPI image wrapper: "
+                    << vpiStatusGetName(status)
+                    << " - " << buffer << '\n';
+
             image_ = nullptr;
             return false;
         }

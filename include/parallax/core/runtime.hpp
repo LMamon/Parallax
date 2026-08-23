@@ -6,6 +6,7 @@
 #include <parallax/core/pipeline.hpp>
 #include <parallax/core/sensor_frame.hpp>
 #include <parallax/visualization/foxglove_server.hpp>
+#include <parallax/visualization/publisher.hpp>
 
 #include <csignal>
 #include <atomic>
@@ -37,11 +38,14 @@ namespace parallax::core {
 
         private:
             parallax::camera::CameraConfig config_{};
+            
             std::unique_ptr<parallax::camera::StereoCamera> camera_;
-            Pipeline pipeline_;
             std::atomic_bool running_{false};
+            
+            Pipeline pipeline_;
             bool initialized_ = false;
-
+            
             parallax::visualization::FoxgloveServer foxglove_;
+            parallax::visualization::Publisher publisher_;
         };
 }

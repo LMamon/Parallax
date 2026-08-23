@@ -19,13 +19,9 @@ namespace parallax::cuda {
         allocate(width, height, channels, element_size);
     }
 
-    CudaBuffer::~CudaBuffer() {
-        release();
-    }
+    CudaBuffer::~CudaBuffer() { release(); }
 
-    CudaBuffer::CudaBuffer(CudaBuffer&& other) noexcept {
-        moveFrom(std::move(other));
-    }
+    CudaBuffer::CudaBuffer(CudaBuffer&& other) noexcept { moveFrom(std::move(other)); }
 
     CudaBuffer& CudaBuffer::operator=(CudaBuffer&& other) noexcept {
         if (this != &other) {
@@ -78,7 +74,7 @@ namespace parallax::cuda {
         if (device_ptr_ != nullptr) {
             /*
             * cudaFree may synchronize work that uses this allocation.
-            * We deliberately avoid cudaDeviceSynchronize(), which would
+            * deliberately avoided cudaDeviceSynchronize(), which would
             * stall unrelated work on the entire device.
             *
             * The owning pipeline must ensure that no future operation
@@ -145,33 +141,16 @@ namespace parallax::cuda {
         return error == cudaSuccess;
     }
 
-    bool CudaBuffer::isAllocated() const noexcept {
-        return device_ptr_ != nullptr;
-    }
+    bool CudaBuffer::isAllocated() const noexcept { return device_ptr_ != nullptr; }
 
-    void* CudaBuffer::data() noexcept {
-        return device_ptr_;
-    }
+    void* CudaBuffer::data() noexcept { return device_ptr_; }
+    const void* CudaBuffer::data() const noexcept { return device_ptr_; }
 
-    const void* CudaBuffer::data() const noexcept {
-        return device_ptr_;
-    }
+    std::uint32_t CudaBuffer::width() const noexcept { return width_; }
+    std::uint32_t CudaBuffer::height() const noexcept { return height_; }
 
-    std::uint32_t CudaBuffer::width() const noexcept {
-        return width_;
-    }
-
-    std::uint32_t CudaBuffer::height() const noexcept {
-        return height_;
-    }
-
-    std::uint32_t CudaBuffer::channels() const noexcept {
-        return channels_;
-    }
-
-    std::size_t CudaBuffer::elementSize() const noexcept {
-        return element_size_;
-    }
+    std::uint32_t CudaBuffer::channels() const noexcept { return channels_; }
+    std::size_t CudaBuffer::elementSize() const noexcept { return element_size_; }
 
     std::size_t CudaBuffer::bytesPerPixel() const noexcept {
         return static_cast<std::size_t>(channels_) * element_size_;
@@ -181,9 +160,7 @@ namespace parallax::cuda {
         return static_cast<std::size_t>(width_) * bytesPerPixel();
     }
 
-    std::size_t CudaBuffer::pitch() const noexcept {
-        return pitch_;
-    }
+    std::size_t CudaBuffer::pitch() const noexcept { return pitch_; }
 
     std::size_t CudaBuffer::logicalBytes() const noexcept {
         return rowBytes() * static_cast<std::size_t>(height_);
@@ -216,5 +193,4 @@ namespace parallax::cuda {
         element_size_ = 0;
         pitch_ = 0;
     }
-
-} // namespace parallax::cuda
+}

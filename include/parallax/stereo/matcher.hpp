@@ -41,6 +41,9 @@ namespace parallax::stereo {
             VPIStereoDisparityEstimatorParams submit_params_{};
 
             VPIStream stream_ = nullptr;
+            VPIImage left_block_linear_ = nullptr;
+            VPIImage right_block_linear_ = nullptr;
+            VPIImage disparity_block_linear_ = nullptr;
             bool initialized_ = false;
     };
 }

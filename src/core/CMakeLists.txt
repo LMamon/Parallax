@@ -12,6 +12,7 @@ target_link_libraries(parallax_core
     PUBLIC
         parallax_camera
         parallax_isp
+        parallax_pose
         parallax_stereo
         parallax_vpi
         parallax_visualization

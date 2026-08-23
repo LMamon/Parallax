@@ -75,7 +75,7 @@ namespace parallax::core {
                 break;
             }
             publisher_.publishLeftCalibration(pipeline_.calibration());
-            publisher_.publishLeftImage(*sensor_frame.rgb, sensor_frame.pose, sensor_frame.timestamp);
+            publisher_.publishLeftImage(*sensor_frame.rgb, sensor_frame.pose, sensor_frame.metadata.timestamp);
             publisher_.publishDisparity(*sensor_frame.stereo);
             publisher_.publishConfidence(*sensor_frame.stereo);
             publisher_.publishDepth(*sensor_frame.depth);
@@ -91,7 +91,7 @@ namespace parallax::core {
             }
 
             if (sensor_frame.rgb != nullptr) {
-                publisher_.publishLeftImage(*sensor_frame.rgb, sensor_frame.pose, sensor_frame.timestamp);
+                publisher_.publishLeftImage(*sensor_frame.rgb, sensor_frame.pose, sensor_frame.metadata.timestamp);
             }
 
             if (sensor_frame.stereo != nullptr) {

@@ -1,9 +1,8 @@
 #pragma once
 
+#include <parallax/core/product.hpp>
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/pose/charuco_pose.hpp>
-
-#include <cstdint>
 
 namespace parallax::core {
     struct SensorFrame {
@@ -11,9 +10,10 @@ namespace parallax::core {
         const parallax::isp::StereoMatchFrame* stereo = nullptr;
         const parallax::isp::DepthFrame* depth = nullptr;
 
-        std::uint64_t sequence = 0;
-        std::chrono::steady_clock::time_point timestamp;
+        // SensorFrame is still the current per-frame bundle for now.
+        // using the same metadata contract here keeps sequence/timestamp semantics
+        // consistent while the runtime moves over to individual products.
+        ProductMetadata metadata{};  
         parallax::pose::CharucoPoseResult pose;
     };
-    
 }

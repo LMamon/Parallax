@@ -183,8 +183,9 @@ namespace parallax::core {
         output.stereo = &matcher_.output();
         output.depth = &depth_;
 
-        output.sequence = sequence_++;
-        output.timestamp = std::chrono::steady_clock::now();
+        output.metadata.sequence = sequence_++;
+        output.metadata.timestamp = std::chrono::steady_clock::now();
+        output.metadata.valid = true;
 
         ++fps_frame_count_;
 

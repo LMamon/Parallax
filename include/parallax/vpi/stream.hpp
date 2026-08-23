@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vpi/Stream.h>
+#include <cuda_runtime.h>
 
 #include <cstdint>
 
@@ -27,9 +28,11 @@ namespace parallax::vpi {
             }
 
             [[nodiscard]] VPIStream handle() const noexcept { return stream_; }
+            [[nodiscard]] cudaStream_t cudaHandle() const noexcept { return cuda_stream_; }
 
         private:
             VPIStream stream_ = nullptr;
+            cudaStream_t cuda_stream_ = nullptr;
         };
 
 }

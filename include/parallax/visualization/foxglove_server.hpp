@@ -15,6 +15,8 @@ namespace parallax::visualization {
             bool initialize();
             void shutdown();
 
+            foxglove::WebSocketServer& server() noexcept { return *server_; }
+            
         private:
             std::unique_ptr<foxglove::WebSocketServer> server_;
             bool initialized_ = false;

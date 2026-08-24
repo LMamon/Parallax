@@ -23,6 +23,8 @@ namespace parallax::core {
         Confidence,
         Depth,
         Pose, 
+        Projection,
+        MarkerDepth,
         Detection,
         Track2D,
         Track3D,

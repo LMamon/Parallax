@@ -1,6 +1,7 @@
 add_library(parallax_pose
     charuco_pose.cpp
     charuco_pose_producer.cpp
+    marker_depth_producer.cpp
 )
 
 find_package(OpenCV REQUIRED)

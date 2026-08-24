@@ -16,15 +16,16 @@ namespace parallax::core {
 
     enum class ProductId : std::uint8_t {
         RawStereo, 
-        RgbLeft, 
+        RgbLeft,
+        GrayStereo,
         RectifiedGray, 
-        Disparity, 
-        Confidence, 
+        Disparity,
+        Confidence,
         Depth,
         Pose, 
-        Detection, 
-        Track2D, 
-        Track3D, 
+        Detection,
+        Track2D,
+        Track3D,
         LidarScan
     };
 }

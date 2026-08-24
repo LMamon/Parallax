@@ -1,5 +1,6 @@
 add_library(parallax_isp
     isp.cpp
+    isp_producer.cpp
     demosaic.cu
 )
 

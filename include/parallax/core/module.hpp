@@ -7,6 +7,16 @@ namespace parallax::core {
         Stopped, Running, Error
     };
 
+    /**
+     * Legacy lifecycle abstraction.
+     *
+     * Module may continue to be used temporarily for start/stop ownership while
+     * current refactor is in progress, but it does not describe
+     * graph dependencies and must not be used as the graph execution contract.
+     *
+     * New graph-facing computation should implement Producer. Lifecycle
+     * ownership will be migrated separately as the runtime is refactored.
+     */
     class Module {
         public:
             virtual ~Module() = default;

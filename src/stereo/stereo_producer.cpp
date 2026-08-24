@@ -5,7 +5,7 @@ namespace parallax::stereo {
                                    matcher_(matcher),
                                    store_(store) {}
 
-    std::string_view RectificationProducer::name() const noexcept {
+    std::string_view StereoProducer::name() const noexcept {
         return "stereo.disparity";
     }
 
@@ -17,7 +17,7 @@ namespace parallax::stereo {
         return outputs_;
     }
 
-    parallax::core::ExecutionPolicy RectificationProducer::execution_policy() const noexcept {
+    parallax::core::ExecutionPolicy StereoProducer::execution_policy() const noexcept {
         // StereoMatcher already owns the VPI execution path and its backend
         // resources. This phase preserves that specialization instead of moving
         // stereo work onto a generic CUDA/CPU execution path.

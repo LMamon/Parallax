@@ -26,7 +26,6 @@ namespace parallax::stereo {
          * stream. Resource/stream ownership is intentionally unchanged until the
          * execution-context and VPI-residency phases
          */
-
         return {parallax::core::ResourceAffinity::Gpu, false};
     }
 

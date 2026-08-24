@@ -4,11 +4,14 @@
 
 #include <chrono>
 #include <cstdint>
+#include <cstddef>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <typeindex>
 #include <unordered_map>
-
+#include <vector>
+ 
 namespace parallax::core {
     /**
      * sequence is useful when two products are expected to come from the same
@@ -39,8 +42,23 @@ namespace parallax::core {
                 // keep the whole Product<T> behind a shared handle so typed erasure
                 // here doesnt copy actual CUDA/VPI/etc payload
                 auto stored = std::make_shared<Product<T>>(std::move(product));
+                const ProductId id = stored->id;
 
-                entries_[stored->id] = Entry{std::type_index(typeid(T)), std::move(stored)};
+                Entry entry{std::type_index(typeid(T)), stored};
+                // latest-valie remains the default contract regardless of whether ProductId
+                // also opted into short bounded history.
+                entries_[id] = entry;
+                const auto history_it = histories_.find(id);
+                if (history_it == histories_.end() || history_it->second.capacity == 0) {
+                    return;
+                }
+
+                auto& history = history_it->second;
+                history.entries.push_back(std::move(entry));
+
+                while (history.entries.size() > history.capacity) {
+                    history.entries.pop_front();
+                }
             }
             
             template<typename T>
@@ -86,6 +104,27 @@ namespace parallax::core {
                 return product;
             }
 
+            // a capacity of 0 disables history for the ProductId.
+            void set_history_capacity(ProductId, std::size_t capacity);
+            
+            [[nodiscard]] std::size_t history_capacity(ProductId id) const noexcept;
+
+            template <typename T>
+            [[nodiscard]] std::vector<std::shared_ptr<const Product<T>>> history(ProductId id) const {
+                const auto it = histories_.find(id);
+                if (it == histories_.end()) return {};
+
+                std::vector<std::shared_ptr<const Product<T>>> result;
+                result.reserve(it->second.entries.size());
+
+                for (const auto& entry : it->second.entries) {
+                    if (entry.type != std::type_index(typeid(T))) return {};
+
+                    result.push_back(std::static_pointer_cast<const Product<T>>(entry.product));
+                }
+                return result;
+            }
+
             [[nodiscard]] bool contains(ProductId id) const noexcept;
             void clear() noexcept;
 
@@ -101,12 +140,18 @@ namespace parallax::core {
                 std::shared_ptr<const void> product{};
             };
 
+            struct History {
+                std::size_t capacity = 0;
+                std::deque<Entry> entries{};
+            };
+
             // one entry per ProductId on purpose. historu in opt-in later rather than 
             // making every realtime product accumulate frames by default
             
-            // replacing the current product only releases the store's reference.
+            // replacing the current product only releases the stores reference.
             // it does not invalidate an accelerator allocation that a consumer is
             // still using because Product<T> keeps the payload behind shared ownership.
             std::unordered_map<ProductId, Entry, ProductIdHash> entries_;
+            std::unordered_map<ProductId, History, ProductIdHash> histories_;
         };
 }

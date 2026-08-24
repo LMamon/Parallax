@@ -1,6 +1,7 @@
 add_library(parallax_camera
     arducam_device.cpp
     camera_config.cpp
+    camera_producer.cpp
     logger.cpp
     stereo_camera.cpp
     v4l2_device.cpp

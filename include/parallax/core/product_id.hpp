@@ -15,6 +15,16 @@ namespace parallax::core {
     // different semantic meaning in the graph.
 
     enum class ProductId : std::uint8_t {
-        RgbLeft, RectifiedGray, Disparity, Confidence, Depth, Pose, Detection, Track2D, Track3D, LidarScan
+        RawStereo, 
+        RgbLeft, 
+        RectifiedGray, 
+        Disparity, 
+        Confidence, 
+        Depth,
+        Pose, 
+        Detection, 
+        Track2D, 
+        Track3D, 
+        LidarScan
     };
 }

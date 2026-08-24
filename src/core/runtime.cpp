@@ -7,7 +7,7 @@ namespace parallax::core {
     Runtime::~Runtime() { shutdown(); }
 
     bool Runtime::initialize(const std::filesystem::path& camera_config_path,
-                            const std::filesystem::path& calibration_directory) {
+                             const std::filesystem::path& calibration_directory) {
 
         if (initialized_) return true;
         if (!config_.loadFromFile(camera_config_path)) {
@@ -21,6 +21,20 @@ namespace parallax::core {
             shutdown();
             return false;
         }
+
+        // Register the camera source boundary without changing the active capture path.
+        // Graph stores a non-owning Producer pointer, so Runtime keeps the producer alive
+        // for at least as long as graph_
+        camera_producer_ = std::make_unique<parallax::camera::CameraProducer>(*camera_, product_store_);
+
+        graph_.register_producer(*camera_producer_);
+        // Do not finalize yet. Phase 5 is still registering the concrete producer graph;
+        // cycle/dependency validation happens once the migrated producer set is complete.
+
+        // Only the camera source exists in the real graph at this migration point.
+        // Finalization is still valid here; later producer commits register the remaining
+        // image/geometry dependencies before the runtime cutover
+        graph_.finalize();
 
         if (!pipeline_.initialize(config_, calibration_directory)) {
             std::cerr << "Runtime: failed to initialize processing pipeline";
@@ -113,6 +127,11 @@ namespace parallax::core {
         publisher_.shutdown();
         foxglove_.shutdown();
         pipeline_.shutdown();
+
+        // Products must release their shared payload references before source resources
+        // are destroyed. 
+        product_store_.clear();
+        camera_producer_.reset();
 
         if (camera_) {
             camera_->shutdown();

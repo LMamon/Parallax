@@ -3,6 +3,9 @@
 #include <parallax/core/dependency_resolver.hpp>
 #include <parallax/core/graph.hpp>
 
+#include <parallax/camera/camera_producer.hpp>
+#include <parallax/core/product_store.hpp>
+
 #include <parallax/camera/camera_config.hpp>
 #include <parallax/camera/stereo_camera.hpp>
 
@@ -49,9 +52,18 @@ namespace parallax::core {
             std::unique_ptr<parallax::camera::StereoCamera> camera_;
             std::atomic_bool running_{false};
             
-            // Phase 4 graph infrastructure is owned by Runtime but remains
-            // descriptive only. Legacy Pipeline continues to execute frames
-            // until producers are migrated in later phases.
+            // Completed graph products live independently from the legacy SensorFrame
+            // compatibility path. Latest-value storage remains the default contract.
+            ProductStore product_store_;
+            
+            // Producers are owned by Runtime so every producer outlives Graph, which stores
+            // non-owning Producer pointers after registration.
+            //
+            // CameraProducer is descriptive during the early Phase 5 migration. The existing
+            // Runtime capture -> Pipeline path remains authoritative until the producer path
+            // is complete enough for the explicit runtime cutover
+            std::unique_ptr<parallax::camera::CameraProducer> camera_producer_;
+
             Graph graph_;
             DependencyResolver resolver_{graph_};
 

@@ -30,4 +30,77 @@ namespace parallax::core {
         }
         return ordered;
     }
+
+    void DependencyResolver::acquire(ProductId product, DemandSource source) {
+        auto& counts = demand_[product];
+        ++count_for(counts, source);
+    }
+
+    void DependencyResolver::release(ProductId product, DemandSource source) {
+        const auto it = demand_.find(product);
+        if (it == demand_.end()) return;
+
+        auto& count = count_for(it->second, source);
+        if (count != 0) --count;
+
+        if (it->second.application == 0 &&
+            it->second.foxglove_subscriber == 0 &&
+            it->second.internal_dependent == 0) {
+                
+                demand_.erase(it);
+        }
+    }
+
+    std::size_t DependencyResolver::demand(ProductId product, DemandSource source) const noexcept {
+        const auto it = demand_.find(product);
+        if (it == demand_.end()) {
+            return 0;
+        }
+
+        return count_for(it->second, source);
+    }
+
+    std::size_t DependencyResolver::total_demand(ProductId product) const noexcept {
+        const auto it = demand_.find(product);
+        if (it == demand_.end()) return 0;
+
+        const auto& counts = it->second;
+
+        return counts.application + counts.foxglove_subscriber + counts.internal_dependent;
+    }
+
+    std::size_t& DependencyResolver::count_for(DemandCounts& counts, DemandSource source) noexcept{
+        switch (source) {
+            case DemandSource::Application:
+                return counts.application;
+            
+            case DemandSource::FoxgloveSubscriber:
+                return counts.foxglove_subscriber;
+            
+            case DemandSource::InternalDependent:
+                return counts.internal_dependent;
+                
+            default:
+                break;
+        }
+        return counts.application;
+    }
+
+    const std::size_t& DependencyResolver::count_for(const DemandCounts& counts, DemandSource source) noexcept {
+        switch (source) {
+        case DemandSource::Application:
+            return counts.application;
+
+        case DemandSource::FoxgloveSubscriber:
+            return counts.foxglove_subscriber;
+
+        case DemandSource::InternalDependent:
+            return counts.internal_dependent;
+
+        default:
+            break;
+        }
+
+        return counts.application;
+    }
 }

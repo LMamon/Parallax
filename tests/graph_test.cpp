@@ -192,5 +192,78 @@ namespace parallax::core {
             // TestProducer::submit() is never required for graph resolution.
             // Resolution describes work; execution remains a later runtime concern.
         }
+
+        TEST(DependencyResolverTest, DemandSourcesAreCountedIndependently) {
+            Graph graph;
+            DependencyResolver resolver{graph};
+
+            resolver.acquire(ProductId::Depth, DemandSource::Application);
+            resolver.acquire(ProductId::Depth, DemandSource::FoxgloveSubscriber);
+            resolver.acquire(ProductId::Depth, DemandSource::InternalDependent);
+
+            EXPECT_EQ(resolver.demand(ProductId::Depth, DemandSource::Application), 1);
+            EXPECT_EQ(resolver.demand(ProductId::Depth, DemandSource::FoxgloveSubscriber), 1);
+            EXPECT_EQ(resolver.demand(ProductId::Depth, DemandSource::InternalDependent), 1);
+
+            EXPECT_EQ(resolver.total_demand(ProductId::Depth), 3);
+            EXPECT_TRUE(resolver.demanded(ProductId::Depth));
+        }
+
+        TEST(DependencyResolverTest, DemandIsReferenceCounted) {
+            Graph graph;
+            DependencyResolver resolver{graph};
+
+            resolver.acquire(ProductId::Depth, DemandSource::FoxgloveSubscriber);
+            resolver.acquire(ProductId::Depth, DemandSource::FoxgloveSubscriber);
+
+            EXPECT_EQ(resolver.demand(ProductId::Depth, DemandSource::FoxgloveSubscriber), 2);
+            EXPECT_EQ(resolver.total_demand(ProductId::Depth), 2);
+
+            resolver.release(ProductId::Depth, DemandSource::FoxgloveSubscriber);
+
+            EXPECT_EQ(resolver.demand(ProductId::Depth, DemandSource::FoxgloveSubscriber), 1);
+            EXPECT_TRUE(resolver.demanded(ProductId::Depth));
+        }
+
+        TEST(DependencyResolverTest, ProductStopsBeingDemandedAtZeroReferences) {
+            Graph graph;
+            DependencyResolver resolver{graph};
+
+            resolver.acquire(ProductId::Detection, DemandSource::Application);
+
+            ASSERT_TRUE(resolver.demanded(ProductId::Detection));
+
+            resolver.release(ProductId::Detection, DemandSource::Application);
+
+            EXPECT_EQ(resolver.total_demand(ProductId::Detection), 0);
+            EXPECT_FALSE(resolver.demanded(ProductId::Detection));
+
+            // Extra release is intentionally harmless.
+            resolver.release(ProductId::Detection, DemandSource::Application);
+            EXPECT_EQ(resolver.total_demand(ProductId::Detection), 0);
+        }
+
+        TEST(DependencyResolverTest, PersistentDemandRemainsUntilExplicitRelease) {
+            Graph graph;
+            DependencyResolver resolver{graph};
+
+            // A stateful command such as "track this target" is represented by
+            // application demand that persists across resolver operations until the
+            // command is explicitly cancelled.
+            resolver.acquire(ProductId::Track2D, DemandSource::Application);
+
+            EXPECT_TRUE(resolver.demanded(ProductId::Track2D));
+
+            // Resolving other work does not consume or clear persistent demand.
+            const auto resolved = resolver.resolve(ProductId::Depth);
+            EXPECT_TRUE(resolved.empty());
+
+            EXPECT_EQ(resolver.demand(ProductId::Track2D, DemandSource::Application), 1);
+            EXPECT_TRUE(resolver.demanded(ProductId::Track2D));
+
+            resolver.release(ProductId::Track2D, DemandSource::Application);
+
+            EXPECT_FALSE(resolver.demanded(ProductId::Track2D));
+        }
     }
 }

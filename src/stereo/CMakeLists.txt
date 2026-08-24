@@ -2,6 +2,7 @@ add_library(parallax_stereo
     calibration.cpp
     rectification.cpp
     rectification_producer.cpp
+    stereo_producer.cpp
     matcher.cpp
 )
 

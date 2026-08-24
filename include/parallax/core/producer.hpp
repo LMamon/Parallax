@@ -1,6 +1,7 @@
 #pragma once
 
 #include <parallax/core/product_id.hpp>
+#include <parallax/core/execution_policy.hpp>
 
 #include <string_view>
 #include <vector>
@@ -33,9 +34,9 @@ namespace parallax::core {
             [[nodiscard]] virtual const std::vector<ProductId>& inputs() const noexcept = 0;
             [[nodiscard]] virtual const std::vector<ProductId>& outputs() const noexcept = 0;
 
-            // Stateful producers retain meaningful state across submissions
-            // and will eventually require explicit lifecycle handling.
-            [[nodiscard]] virtual bool stateful() const noexcept = 0;
+            // Execution characteristics are declared separately from graph dependencies.
+            // and will eventually require explicit lifecycle handling
+            [[nodiscard]] virtual ExecutionPolicy execution_policy() const noexcept = 0;
 
             // introduce shared VPI/CUDA/TensorRT execution resources later
             virtual SubmitResult submit() = 0;

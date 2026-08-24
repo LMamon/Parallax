@@ -1,4 +1,5 @@
 #include <parallax/core/graph.hpp>
+#include <parallax/core/dependency_resolver.hpp>
 
 #include <gtest/gtest.h>
 
@@ -18,30 +19,24 @@ namespace parallax::core {
                                                                                 inputs_(std::move(inputs)),
                                                                                 outputs_(std::move(outputs)) {}
 
-                [[nodiscard]] std::string_view name() const noexcept override {
-                    return name_;
-                }
-
-                [[nodiscard]] const std::vector<ProductId>& inputs() const noexcept override {
-                    return inputs_;
-                }
-
-                [[nodiscard]] const std::vector<ProductId>& outputs() const noexcept override {
-                    return outputs_;
-                }
-
-                [[nodiscard]] ExecutionPolicy execution_policy() const noexcept override {
-                    return {};
-                }
+                [[nodiscard]] std::string_view name() const noexcept override { return name_; }
+                [[nodiscard]] const std::vector<ProductId>& inputs() const noexcept override { return inputs_; }
+                [[nodiscard]] const std::vector<ProductId>& outputs() const noexcept override { return outputs_; }
+                [[nodiscard]] ExecutionPolicy execution_policy() const noexcept override { return {}; }
 
                 SubmitResult submit() override {
+                    ++submit_count_;
                     return SubmitResult::NoWork;
                 }
+
+                [[nodiscard]] int submit_count() const noexcept { return submit_count_; }
 
             private:
                 std::string_view name_;
                 std::vector<ProductId> inputs_;
                 std::vector<ProductId> outputs_;
+                
+                int submit_count_ = 0;
         };
 
         TEST(GraphTest, ProductLookupReturnsRegisteredProducer) {
@@ -60,15 +55,9 @@ namespace parallax::core {
         TEST(GraphTest, DependenciesAreDerivedFromProductInputs) {
             Graph graph;
 
-            TestProducer camera{
-                "camera", {}, {ProductId::RgbLeft}
-            };
-            TestProducer rectifier{
-                "rectifier", {ProductId::RgbLeft}, {ProductId::RectifiedGray}
-            };
-            TestProducer stereo{
-                "stereo", {ProductId::RectifiedGray}, {ProductId::Disparity, ProductId::Confidence}
-            };
+            TestProducer camera{ "camera", {}, {ProductId::RgbLeft} };
+            TestProducer rectifier{ "rectifier", {ProductId::RgbLeft}, {ProductId::RectifiedGray} };
+            TestProducer stereo{ "stereo", {ProductId::RectifiedGray}, {ProductId::Disparity, ProductId::Confidence} };
 
             graph.register_producer(camera);
             graph.register_producer(rectifier);
@@ -107,6 +96,101 @@ namespace parallax::core {
             graph.register_producer(second);
 
             EXPECT_THROW(graph.finalize(), std::logic_error);
+        }
+
+        TEST(DependencyResolverTest, ResolvesSingleProductDependencyFirst) {
+            Graph graph;
+
+            TestProducer camera{ "camera", {}, {ProductId::RgbLeft} };
+            TestProducer rectifier{ "rectifier", {ProductId::RgbLeft}, {ProductId::RectifiedGray} };
+            TestProducer stereo{ "stereo", {ProductId::RectifiedGray}, {ProductId::Disparity, ProductId::Confidence} };
+            TestProducer depth{ "depth", {ProductId::Disparity}, {ProductId::Depth} };
+
+            graph.register_producer(camera);
+            graph.register_producer(rectifier);
+            graph.register_producer(stereo);
+            graph.register_producer(depth);
+            graph.finalize();
+
+            DependencyResolver resolver{graph};
+
+            const auto resolved = resolver.resolve(ProductId::Depth);
+
+            ASSERT_EQ(resolved.size(), 4);
+            EXPECT_EQ(resolved[0], &camera);
+            EXPECT_EQ(resolved[1], &rectifier);
+            EXPECT_EQ(resolved[2], &stereo);
+            EXPECT_EQ(resolved[3], &depth);
+        }
+
+        TEST(DependencyResolverTest, ExcludesUnrelatedBranch) {
+            Graph graph;
+
+            TestProducer camera{ "camera", {}, {ProductId::RgbLeft} };
+            TestProducer rectifier{ "rectifier", {ProductId::RgbLeft}, {ProductId::RectifiedGray} };
+            TestProducer stereo{ "stereo", {ProductId::RectifiedGray}, {ProductId::Disparity} };
+            TestProducer detector{ "detector", {ProductId::RgbLeft}, {ProductId::Detection} };
+
+            graph.register_producer(camera);
+            graph.register_producer(rectifier);
+            graph.register_producer(stereo);
+            graph.register_producer(detector);
+            graph.finalize();
+
+            DependencyResolver resolver{graph};
+
+            const auto resolved = resolver.resolve(ProductId::Detection);
+
+            ASSERT_EQ(resolved.size(), 2);
+            EXPECT_EQ(resolved[0], &camera);
+            EXPECT_EQ(resolved[1], &detector);
+        }
+
+        TEST(DependencyResolverTest, SharedDependenciesAppearOnce) {
+            Graph graph;
+
+            TestProducer camera{ "camera", {}, {ProductId::RgbLeft} };
+            TestProducer rectifier{"rectifier", {ProductId::RgbLeft}, {ProductId::RectifiedGray} };
+            TestProducer stereo{ "stereo", {ProductId::RectifiedGray}, {ProductId::Disparity} };
+            TestProducer detector{ "detector", {ProductId::RgbLeft}, {ProductId::Detection} };
+
+            graph.register_producer(camera);
+            graph.register_producer(rectifier);
+            graph.register_producer(stereo);
+            graph.register_producer(detector);
+            graph.finalize();
+
+            DependencyResolver resolver{graph};
+
+            const auto resolved = resolver.resolve(std::vector<ProductId>{ProductId::Disparity,
+                                                                          ProductId::Detection});
+
+            ASSERT_EQ(resolved.size(), 4);
+
+            EXPECT_EQ(resolved[0], &camera);
+            EXPECT_EQ(resolved[1], &rectifier);
+            EXPECT_EQ(resolved[2], &stereo);
+            EXPECT_EQ(resolved[3], &detector);
+        }
+
+        TEST(DependencyResolverTest, ResolutionDoesNotExecuteProducers) {
+            Graph graph;
+
+            TestProducer camera{ "camera", {}, {ProductId::RgbLeft} };
+
+            graph.register_producer(camera);
+            graph.finalize();
+
+            DependencyResolver resolver{graph};
+
+            const auto resolved = resolver.resolve(ProductId::RgbLeft);
+
+            ASSERT_EQ(resolved.size(), 1);
+            EXPECT_EQ(resolved[0], &camera);
+            EXPECT_EQ(camera.submit_count(), 0);
+
+            // TestProducer::submit() is never required for graph resolution.
+            // Resolution describes work; execution remains a later runtime concern.
         }
     }
 }

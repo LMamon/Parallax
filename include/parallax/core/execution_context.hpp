@@ -2,8 +2,11 @@
 
 #include <parallax/core/product_store.hpp>
 #include <parallax/vpi/stream.hpp>
+#include <parallax/core/completion.hpp>
 
 #include <cuda_runtime.h>
+
+#include <vpi/Event.h>
 
 #include <chrono>
 #include <condition_variable>
@@ -222,6 +225,18 @@ namespace parallax::core {
                 return cpu_executor_;
             }
 
+            [[nodiscard]] VPIEvent preprocessCompleteEvent() const noexcept {
+                return preprocess_complete_;
+            }
+
+            [[nodiscard]] VPIEvent stereoCompleteEvent() const noexcept {
+                return stereo_complete_;
+            }
+
+            [[nodiscard]] cudaEvent_t ispCompleteEvent() const noexcept {
+                return isp_complete_;
+            }
+
         private:
             ProductStore product_store_;
 
@@ -244,6 +259,10 @@ namespace parallax::core {
 
             // CPU work is bounded so a slow conventional consumer cannot create an ever-growing real-time backlog.
             BoundedCpuExecutor cpu_executor_;
+
+            VPIEvent preprocess_complete_ = nullptr;
+            VPIEvent stereo_complete_ = nullptr;
+            cudaEvent_t isp_complete_ = nullptr;
 
             bool initialized_ = false;      
     };

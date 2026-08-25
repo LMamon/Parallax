@@ -148,6 +148,28 @@ namespace parallax::core {
         * These are execution-capacity defaults, not producer scheduling policy.
         * Target rates, priority, freshness and supersede later behavior
         */
+
+        if (cudaStreamCreate(&neural_cuda_lane_) != cudaSuccess) {
+            shutdown();
+            return false;
+        }
+
+        if (cudaEventCreateWithFlags(&isp_complete_,
+                                    cudaEventDisableTiming) != cudaSuccess) {
+            shutdown();
+            return false;
+        }
+
+        if (vpiEventCreate(0, &preprocess_complete_) != VPI_SUCCESS) {
+            shutdown();
+            return false;
+        }
+
+        if (vpiEventCreate(0, &stereo_complete_) != VPI_SUCCESS) {
+            shutdown();
+            return false;
+        }
+
         constexpr std::size_t cpu_worker_count = 2;
         constexpr std::size_t cpu_queue_capacity = 8;
 
@@ -164,15 +186,37 @@ namespace parallax::core {
         cpu_executor_.shutdown();
         neural_tensorrt_context_ = nullptr;
 
+        /**
+         * Completion events are owned by the execution context.
+         *
+         * They do not own product buffers or execution lanes; they only represent
+         * completion points recorded on those lanes. Destroy them before destroying
+         * the streams that will eventually record/wait on them.
+         */
+        if (stereo_complete_ != nullptr) {
+            vpiEventDestroy(stereo_complete_);
+            stereo_complete_ = nullptr;
+        }
+
+        if (preprocess_complete_ != nullptr) {
+            vpiEventDestroy(preprocess_complete_);
+            preprocess_complete_ = nullptr;
+        }
+
+        if (isp_complete_ != nullptr) {
+            cudaEventDestroy(isp_complete_);
+            isp_complete_ = nullptr;
+        }
+
         if (neural_cuda_lane_ != nullptr) {
             cudaStreamDestroy(neural_cuda_lane_);
             neural_cuda_lane_ = nullptr;
         }
 
         /**
-         * adding explicit draining later once producers actually submit work to
-         * these lanes. At this point the context owns the lane lifetimes but the
-         * current Pipeline remains the active execution path.
+         * Explicit draining is added once producers actually submit work to these
+         * lanes. For this commit the context establishes completion-handle
+         * ownership and lifetime only.
          */
         conventional_pose_lane_.shutdown();
         stereo_lane_.shutdown();

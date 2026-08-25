@@ -1,7 +1,6 @@
 #pragma once
 
-#include <parallax/core/product_id.hpp>
-#include <parallax/core/execution_policy.hpp>
+#include <parallax/core/product.hpp>
 
 #include <string_view>
 #include <vector>
@@ -9,12 +8,16 @@
 namespace parallax::core {
     class ExecutionContext;
 
-    /**
-     * intentionally small for now will add:
-     * Completion events, execution resources, freshness/drop behavior, and detailed scheduling semantics
-     * later
-     */
-    enum class SubmitResult { 
+    enum class ResourceAffinity {
+        Cpu, Gpu, Io
+    };
+
+    struct ExecutionPolicy {
+        ResourceAffinity affinity = ResourceAffinity::Cpu;
+        bool async = false;
+    };
+
+    enum class SubmitResult {
         Submitted, NoWork, Failed
     };
 
@@ -27,7 +30,6 @@ namespace parallax::core {
      * 
      * Source producers are valid producers with no graph inputs.
      */
-
      class Producer {
         public:
             virtual ~Producer() = default;

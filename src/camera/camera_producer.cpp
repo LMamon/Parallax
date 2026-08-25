@@ -1,5 +1,8 @@
 #include <parallax/camera/camera_producer.hpp>
 
+#include <chrono>
+#include <memory>
+
 namespace parallax::camera {
     CameraProducer::CameraProducer(StereoCamera& camera, parallax::core::ProductStore& store) :
                                                         camera_(camera),
@@ -24,15 +27,39 @@ namespace parallax::camera {
     }
 
     parallax::core::SubmitResult CameraProducer::submit() {
+        parallax::camera::RawFrame frame{};
+        if (!camera_.capture(frame)) {
+            return parallax::core::SubmitResult::Failed;
+        }
+
         /**
-         * Capture is staying in Runtime::run() for now during migration
-         * calling StereoCamera::capture() here before switching to graph execution would 
-         * create a second consumer of the same camera stream+change the capture/release lifecycle
-         * 
-         * final graph execution will also pair every captured V4L2 buffer wih StereoCamera::release()
-         * only after dependent work no longer needs it. that lifetime transition belongs with the 
-         * Runtime cutover rather than being hidden inside this first structural producer commit.
+         * RawFrame itself is a small descriptor. Its data pointer still refers to
+         * the V4L2 buffer owned by StereoCamera.
+         *
+         * Attach release() to the shared payload lifetime so the capture buffer
+         * remains valid while downstream products still reference this source frame.
+         * Replacing/clearing the ProductStore entry eventually drops this reference
+         * and returns the V4L2 buffer to the camera.
          */
-        return parallax::core::SubmitResult::NoWork;
+        auto payload = std::shared_ptr<const parallax::camera::RawFrame>(
+            new parallax::camera::RawFrame(frame),
+                [this](const parallax::camera::RawFrame* stored) {
+                    camera_.release(*stored);
+                    delete stored;
+                }
+        );
+
+        parallax::core::ProductMetadata metadata{};
+        metadata.sequence = next_sequence_++;
+
+        // preserve+use monotonic V4L2 timestamps on the active capture path.
+        metadata.timestamp = std::chrono::steady_clock::time_point{frame.timestamp};
+        metadata.valid = true;
+
+        store_.publish(parallax::core::make_product(parallax::core::ProductId::RawStereo,
+                                                    metadata,
+                                                    std::move(payload)));
+
+        return parallax::core::SubmitResult::Submitted;
     }
 }

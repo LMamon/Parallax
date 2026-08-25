@@ -1,4 +1,7 @@
-#include <parallax/stereo/rectificiation_producer.hpp>
+#include <parallax/stereo/rectification_producer.hpp>
+#include <parallax/isp/frame_types.hpp>
+
+#include <memory>
 
 namespace parallax::stereo {
     RectificationProducer::RectificationProducer(StereoRectifier& rectifier,
@@ -30,17 +33,29 @@ namespace parallax::stereo {
     }
 
     parallax::core::SubmitResult RectificationProducer::submit() {
+        const auto gray = store_.latest<parallax::isp::StereoGrayFrame>(parallax::core::ProductId::GrayStereo);
+
+        if (!gray || !gray->valid()) {
+            return parallax::core::SubmitResult::NoWork;
+        }
+
         /**
-         * The active compatibility path already calls StereoRectifier::process()
-         * against ISP-owned device buffers. Submitting here as well would run the
-         * same remap twice and would not represent graph execution correctly.
-         *
-         * At runtime cutover, this producer will consume the compatible ISP gray
-         * product, call the existing StereoRectifier unchanged, and publish its
-         * RectifiedStereoGrayFrame without a host round trip.
+         * StereoRectifier was initialized against the same ISP-owned buffers exposed
+         * by GrayStereo. No rebinding or device copy is required here.
          */
-         
-        return parallax::core::SubmitResult::NoWork;
+        if (!rectifier_.process()) {
+            return parallax::core::SubmitResult::Failed;
+        }
+
+        auto rectified = std::shared_ptr<const parallax::isp::RectifiedStereoGrayFrame>(&rectifier_.gray(),
+                                                                                        [](const parallax::isp::RectifiedStereoGrayFrame*) 
+                                                                                        {});
+
+        store_.publish(parallax::core::make_product(parallax::core::ProductId::RectifiedGray,
+                                                    gray->metadata,
+                                                    std::move(rectified)));
+
+        return parallax::core::SubmitResult::Submitted;
     }
 
 }

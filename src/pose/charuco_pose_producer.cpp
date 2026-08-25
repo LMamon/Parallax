@@ -1,4 +1,7 @@
 #include <parallax/pose/charuco_pose_producer.hpp>
+#include <parallax/isp/frame_types.hpp>
+
+#include <memory>
 
 namespace parallax::pose {
     CharucoPoseProducer::CharucoPoseProducer(CharucoPose& pose,
@@ -27,21 +30,31 @@ namespace parallax::pose {
     }
 
     parallax::core::SubmitResult CharucoPoseProducer::submit() {
-        /**
-         * The compatibility path already invokes CharucoPose::process() for the
-         * current rectified frame. Calling it here now would duplicate detection
-         * and pose estimation rather than transfer orchestration ownership.
-         *
-         * At graph cutover this producer will consume the compatible
-         * RectifiedGray product, run the existing CharucoPose implementation,
-         * and publish compact pose metadata with the source frame identity and
-         * timestamp preserved.
-         *
-         * Projection and marker-depth composition stay outside this producer.
-         * Those are derived products with different dependencies and are exposed
-         * separately in the next migration commit.
-         */
+        const auto rectified = store_.latest<parallax::isp::RectifiedStereoGrayFrame>(
+                                                parallax::core::ProductId::RectifiedGray);
 
-        return parallax::core::SubmitResult::NoWork;
+        if (!rectified || !rectified->valid()) {
+            return parallax::core::SubmitResult::NoWork;
+        }
+
+        auto result = std::make_shared<parallax::pose::CharucoPoseResult>();
+
+        if (!pose_.process(*rectified->payload, *result)) {
+            return parallax::core::SubmitResult::Failed;
+        }
+
+        // Metric stereo depth is composed later. Pose stays independently usable.
+        result->depth_valid = false;
+        result->depth_m = 0.0f;
+
+        // Template deduction doesnt perform const conversion. so finish 
+        // mutating the result, then explicitly convert it to a const shared pointer before publication
+        std::shared_ptr<const parallax::pose::CharucoPoseResult> published_result = std::move(result);
+
+        store_.publish(parallax::core::make_product(parallax::core::ProductId::Pose,
+                                                    rectified->metadata,
+                                                    std::move(published_result)));
+
+        return parallax::core::SubmitResult::Submitted;
     }
 }

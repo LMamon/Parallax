@@ -4,6 +4,8 @@
 #include <parallax/core/product_store.hpp>
 
 #include <parallax/stereo/calibration.hpp>
+#include <parallax/isp/frame_types.hpp>
+#include <parallax/vpi/stream.hpp>
 
 #include <vector>
 
@@ -23,7 +25,10 @@ namespace parallax::stereo {
      */
     class DepthProducer final : public parallax::core::Producer {
         public:
-            DepthProducer(const StereoCalibration& calibration, parallax::core::ProductStore& store);
+            DepthProducer(const StereoCalibration& calibration, 
+                          parallax::isp::DepthFrame& depth,
+                          parallax::vpi::Stream& stream,
+                          parallax::core::ProductStore& store);
 
             [[nodiscard]] std::string_view name() const noexcept override;
             
@@ -38,7 +43,12 @@ namespace parallax::stereo {
             // supplies fx and baseline geometry used by  disparity-to-depth conversion
             // calibration lifetime is owned outside the producer.
             const StereoCalibration& calibration_;
-
+            
+            
+            // moves orchestration without duplicating accelerator allocations.
+            parallax::isp::DepthFrame& depth_;
+            parallax::vpi::Stream& stream_;
+            
             parallax::core::ProductStore& store_;
             const std::vector<parallax::core::ProductId> inputs_{
                 parallax::core::ProductId::Disparity

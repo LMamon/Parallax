@@ -1,9 +1,16 @@
 #include <parallax/stereo/depth_producer.hpp>
+#include <parallax/cuda/depth.cuh>
+
+#include <memory>
 
 namespace parallax::stereo {
     DepthProducer::DepthProducer(const StereoCalibration& calibration,
+                                 parallax::isp::DepthFrame& depth,
+                                 parallax::vpi::Stream& stream,
                                  parallax::core::ProductStore& store) :
                                  calibration_(calibration),
+                                 depth_(depth),
+                                 stream_(stream),
                                  store_(store) {}
 
     std::string_view DepthProducer::name() const noexcept {
@@ -19,23 +26,39 @@ namespace parallax::stereo {
     }
 
     parallax::core::ExecutionPolicy DepthProducer::execution_policy() const noexcept {
-        // The current disparity-to-depth implementation is a CUDA kernel.
-        // Accelerator ownership is preserved during the graph refactor rather
-        // than replacing working device code with host-side conversion.
         return {parallax::core::ResourceAffinity::Gpu, false};
     }
 
     parallax::core::SubmitResult DepthProducer::submit() {
+        const auto disparity = store_.latest<parallax::isp::StereoMatchFrame>(parallax::core::ProductId::Disparity);
+
+        if (!disparity || !disparity->valid()) {
+            return parallax::core::SubmitResult::NoWork;
+        }
+        
+        if (!parallax::cuda::disparityToDepth(disparity->payload->disparity, 
+                                              depth_.depth, 
+                                              static_cast<float>(calibration_.metadata().virtual_fx),
+                                              static_cast<float>(calibration_.metadata().baseline_mm / 1000.0),
+                                              parallax::isp::StereoMatchFrame::DisparityScale,
+                                              stream_.cudaHandle())) {
+
+            return parallax::core::SubmitResult::Failed;
+        }
         /**
-         * current path already allocates the depth output and invokes
-         * parallax::cuda::disparityToDepth() on the existing CUDA stream.
-         * Repeating that work here would duplicate depth computation rather than
-         * migrate its ownership.
-         *
-         * Once graph execution becomes authoritative, this producer will consume
-         * Disparity, retain device residency, invoke the existing CUDA conversion,
-         * and publish Depth with the same source timestamp/sequence lineage.
+         * Preserve the existing synchronization boundary before CPU pose/depth
+         * association can inspect results from this stream.
          */
-        return parallax::core::SubmitResult::NoWork;
+        if (!stream_.synchronize()) {
+            return parallax::core::SubmitResult::Failed;
+        }
+
+        auto depth = std::shared_ptr<const parallax::isp::DepthFrame>(&depth_, [](const parallax::isp::DepthFrame*) {});
+
+        store_.publish(parallax::core::make_product(parallax::core::ProductId::Depth,
+                                                    disparity->metadata,
+                                                    std::move(depth)));
+
+        return parallax::core::SubmitResult::Submitted;
     }
 }

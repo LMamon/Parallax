@@ -1,4 +1,7 @@
 #include <parallax/stereo/stereo_producer.hpp>
+#include <parallax/isp/frame_types.hpp>
+
+#include <memory>
 
 namespace parallax::stereo {
     StereoProducer::StereoProducer(StereoMatcher& matcher, parallax::core::ProductStore& store) :
@@ -25,16 +28,33 @@ namespace parallax::stereo {
     }
 
     parallax::core::SubmitResult StereoProducer::submit() {
+        const auto rectified = store_.latest<parallax::isp::RectifiedStereoGrayFrame>(
+                                                parallax::core::ProductId::RectifiedGray);
+
+        if (!rectified || !rectified->valid()) {
+            return parallax::core::SubmitResult::NoWork;
+        }
+
+        if (!matcher_.process()) {
+            return parallax::core::SubmitResult::Failed;
+        }
+
         /**
-         * the compatibility path already submits StereoMatcher::process() after
-         * rectification. Running it here now would duplicate disparity work and
-         * interfere with the existing VPI resource lifecycle.
-         *
-         * Once graph execution becomes authoritative, this producer consumes th
-         * completed RectifiedGray product, invokes the existing matcher, and
-         * publishes handles to its disparity/confidence storage. No host staging
-         * belongs at this graph boundary.
+         * StereoMatcher computes disparity and confidence together into one
+         * StereoMatchFrame. Both ProductIds intentionally reference that same
+         * device-resident payload.
          */
-        return parallax::core::SubmitResult::NoWork;
+        auto match = std::shared_ptr<const parallax::isp::StereoMatchFrame>(&matcher_.output(),
+                                                                            [](const parallax::isp::StereoMatchFrame*) {});
+
+        store_.publish(parallax::core::make_product(parallax::core::ProductId::Disparity,
+                                                    rectified->metadata,
+                                                    match));
+
+        store_.publish(parallax::core::make_product(parallax::core::ProductId::Confidence,
+                                                    rectified->metadata,
+                                                    std::move(match)));
+
+        return parallax::core::SubmitResult::Submitted;
     }
 }

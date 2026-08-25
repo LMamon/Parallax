@@ -6,7 +6,7 @@
 #include <parallax/camera/camera_config.hpp>
 #include <parallax/camera/stereo_camera.hpp>
 
-#include <parallax/core/product_store.hpp>
+#include <parallax/core/execution_context.hpp>
 #include <parallax/core/pipeline.hpp>
 #include <parallax/core/sensor_frame.hpp>
 #include <parallax/core/graph.hpp>
@@ -67,9 +67,14 @@ namespace parallax::core {
             std::atomic_bool running_{false};
             std::thread lidar_thread_;
             
-            // Completed graph products live independently from the legacy SensorFrame
-            // compatibility path. Latest-value storage remains the default contract.
-            ProductStore product_store_;
+            /**
+             * Runtime-scoped shared execution infrastructure.
+             *
+             * ExecutionContext owns completed graph products and the accelerator/CPU
+             * execution lanes introduced in Phase 6. Runtime owns the context so its
+             * lifetime encloses all producer submission.
+             */
+            ExecutionContext context_;
             
             // Producers are owned by Runtime because Graph stores non-owning Producer
             // pointers. Pipeline continues to own the underlying processing resources.

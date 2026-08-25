@@ -41,7 +41,8 @@ namespace parallax::lidar {
     }
 
 
-    parallax::core::SubmitResult RplidarSourceProducer::submit() {
+    parallax::core::SubmitResult RplidarSourceProducer::submit(parallax::core::ExecutionContext& context) {
+        (void)context;
         auto scan = std::make_shared<LidarScan>();
 
         if (!lidar_.capture(*scan)) {

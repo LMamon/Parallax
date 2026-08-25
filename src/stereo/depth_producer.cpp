@@ -29,7 +29,8 @@ namespace parallax::stereo {
         return {parallax::core::ResourceAffinity::Gpu, false};
     }
 
-    parallax::core::SubmitResult DepthProducer::submit() {
+    parallax::core::SubmitResult DepthProducer::submit(parallax::core::ExecutionContext& context) {
+        (void)context;
         const auto disparity = store_.latest<parallax::isp::StereoMatchFrame>(parallax::core::ProductId::Disparity);
 
         if (!disparity || !disparity->valid()) {

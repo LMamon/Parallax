@@ -30,7 +30,7 @@ namespace parallax::camera {
             const std::vector<parallax::core::ProductId>& outputs() const noexcept override;
 
             [[nodiscard]] parallax::core::ExecutionPolicy execution_policy() const noexcept override;
-            parallax::core::SubmitResult submit() override;
+            parallax::core::SubmitResult submit(parallax::core::ExecutionContext& context) override;
 
         private:
             StereoCamera& camera_;

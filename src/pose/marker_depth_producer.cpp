@@ -29,7 +29,8 @@ namespace parallax::pose {
         return {parallax::core::ResourceAffinity::Cpu, false};
     }
 
-    parallax::core::SubmitResult MarkerDepthPoducer::submit() {
+    parallax::core::SubmitResult MarkerDepthPoducer::submit(parallax::core::ExecutionContext& context) {
+        (void)context;
         const auto pose = store_.latest<parallax::pose::CharucoPoseResult>(parallax::core::ProductId::Pose);
 
         if (!pose || !pose->valid()) {

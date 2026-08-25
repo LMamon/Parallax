@@ -26,8 +26,9 @@ namespace parallax::camera {
         return {parallax::core::ResourceAffinity::Cpu, false};
     }
 
-    parallax::core::SubmitResult CameraProducer::submit() {
+    parallax::core::SubmitResult CameraProducer::submit(parallax::core::ExecutionContext& context) {
         parallax::camera::RawFrame frame{};
+        (void)context;
         if (!camera_.capture(frame)) {
             return parallax::core::SubmitResult::Failed;
         }

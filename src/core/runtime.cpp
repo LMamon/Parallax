@@ -9,11 +9,16 @@
 namespace parallax::core {
     Runtime::~Runtime() { shutdown(); }
 
-    bool Runtime::initialize(
-        const std::filesystem::path& camera_config_path,
-        const std::filesystem::path& calibration_directory) {
+    bool Runtime::initialize(const std::filesystem::path& camera_config_path,
+                             const std::filesystem::path& calibration_directory) {
 
         if (initialized_) return true;
+
+        if (!context_.initialize()) {
+            std::cerr << "Runtime: failed to initialize execution context\n";
+            shutdown();
+            return false;
+        }
 
         if (!config_.loadFromFile(camera_config_path)) {
             std::cerr << "Runtime: failed to load camera config\n";
@@ -51,29 +56,29 @@ namespace parallax::core {
          * graph. Graph stores non-owning Producer pointers, so Runtime owns every
          * producer for the lifetime of the graph.
          */
-        camera_producer_ = std::make_unique<parallax::camera::CameraProducer>(*camera_, product_store_);
-        lidar_producer_ = std::make_unique<parallax::lidar::RplidarSourceProducer>(*lidar_, product_store_);
-        isp_producer_ = std::make_unique<parallax::isp::IspProducer>(pipeline_.isp(), product_store_);
+        camera_producer_ = std::make_unique<parallax::camera::CameraProducer>(*camera_, context_.products());
+        lidar_producer_ = std::make_unique<parallax::lidar::RplidarSourceProducer>(*lidar_, context_.products());
+        isp_producer_ = std::make_unique<parallax::isp::IspProducer>(pipeline_.isp(), context_.products());
 
         rectification_producer_ = std::make_unique<parallax::stereo::RectificationProducer>(
                                                    pipeline_.rectifier(),
                                                    pipeline_.calibration(),
-                                                   product_store_);
+                                                   context_.products());
 
-        stereo_producer_ = std::make_unique<parallax::stereo::StereoProducer>(pipeline_.matcher(), product_store_);
+        stereo_producer_ = std::make_unique<parallax::stereo::StereoProducer>(pipeline_.matcher(), context_.products());
 
         depth_producer_ = std::make_unique<parallax::stereo::DepthProducer>(
                                            pipeline_.calibration(),
                                            pipeline_.depth(),
                                            pipeline_.vpiStream(),
-                                           product_store_);
+                                           context_.products());
 
         charuco_pose_producer_ = std::make_unique<parallax::pose::CharucoPoseProducer>(
                                                   pipeline_.charucoPose(),
                                                   pipeline_.calibration(),
-                                                  product_store_);
+                                                  context_.products());
 
-        marker_depth_producer_ = std::make_unique<parallax::pose::MarkerDepthPoducer>(product_store_);
+        marker_depth_producer_ = std::make_unique<parallax::pose::MarkerDepthPoducer>(context_.products());
 
         /**
          * Registration describes the complete concrete dependency graph.
@@ -148,7 +153,7 @@ namespace parallax::core {
                     break;
                 }
 
-                const SubmitResult result = producer->submit();
+                const SubmitResult result = producer->submit(context_);
 
                 if (result == SubmitResult::Failed) {
                     std::cerr << "Runtime: producer failed: " << producer->name() << '\n';
@@ -178,9 +183,9 @@ namespace parallax::core {
 
             failed_frames = 0;
 
-            const auto marker = product_store_.latest<parallax::pose::CharucoPoseResult>(ProductId::MarkerDepth);
-            const auto stereo = product_store_.latest<parallax::isp::StereoMatchFrame>(ProductId::Disparity);
-            const auto depth = product_store_.latest<parallax::isp::DepthFrame>(ProductId::Depth);
+            const auto marker = context_.products().latest<parallax::pose::CharucoPoseResult>(ProductId::MarkerDepth);
+            const auto stereo = context_.products().latest<parallax::isp::StereoMatchFrame>(ProductId::Disparity);
+            const auto depth = context_.products().latest<parallax::isp::DepthFrame>(ProductId::Depth);
 
             if (!marker || !marker->valid() ||
                 !stereo || !stereo->valid() ||
@@ -229,7 +234,7 @@ namespace parallax::core {
                     return;
                 }
 
-                const SubmitResult result = producer->submit();
+                const SubmitResult result = producer->submit(context_);
                 if (result == SubmitResult::Failed) {
                     /**
                     * A LiDAR acquisition failure does not invalidate the camera
@@ -251,7 +256,7 @@ namespace parallax::core {
         stop();
 
         if (lidar_thread_.joinable()) lidar_thread_.join();
-        
+
         publisher_.shutdown();
         foxglove_.shutdown();
 
@@ -260,7 +265,7 @@ namespace parallax::core {
          * resources they reference. Producers are destroyed before their backing
          * devices because Graph stores only non-owning producer pointers.
          */
-        product_store_.clear();
+        context_.products().clear();
 
         marker_depth_producer_.reset();
         charuco_pose_producer_.reset();
@@ -272,17 +277,18 @@ namespace parallax::core {
         camera_producer_.reset();
 
         pipeline_.shutdown();
-
+        
         if (lidar_) {
             lidar_->shutdown();
             lidar_.reset();
         }
-
+        
         if (camera_) {
             camera_->shutdown();
             camera_.reset();
         }
-
+        
+        context_.shutdown();
         initialized_ = false;
     }
 }

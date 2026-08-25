@@ -30,7 +30,7 @@ namespace parallax::stereo {
 
             [[nodiscard]] parallax::core::ExecutionPolicy execution_policy() const noexcept override;
         
-            parallax::core::SubmitResult submit() override;
+            parallax::core::SubmitResult submit(parallax::core::ExecutionContext& context) override;
 
         private:
             StereoMatcher& matcher_;

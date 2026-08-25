@@ -24,7 +24,8 @@ namespace parallax::core {
                 [[nodiscard]] const std::vector<ProductId>& outputs() const noexcept override { return outputs_; }
                 [[nodiscard]] ExecutionPolicy execution_policy() const noexcept override { return {}; }
 
-                SubmitResult submit() override {
+                SubmitResult submit(ExecutionContext& context) override {
+                    (void)context;
                     ++submit_count_;
                     return SubmitResult::NoWork;
                 }

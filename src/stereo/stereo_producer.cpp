@@ -27,7 +27,8 @@ namespace parallax::stereo {
         return {parallax::core::ResourceAffinity::Gpu, false};
     }
 
-    parallax::core::SubmitResult StereoProducer::submit() {
+    parallax::core::SubmitResult StereoProducer::submit(parallax::core::ExecutionContext& context) {
+        (void)context;
         const auto rectified = store_.latest<parallax::isp::RectifiedStereoGrayFrame>(
                                                 parallax::core::ProductId::RectifiedGray);
 

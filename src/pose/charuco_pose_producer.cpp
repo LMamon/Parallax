@@ -29,7 +29,8 @@ namespace parallax::pose {
         return {parallax::core::ResourceAffinity::Cpu, false};
     }
 
-    parallax::core::SubmitResult CharucoPoseProducer::submit() {
+    parallax::core::SubmitResult CharucoPoseProducer::submit(parallax::core::ExecutionContext& context) {
+        (void)context;
         const auto rectified = store_.latest<parallax::isp::RectifiedStereoGrayFrame>(
                                                 parallax::core::ProductId::RectifiedGray);
 

@@ -27,7 +27,8 @@ namespace parallax::isp {
         return {parallax::core::ResourceAffinity::Gpu, false};
     }
 
-    parallax::core::SubmitResult IspProducer::submit() {
+    parallax::core::SubmitResult IspProducer::submit(parallax::core::ExecutionContext& context) {
+        (void)context;
         const auto raw = store_.latest<parallax::camera::RawFrame>(parallax::core::ProductId::RawStereo);
 
         if (!raw || !raw->valid()) {

@@ -7,10 +7,11 @@
 #include <vector>
 
 namespace parallax::core {
+    class ExecutionContext;
+
     /**
      * intentionally small for now will add:
      * Completion events, execution resources, freshness/drop behavior, and detailed scheduling semantics
-     * 
      * later
      */
     enum class SubmitResult { 
@@ -38,8 +39,13 @@ namespace parallax::core {
             // and will eventually require explicit lifecycle handling
             [[nodiscard]] virtual ExecutionPolicy execution_policy() const noexcept = 0;
 
-            // introduce shared VPI/CUDA/TensorRT execution resources later
-            virtual SubmitResult submit() = 0;
-        
+            /**
+            * Submit producer work using Runtime-owned shared execution resources.
+            *
+            * Producers continue to own/reference their algorithm-specific state. The
+            * context supplies infrastructure shared across producer families: product
+            * storage, execution lanes, timing, and later completion dependencies.
+            */
+            virtual SubmitResult submit(ExecutionContext& context) = 0;
      };
 }

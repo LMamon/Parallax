@@ -137,6 +137,7 @@ namespace parallax::core {
         };
 
         const auto execution_plan = resolver_.resolve(requested_products);
+        lidar_thread_ = std::thread(&Runtime::runLidarSource, this);
 
         while (running_.load() && !stop_requested) {
             bool frame_failed = false;
@@ -204,6 +205,44 @@ namespace parallax::core {
             // dispatch(products);
         }
         running_.store(false);
+        if (lidar_thread_.joinable()) lidar_thread_.join();
+    }
+
+    void Runtime::runLidarSource() {
+        /**
+        * Resolve the independently clocked LiDAR branch once. LidarScan is a
+        * source product, so the expected plan contains only the RPLIDAR producer.
+        *
+        * Keeping this plan on its own worker prevents blocking SLAMTEC SDK reads
+        * from setting the cadence of the camera/stereo branch.
+        */
+        const auto execution_plan = resolver_.resolve(ProductId::LidarScan);
+        if (execution_plan.empty()) {
+            std::cerr << "Runtime: no producer available for lidarscan\n";
+            return;
+        }
+
+        while (running_.load()) {
+            for (Producer* producer : execution_plan) {
+                if (producer == nullptr) {
+                    std::cerr << "Runtime: null producer in lidar execution plan\n";
+                    return;
+                }
+
+                const SubmitResult result = producer->submit();
+                if (result == SubmitResult::Failed) {
+                    /**
+                    * A LiDAR acquisition failure does not invalidate the camera
+                    * branch. Stop this source worker without taking down unrelated
+                    * products; source-health policy can become more sophisticated
+                    * in the later
+                    */
+                   std::cerr << "Runtime: lidar producer failed: " << producer->name() << "\n";
+                   return;
+                }
+                if (result == SubmitResult::NoWork) continue;
+            }
+        }
     }
 
     void Runtime::stop() noexcept { running_.store(false); }
@@ -211,6 +250,8 @@ namespace parallax::core {
     void Runtime::shutdown() {
         stop();
 
+        if (lidar_thread_.joinable()) lidar_thread_.join();
+        
         publisher_.shutdown();
         foxglove_.shutdown();
 

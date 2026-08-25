@@ -30,6 +30,7 @@
 #include <atomic>
 #include <filesystem>
 #include <memory>
+#include <thread>
 
 namespace parallax::core {
     class Runtime {
@@ -59,10 +60,12 @@ namespace parallax::core {
             [[nodiscard]] const DependencyResolver& resolver() const noexcept { return resolver_; }
 
         private:
+            void runLidarSource();
             parallax::camera::CameraConfig config_{};
             
             std::unique_ptr<parallax::camera::StereoCamera> camera_;
             std::atomic_bool running_{false};
+            std::thread lidar_thread_;
             
             // Completed graph products live independently from the legacy SensorFrame
             // compatibility path. Latest-value storage remains the default contract.

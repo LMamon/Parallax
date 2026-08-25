@@ -2,6 +2,7 @@
 
 #include <parallax/core/product.hpp>
 
+#include <iostream>
 #include <chrono>
 #include <memory>
 #include <utility>
@@ -61,17 +62,21 @@ namespace parallax::lidar {
         if (!metadata.valid) {
             return parallax::core::SubmitResult::NoWork;
         }
-
+        
+        const std::size_t point_count = scan->points.size();
         // Product payloads become immutable once published. Finish building the
         // scan first, then explicitly convert to the const shared-pointer type
         // expected by make_product().
         std::shared_ptr<const LidarScan> published_scan = std::move(scan);
 
-        store_.publish(parallax::core::make_product(parallax::core::ProductId::LidarScan,
-                                                    metadata,
-                                                    std::move(published_scan)));
+       store_.publish(parallax::core::make_product(parallax::core::ProductId::LidarScan, 
+                                                   metadata, 
+                                                   std::move(published_scan)));
+        if (sequence_ % 10 == 0) {
+            std::cout << "RPLIDAR: scan " << sequence_
+                      << " | points=" << point_count << '\n';
+        }
 
         return parallax::core::SubmitResult::Submitted;
     }
-
 }

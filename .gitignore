@@ -4,7 +4,7 @@ log
 
 CMakeFiles
 
-*.md
+# *.md
 *.png
 *.npy
 

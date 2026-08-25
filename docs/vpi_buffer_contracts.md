@@ -68,3 +68,19 @@ CUDA pitch-linear S16 disparity
     | custom CUDA kernel
     v
 CUDA pitch-linear depth
+
+```
+
+## Rectification Residency Decision
+
+The original plan was to migrate rectification intermediates
+to VPI-native storage.
+
+After checking the VPI 3.2 backend contracts against the working
+implementation, the stereo geometry path will enter VPI-native
+block-linear storage immediately after the CUDA ISP grayscale output.
+
+The ISP continues to produce grayscale as:
+
+```text
+VPI_IMAGE_FORMAT_Y8_ER

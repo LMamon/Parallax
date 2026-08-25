@@ -66,7 +66,11 @@ namespace parallax::stereo {
             shutdown();
             return false;
         }
-
+        // OFA in VPI 3.2 requires block-linear stereo input.
+        //
+        // Rectification intentionally remains pitch-linear Y8_ER because VPI Remap
+        // requires input/output format equality. VIC performs the required layout
+        // transition here without CPU staging.
         VPIStatus status = vpiImageCreate(static_cast<int32_t>(input.width),
                                           static_cast<int32_t>(input.height),
                                           VPI_IMAGE_FORMAT_Y8_ER_BL,
@@ -79,6 +83,11 @@ namespace parallax::stereo {
             return false;
         }
 
+        // OFA in VPI 3.2 requires block-linear stereo input.
+        //
+        // Rectification intentionally remains pitch-linear Y8_ER because VPI Remap
+        // requires input/output format equality. VIC performs the required layout
+        // transition here without CPU staging.
         status = vpiImageCreate(static_cast<int32_t>(input.width),
                                 static_cast<int32_t>(input.height),
                                 VPI_IMAGE_FORMAT_Y8_ER_BL,
@@ -91,6 +100,9 @@ namespace parallax::stereo {
             return false;
         }
 
+
+        // OFA-only stereo requires block-linear S16 disparity. Values are Q10.5
+        // fixed point and retain the existing StereoMatchFrame::DisparityScale = 32.
         status = vpiImageCreate(static_cast<int32_t>(input.width),
                                 static_cast<int32_t>(input.height),
                                 VPI_IMAGE_FORMAT_S16_BL,
@@ -152,51 +164,47 @@ namespace parallax::stereo {
 
         VPIStatus status;
 
-        status = vpiSubmitConvertImageFormat(
-            stream_,
-            VPI_BACKEND_VIC,
-            left_input_.handle(),
-            left_block_linear_,
-            nullptr);
+        status = vpiSubmitConvertImageFormat(stream_,
+                                            VPI_BACKEND_VIC,
+                                            left_input_.handle(),
+                                            left_block_linear_,
+                                            nullptr);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to convert left image to block-linear", status);
             return false;
         }
 
-        status = vpiSubmitConvertImageFormat(
-            stream_,
-            VPI_BACKEND_VIC,
-            right_input_.handle(),
-            right_block_linear_,
-            nullptr);
+        status = vpiSubmitConvertImageFormat(stream_,
+                                            VPI_BACKEND_VIC,
+                                            right_input_.handle(),
+                                            right_block_linear_,
+                                            nullptr);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to convert right image to block-linear", status);
             return false;
         }
 
-        status = vpiSubmitStereoDisparityEstimator(
-            stream_,
-            VPI_BACKEND_OFA,
-            stereo_,
-            left_block_linear_,
-            right_block_linear_,
-            disparity_block_linear_,
-            nullptr,
-            &submit_params_);
+        status = vpiSubmitStereoDisparityEstimator(stream_,
+                                                   VPI_BACKEND_OFA,
+                                                   stereo_,
+                                                   left_block_linear_,
+                                                   right_block_linear_,
+                                                   disparity_block_linear_,
+                                                   nullptr,
+                                                   &submit_params_);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to submit OFA stereo disparity estimator", status);
             return false;
         }
 
-        status = vpiSubmitConvertImageFormat(
-            stream_,
-            VPI_BACKEND_VIC,
-            disparity_block_linear_,
-            disparity_image_.handle(),
-            nullptr);
+        status = vpiSubmitConvertImageFormat(stream_,
+                                             VPI_BACKEND_VIC,
+                                             disparity_block_linear_,
+                                             disparity_image_.handle(),
+                                             nullptr);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to convert disparity to pitch-linear", status);
@@ -233,7 +241,6 @@ namespace parallax::stereo {
         right_input_.release();
 
         disparity_image_.release();
-        confidence_image_.release();
 
         output_.disparity.release();
         // output_.confidence.release();

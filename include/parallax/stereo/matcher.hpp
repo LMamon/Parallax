@@ -27,44 +27,38 @@ namespace parallax::stereo {
             [[nodiscard]] bool initialized() const noexcept { return initialized_; }
         
         private:
-            // Public stereo-match product currently exposes CUDA-owned,
-            // pitch-linear disparity storage so the downstream CUDA depth
-            // kernel can consume it directly.
+            // Published disparity remains CUDA-owned, pitch-linear S16 because
+            // the downstream depth implementation is a custom CUDA kernel.
             parallax::isp::StereoMatchFrame output_{};
-
-            // Non-owning VPI wrappers over the rectifier's CUDA-owned,
-            // pitch-linear Y8 grayscale inputs.
+            // Non-owning VPI views over rectifier-owned CUDA pitch-linear
+            // VPI_IMAGE_FORMAT_Y8_ER images. Wrapping does not copy or transfer
+            // ownership of the underlying CUDA allocations.
             parallax::vpi::ImageWrapper left_input_;
             parallax::vpi::ImageWrapper right_input_;
-
-            // Non-owning wrappers over CUDA-owned pitch-linear stereo outputs.
-            // disparity_image_ is the current destination of the
-            // block-linear -> pitch-linear conversion after OFA.
+            // Non-owning VPI view over the published CUDA S16 disparity buffer.
+            // VIC writes the OFA block-linear result into this pitch-linear
+            // representation before publication.
             parallax::vpi::ImageWrapper disparity_image_;
-            parallax::vpi::ImageWrapper confidence_image_;
-
-            // VPI-owned OFA stereo estimator and its reusable submit params.
             VPIPayload stereo_ = nullptr;
             VPIStereoDisparityEstimatorParams submit_params_{};
-
-            // Borrowed shared execution stream; lifecycle is owned externally.
+            // Borrowed shared VPI stream. StereoMatcher does not own or destroy
+            // the stream.
             VPIStream stream_ = nullptr;
 
-            // VPI-owned block-linear images required by the VIC/OFA path.
+            // 8-bit extended-range grayscale, block-linear.
             //
-            // Current path:
-            // pitch-linear Y8
-            //   -> VIC conversion
-            //   -> Y8_ER_BL
-            //   -> OFA stereo
-            //   -> S16_BL
-            //   -> VIC conversion
-            //   -> pitch-linear CUDA disparity
-            //
-            // remove conversions only when downstream ownership/layout
-            // contracts make them unnecessary.
+            // The OFA backend requires block-linear stereo input in VPI 3.2.
+            // VIC converts the rectified pitch-linear Y8_ER images into these
+            // VPI-owned buffers without CPU staging.
             VPIImage left_block_linear_ = nullptr;
             VPIImage right_block_linear_ = nullptr;
+
+            // Signed Q10.5 disparity, block-linear.
+            //
+            // OFA-only stereo requires VPI_IMAGE_FORMAT_S16_BL output.
+            // The result is converted by VIC to pitch-linear S16 only because
+            // the downstream custom CUDA depth kernel requires CUDA-accessible
+            // pitch-linear storage.
             VPIImage disparity_block_linear_ = nullptr;
             bool initialized_ = false;
     };

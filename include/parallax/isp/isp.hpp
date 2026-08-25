@@ -61,6 +61,5 @@ namespace parallax::isp {
             StereoGrayFrame gray_output_{};
 
             bool initialized_ = false;
-            bool initialized_ = false;
         };
 }

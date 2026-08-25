@@ -28,7 +28,6 @@ add_library(parallax_lidar
 
 target_include_directories(parallax_lidar
     PUBLIC
-        parallax_core
         ${PROJECT_SOURCE_DIR}/include
 
     PRIVATE

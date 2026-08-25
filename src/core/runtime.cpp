@@ -28,6 +28,13 @@ namespace parallax::core {
             return false;
         }
 
+        lidar_ = std::make_unique<parallax::lidar::Rplidar>();
+
+        if (!lidar_->initialize()) {
+            std::cerr << "Runtime: failed to initialize RPLIDAR\n";
+            shutdown();
+            return false;
+        }
         /**
          * Pipeline still owns the proven processing resources during Phase 5:
          * ISP allocations, VPI stream, rectifier, matcher, depth storage, and pose
@@ -45,6 +52,7 @@ namespace parallax::core {
          * producer for the lifetime of the graph.
          */
         camera_producer_ = std::make_unique<parallax::camera::CameraProducer>(*camera_, product_store_);
+        lidar_producer_ = std::make_unique<parallax::lidar::RplidarSourceProducer>(*lidar_, product_store_);
         isp_producer_ = std::make_unique<parallax::isp::IspProducer>(pipeline_.isp(), product_store_);
 
         rectification_producer_ = std::make_unique<parallax::stereo::RectificationProducer>(
@@ -78,6 +86,7 @@ namespace parallax::core {
         graph_.register_producer(*depth_producer_);
         graph_.register_producer(*charuco_pose_producer_);
         graph_.register_producer(*marker_depth_producer_);
+        graph_.register_producer(*lidar_producer_);
 
         graph_.finalize();
 
@@ -206,9 +215,9 @@ namespace parallax::core {
         foxglove_.shutdown();
 
         /**
-         * Drop published handles before destroying the processing resources they
-         * reference. Clearing RawStereo also releases any outstanding V4L2 capture
-         * buffer through CameraProducer's shared-payload deleter.
+         * Drop published handles before destroying the hardware and processing
+         * resources they reference. Producers are destroyed before their backing
+         * devices because Graph stores only non-owning producer pointers.
          */
         product_store_.clear();
 
@@ -218,9 +227,15 @@ namespace parallax::core {
         stereo_producer_.reset();
         rectification_producer_.reset();
         isp_producer_.reset();
+        lidar_producer_.reset();
         camera_producer_.reset();
 
         pipeline_.shutdown();
+
+        if (lidar_) {
+            lidar_->shutdown();
+            lidar_.reset();
+        }
 
         if (camera_) {
             camera_->shutdown();

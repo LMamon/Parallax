@@ -23,6 +23,9 @@
 #include <parallax/pose/charuco_pose_producer.hpp>
 #include <parallax/pose/marker_depth_producer.hpp>
 
+#include <parallax/lidar/rplidar.hpp>
+#include <parallax/lidar/rplidar_producer.hpp>
+
 #include <csignal>
 #include <atomic>
 #include <filesystem>
@@ -81,6 +84,14 @@ namespace parallax::core {
 
             std::unique_ptr<parallax::pose::CharucoPoseProducer>charuco_pose_producer_;
             std::unique_ptr<parallax::pose::MarkerDepthPoducer>marker_depth_producer_;
+
+            /**
+            * LiDAR is Runtime-owned because its connection and scan lifecycle span the
+            * full application runtime. Its producer is graph-visible but does not belong
+            * to the camera-rate execution path.
+            */
+            std::unique_ptr<parallax::lidar::Rplidar> lidar_;
+            std::unique_ptr<parallax::lidar::RplidarSourceProducer> lidar_producer_;
 
             Graph graph_;
             DependencyResolver resolver_{graph_};

@@ -265,5 +265,26 @@ namespace parallax::core {
 
             EXPECT_FALSE(resolver.demanded(ProductId::Track2D));
         }
+
+        TEST(DependencyResolverTest, ResolvesLidarIndependentlyFromCameraBranch) {
+            TestProducer camera{"camera", {}, {ProductId::RgbLeft}};
+            TestProducer rectifier{"rectifier", {ProductId::RgbLeft}, {ProductId::RectifiedGray}};
+            TestProducer stereo{"stereo", {ProductId::RectifiedGray}, {ProductId::Disparity}};
+            TestProducer lidar{"rplidar", {}, {ProductId::LidarScan}};
+
+            Graph graph;
+            graph.register_producer(camera);
+            graph.register_producer(rectifier);
+            graph.register_producer(stereo);
+            graph.register_producer(lidar);
+            graph.finalize();
+
+            DependencyResolver resolver{graph};
+
+            const auto resolved = resolver.resolve(ProductId::LidarScan);
+
+            ASSERT_EQ(resolved.size(), 1);
+            EXPECT_EQ(resolved[0], &lidar);
+        }
     }
 }

@@ -74,6 +74,14 @@ namespace parallax::pose {
                 const float* pixel = reinterpret_cast<const float*>(row) + x;
                 float depth_m = 0.0f;
 
+
+                /**
+                 * SYNCHRONIZATION INVENTORY — REQUIRED CPU OBSERVATION
+                 *
+                 * MarkerDepth needs one scalar depth value on the CPU. Keep a completion
+                 * boundary here, but do not require the entire depth-producing stream to be
+                 * host-synchronized merely to publish the Depth product.
+                 */
                 if (cudaMemcpy(&depth_m, pixel, sizeof(float), 
                                cudaMemcpyDeviceToHost) == cudaSuccess &&
                                std::isfinite(depth_m) &&

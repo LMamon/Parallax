@@ -66,6 +66,13 @@ namespace parallax::pose {
             return false;
         }
 
+        /**
+         * SYNCHRONIZATION INVENTORY — REQUIRED CPU OBSERVATION
+         *
+         * MarkerDepth needs one scalar depth value on the CPU. Keep a completion
+         * boundary here, but do not require the entire depth-producing stream to be
+         * host-synchronized merely to publish the Depth product.
+         */
         if (cudaStreamSynchronize(stream_) != cudaSuccess) {
             std::cerr << "CharucoPose: grayscale download synchronization failed\n";
             return false;

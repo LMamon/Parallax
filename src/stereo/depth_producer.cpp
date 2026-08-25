@@ -47,9 +47,14 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::Failed;
         }
         /**
-         * Preserve the existing synchronization boundary before CPU pose/depth
-         * association can inspect results from this stream.
-         */
+         * SYNCHRONIZATION INVENTORY — ORDERING ONLY
+         *
+         * Depth remains accelerator-resident when published. Product publication
+         * itself does not require the CPU to observe completed depth values.
+         *
+         * Replace this full-stream host barrier with a completion dependency. CPU
+         * synchronization belongs at consumers that actually read depth on the host.
+        */
         if (!stream_.synchronize()) {
             return parallax::core::SubmitResult::Failed;
         }

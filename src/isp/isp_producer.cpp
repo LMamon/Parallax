@@ -40,10 +40,17 @@ namespace parallax::isp {
         }
 
         /**
-         * ISP owns a CUDA stream separate from the downstream VPI stream.
-         * keep existing synchronization boundary before publishing ISP
-         * outputs as ready for downstream graph consumers
-         */
+
+        * SYNCHRONIZATION INVENTORY — ORDERING ONLY
+        *
+        * ISP submits upload/demosaic work to its CUDA stream while rectification
+        * executes through the downstream VPI stream. This host synchronization
+        * currently prevents VPI from consuming incomplete ISP-owned buffers.
+        *
+        * No CPU consumer observes these pixels here. Replace this barrier with a
+        * completion dependency carried from the ISP producer to dependent
+        * accelerator lanes.
+        */
         if(!isp_.synchronize()) {
             return parallax::core::SubmitResult::Failed;
         }

@@ -72,10 +72,6 @@ namespace parallax::lidar {
        store_.publish(parallax::core::make_product(parallax::core::ProductId::LidarScan, 
                                                    metadata, 
                                                    std::move(published_scan)));
-        if (sequence_ % 10 == 0) {
-            std::cout << "RPLIDAR: scan " << sequence_
-                      << " | points=" << point_count << '\n';
-        }
 
         return parallax::core::SubmitResult::Submitted;
     }

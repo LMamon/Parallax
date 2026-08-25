@@ -1,5 +1,6 @@
 add_library(parallax_core STATIC
     dependency_resolver.cpp
+    execution_context.cpp
     graph.cpp
     pipeline.cpp
     product_store.cpp

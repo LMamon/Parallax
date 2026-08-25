@@ -11,6 +11,15 @@ add_executable(parallax_graph_test
     graph_test.cpp
 )
 
+add_executable(parallax_rplidar_smoke
+    rplidar_smoke.cpp
+)
+
+target_link_libraries(parallax_rplidar_smoke
+    PRIVATE
+        parallax_lidar
+)
+
 target_link_libraries(parallax_tests
     PRIVATE
         parallax_core

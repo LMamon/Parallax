@@ -21,16 +21,27 @@ if(NOT EXISTS "${SLAMTEC_RPLIDAR_LIBRARY}")
         "${SLAMTEC_RPLIDAR_LIBRARY}. Build the SDK before configuring Parallax.")
 endif()
 
-add_library(parallax_lidar INTERFACE)
+add_library(parallax_lidar
+    rplidar.cpp
+)
 
 target_include_directories(parallax_lidar
-    INTERFACE
+    PUBLIC
         ${PROJECT_SOURCE_DIR}/include
+
+    PRIVATE
         ${SLAMTEC_RPLIDAR_INCLUDE_DIR}
 )
 
 target_link_libraries(parallax_lidar
-    INTERFACE
+    PRIVATE
         ${SLAMTEC_RPLIDAR_LIBRARY}
         pthread
+)
+
+target_compile_options(parallax_lidar
+    PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
 )

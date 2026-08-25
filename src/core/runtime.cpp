@@ -1,62 +1,104 @@
 #include <parallax/core/runtime.hpp>
 #include <parallax/core/pipeline.hpp>
+#include <parallax/isp/frame_types.hpp>
+#include <parallax/pose/charuco_pose.hpp>
 
+#include <vector>
 #include <iostream>
 
 namespace parallax::core {
     Runtime::~Runtime() { shutdown(); }
 
-    bool Runtime::initialize(const std::filesystem::path& camera_config_path,
-                             const std::filesystem::path& calibration_directory) {
+    bool Runtime::initialize(
+        const std::filesystem::path& camera_config_path,
+        const std::filesystem::path& calibration_directory) {
 
         if (initialized_) return true;
+
         if (!config_.loadFromFile(camera_config_path)) {
-            std::cerr << "Runtime: Failed to load camera config\n";
+            std::cerr << "Runtime: failed to load camera config\n";
             return false;
         }
 
         camera_ = std::make_unique<parallax::camera::StereoCamera>(config_);
+
         if (!camera_->initialize()) {
             std::cerr << "Runtime: failed to initialize camera\n";
             shutdown();
             return false;
         }
 
-        // Register the camera source boundary without changing the active capture path.
-        // Graph stores a non-owning Producer pointer, so Runtime keeps the producer alive
-        // for at least as long as graph_
-        camera_producer_ = std::make_unique<parallax::camera::CameraProducer>(*camera_, product_store_);
-
-        graph_.register_producer(*camera_producer_);
-        // Do not finalize yet. Phase 5 is still registering the concrete producer graph;
-        // cycle/dependency validation happens once the migrated producer set is complete.
-
-        // Only the camera source exists in the real graph at this migration point.
-        // Finalization is still valid here; later producer commits register the remaining
-        // image/geometry dependencies before the runtime cutover
-        graph_.finalize();
-
+        /**
+         * Pipeline still owns the proven processing resources during Phase 5:
+         * ISP allocations, VPI stream, rectifier, matcher, depth storage, and pose
+         * estimator. Runtime now takes over orchestration through graph producers.
+         */
         if (!pipeline_.initialize(config_, calibration_directory)) {
-            std::cerr << "Runtime: failed to initialize processing pipeline";
+            std::cerr << "Runtime: failed to initialize processing pipeline\n";
             shutdown();
             return false;
         }
 
+        /**
+         * Construct the complete producer set before registering or finalizing the
+         * graph. Graph stores non-owning Producer pointers, so Runtime owns every
+         * producer for the lifetime of the graph.
+         */
+        camera_producer_ = std::make_unique<parallax::camera::CameraProducer>(*camera_, product_store_);
+        isp_producer_ = std::make_unique<parallax::isp::IspProducer>(pipeline_.isp(), product_store_);
+
+        rectification_producer_ = std::make_unique<parallax::stereo::RectificationProducer>(
+                                                   pipeline_.rectifier(),
+                                                   pipeline_.calibration(),
+                                                   product_store_);
+
+        stereo_producer_ = std::make_unique<parallax::stereo::StereoProducer>(pipeline_.matcher(), product_store_);
+
+        depth_producer_ = std::make_unique<parallax::stereo::DepthProducer>(
+                                           pipeline_.calibration(),
+                                           pipeline_.depth(),
+                                           pipeline_.vpiStream(),
+                                           product_store_);
+
+        charuco_pose_producer_ = std::make_unique<parallax::pose::CharucoPoseProducer>(
+                                                  pipeline_.charucoPose(),
+                                                  pipeline_.calibration(),
+                                                  product_store_);
+
+        marker_depth_producer_ = std::make_unique<parallax::pose::MarkerDepthPoducer>(product_store_);
+
+        /**
+         * Registration describes the complete concrete dependency graph.
+         * Finalization happens exactly once, after every producer is present.
+         */
+        graph_.register_producer(*camera_producer_);
+        graph_.register_producer(*isp_producer_);
+        graph_.register_producer(*rectification_producer_);
+        graph_.register_producer(*stereo_producer_);
+        graph_.register_producer(*depth_producer_);
+        graph_.register_producer(*charuco_pose_producer_);
+        graph_.register_producer(*marker_depth_producer_);
+
+        graph_.finalize();
+
         if (!foxglove_.initialize()) {
-            std::cerr << "Runtime: Failed to initialize foxglove server\n";
+            std::cerr << "Runtime: failed to initialize Foxglove server\n";
             shutdown();
             return false;
         }
 
         const auto& rgb = pipeline_.rgb();
+
         if (!publisher_.initialize(rgb.width, rgb.height, config_.frame_rate)) {
             std::cerr << "Runtime: failed to initialize visualization publisher\n";
+
             shutdown();
             return false;
         }
-    
+
         if (!publisher_.publishLeftCalibration(pipeline_.calibration())) {
             std::cerr << "Runtime: failed to publish left camera calibration\n";
+            shutdown();
             return false;
         }
 
@@ -67,55 +109,91 @@ namespace parallax::core {
     void Runtime::run(const volatile std::sig_atomic_t& stop_requested) {
         if (!initialized_) return;
         running_.store(true);
-
-        parallax::camera::RawFrame raw_frame{};
-        SensorFrame sensor_frame{};
-
         int failed_frames = 0;
 
+        /**
+         * The normal runtime currently requests the products needed by the existing
+         * Foxglove/demo surface.
+         *
+         * MarkerDepth pulls the pose and stereo-depth branches together.
+         * Confidence is requested separately because MarkerDepth needs Disparity but
+         * does not semantically depend on Confidence.
+         *
+         * DependencyResolver deduplicates shared producers and returns them in
+         * dependency-first order.
+         */
+        const std::vector<ProductId> requested_products{
+            ProductId::MarkerDepth,
+            ProductId::Confidence
+        };
+
+        const auto execution_plan = resolver_.resolve(requested_products);
+
         while (running_.load() && !stop_requested) {
-            if (!camera_->capture(raw_frame)) {
+            bool frame_failed = false;
+
+            for (Producer* producer : execution_plan) {
+                if (producer == nullptr) {
+                    frame_failed = true;
+                    break;
+                }
+
+                const SubmitResult result = producer->submit();
+
+                if (result == SubmitResult::Failed) {
+                    std::cerr << "Runtime: producer failed: " << producer->name() << '\n';
+                    frame_failed = true;
+                    break;
+                }
+
+                if (result == SubmitResult::NoWork) {
+                    /**
+                     * A source may transiently fail to provide a frame. Downstream
+                     * producers must not execute against stale products from the
+                     * previous iteration.
+                     */
+                    frame_failed = true;
+                    break;
+                }
+            }
+
+            if (frame_failed) {
                 if (++failed_frames >= 10) {
-                    std::cerr << "Runtime: camera failed to produce a valid frame\n";
+                    std::cerr
+                        << "Runtime: graph failed to produce a valid frame\n";
                     break;
                 }
                 continue;
             }
-            
+
             failed_frames = 0;
-            if (!pipeline_.process(raw_frame, sensor_frame)) {
-                std::cerr << "Runtime: pipeline processing failed\n";
-                camera_->release(raw_frame);
-                break;
-            }
-            publisher_.publishLeftCalibration(pipeline_.calibration());
-            publisher_.publishLeftImage(*sensor_frame.rgb, sensor_frame.pose, sensor_frame.metadata.timestamp);
-            publisher_.publishDisparity(*sensor_frame.stereo);
-            publisher_.publishConfidence(*sensor_frame.stereo);
-            publisher_.publishDepth(*sensor_frame.depth);
 
-            if (!camera_->release(raw_frame)) {
-                std::cerr << "Runtime: failed to release camera frame\n";
+            const auto marker = product_store_.latest<parallax::pose::CharucoPoseResult>(ProductId::MarkerDepth);
+            const auto stereo = product_store_.latest<parallax::isp::StereoMatchFrame>(ProductId::Disparity);
+            const auto depth = product_store_.latest<parallax::isp::DepthFrame>(ProductId::Depth);
+
+            if (!marker || !marker->valid() ||
+                !stereo || !stereo->valid() ||
+                !depth || !depth->valid()) {
+
+                std::cerr << "Runtime: graph completed without required products\n";
                 break;
             }
 
-            if (!pipeline_.synchronize()) {
-                std::cerr << "Runtime: pipeline synchronization failed\n";
-                break;
-            }
+            /**
+             * Rectified RGB is still the established visualization surface.
+             * StereoRectifier updates this buffer during the graph-driven
+             * RectificationProducer submission, so visualization can keep using the
+             * existing Publisher API without changing image semantics in this cutover.
+             */
+            publisher_.publishLeftImage(pipeline_.rgb(), *marker->payload, marker->metadata.timestamp);
+            publisher_.publishDisparity(*stereo->payload);
+            publisher_.publishConfidence(*stereo->payload);
+            publisher_.publishDepth(*depth->payload);
 
-            if (sensor_frame.rgb != nullptr) {
-                publisher_.publishLeftImage(*sensor_frame.rgb, sensor_frame.pose, sensor_frame.metadata.timestamp);
-            }
-
-            if (sensor_frame.stereo != nullptr) {
-                publisher_.publishDisparity(*sensor_frame.stereo);
-                publisher_.publishConfidence(*sensor_frame.stereo);
-            }
             // processCommands();
-            // dispatch(sensor_frame);
+            // dispatch(products);
         }
-
         running_.store(false);
     }
 
@@ -123,20 +201,32 @@ namespace parallax::core {
 
     void Runtime::shutdown() {
         stop();
-        
+
         publisher_.shutdown();
         foxglove_.shutdown();
-        pipeline_.shutdown();
 
-        // Products must release their shared payload references before source resources
-        // are destroyed. 
+        /**
+         * Drop published handles before destroying the processing resources they
+         * reference. Clearing RawStereo also releases any outstanding V4L2 capture
+         * buffer through CameraProducer's shared-payload deleter.
+         */
         product_store_.clear();
+
+        marker_depth_producer_.reset();
+        charuco_pose_producer_.reset();
+        depth_producer_.reset();
+        stereo_producer_.reset();
+        rectification_producer_.reset();
+        isp_producer_.reset();
         camera_producer_.reset();
+
+        pipeline_.shutdown();
 
         if (camera_) {
             camera_->shutdown();
             camera_.reset();
         }
+
         initialized_ = false;
     }
 }

@@ -1,18 +1,27 @@
 #pragma once
 
 #include <parallax/core/dependency_resolver.hpp>
-#include <parallax/core/graph.hpp>
 
 #include <parallax/camera/camera_producer.hpp>
-#include <parallax/core/product_store.hpp>
-
 #include <parallax/camera/camera_config.hpp>
 #include <parallax/camera/stereo_camera.hpp>
 
+#include <parallax/core/product_store.hpp>
 #include <parallax/core/pipeline.hpp>
 #include <parallax/core/sensor_frame.hpp>
+#include <parallax/core/graph.hpp>
+
 #include <parallax/visualization/foxglove_server.hpp>
 #include <parallax/visualization/publisher.hpp>
+
+#include <parallax/isp/isp_producer.hpp>
+
+#include <parallax/stereo/rectification_producer.hpp>
+#include <parallax/stereo/stereo_producer.hpp>
+#include <parallax/stereo/depth_producer.hpp>
+
+#include <parallax/pose/charuco_pose_producer.hpp>
+#include <parallax/pose/marker_depth_producer.hpp>
 
 #include <csignal>
 #include <atomic>
@@ -56,13 +65,22 @@ namespace parallax::core {
             // compatibility path. Latest-value storage remains the default contract.
             ProductStore product_store_;
             
-            // Producers are owned by Runtime so every producer outlives Graph, which stores
-            // non-owning Producer pointers after registration.
+            // Producers are owned by Runtime because Graph stores non-owning Producer
+            // pointers. Pipeline continues to own the underlying processing resources.
             //
-            // CameraProducer is descriptive during the early Phase 5 migration. The existing
-            // Runtime capture -> Pipeline path remains authoritative until the producer path
-            // is complete enough for the explicit runtime cutover
+            // This separates orchestration ownership from algorithm/resource ownership:
+            // Runtime decides what runs; the existing implementation classes still own
+            // their proven CUDA/VPI/OpenCV resources.
             std::unique_ptr<parallax::camera::CameraProducer> camera_producer_;
+            std::unique_ptr<parallax::isp::IspProducer> isp_producer_;
+
+            std::unique_ptr<parallax::stereo::RectificationProducer>rectification_producer_;
+
+            std::unique_ptr<parallax::stereo::StereoProducer> stereo_producer_;
+            std::unique_ptr<parallax::stereo::DepthProducer> depth_producer_;
+
+            std::unique_ptr<parallax::pose::CharucoPoseProducer>charuco_pose_producer_;
+            std::unique_ptr<parallax::pose::MarkerDepthPoducer>marker_depth_producer_;
 
             Graph graph_;
             DependencyResolver resolver_{graph_};

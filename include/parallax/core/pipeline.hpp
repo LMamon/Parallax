@@ -41,6 +41,20 @@ namespace parallax::core {
                 return calibration_;
             }
 
+            /**
+             * graph producers reuse the already-initialized processing resources
+             * owned by Pipeline. Pipeline remains the lifetime/compatibility container while
+             * Runtime takes over orchestration through the dependency graph.
+             *
+             * These accessors do not transfer ownership.
+             */
+            parallax::isp::ISP& isp() noexcept { return isp_; }
+            parallax::isp::DepthFrame& depth() noexcept { return depth_; }
+            parallax::vpi::Stream& vpiStream() noexcept { return vpi_stream_; }
+            parallax::stereo::StereoRectifier& rectifier() noexcept { return rectifier_; }
+            parallax::stereo::StereoMatcher& matcher() noexcept { return matcher_; }
+            parallax::pose::CharucoPose& charucoPose() noexcept { return charuco_pose_; }
+
             void shutdown();
             [[nodiscard]] bool initialized() const noexcept { return initialized_; }
 

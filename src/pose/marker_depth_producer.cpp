@@ -1,6 +1,7 @@
 #include <parallax/pose/marker_depth_producer.hpp>
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/pose/charuco_pose.hpp>
+#include <parallax/core/execution_context.hpp>
 
 #include <cuda_runtime.h>
 
@@ -30,7 +31,6 @@ namespace parallax::pose {
     }
 
     parallax::core::SubmitResult MarkerDepthPoducer::submit(parallax::core::ExecutionContext& context) {
-        (void)context;
         const auto pose = store_.latest<parallax::pose::CharucoPoseResult>(parallax::core::ProductId::Pose);
 
         if (!pose || !pose->valid()) {
@@ -59,7 +59,6 @@ namespace parallax::pose {
 
         if (result->pose_valid && result->plane_valid) {
             const int x = static_cast<int>(std::lround(result->projected_center.x));
-
             const int y = static_cast<int>(std::lround(result->projected_center.y));
 
             if (x >= 0 &&
@@ -81,7 +80,14 @@ namespace parallax::pose {
                  * MarkerDepth needs one scalar depth value on the CPU. Keep a completion
                  * boundary here, but do not require the entire depth-producing stream to be
                  * host-synchronized merely to publish the Depth product.
+                 *
+                 * Depth publication does not imply host completion. MarkerDepth is the point
+                 * where the CPU actually observes a depth value, so wait for the producing
+                 * CUDA work here rather than synchronizing the entire stereo lane upstream.
                  */
+                if (cudaEventSynchronize(context.depthCompleteEvent()) != cudaSuccess) {
+                    return parallax::core::SubmitResult::Failed;
+                }
                 if (cudaMemcpy(&depth_m, pixel, sizeof(float), 
                                cudaMemcpyDeviceToHost) == cudaSuccess &&
                                std::isfinite(depth_m) &&

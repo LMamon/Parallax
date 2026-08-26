@@ -49,15 +49,12 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::Failed;
         }
         /**
-         * SYNCHRONIZATION INVENTORY — ORDERING ONLY
-         *
-         * Depth remains accelerator-resident when published. Product publication
-         * itself does not require the CPU to observe completed depth values.
-         *
-         * Replace this full-stream host barrier with a completion dependency. CPU
-         * synchronization belongs at consumers that actually read depth on the host.
-        */
-        if (!lane.synchronize()) {
+         * Depth remains device-resident when published. Record completion on the
+         * CUDA stream that produced it so CPU consumers can wait only when they
+         * actually need to observe depth values.
+         */
+        if (cudaEventRecord(context.depthCompleteEvent(),
+                            lane.cudaHandle()) != cudaSuccess) {
             return parallax::core::SubmitResult::Failed;
         }
 

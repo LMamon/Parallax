@@ -4,6 +4,7 @@
 #include <parallax/vpi/stream.hpp>
 #include <parallax/core/completion.hpp>
 
+
 #include <cuda_runtime.h>
 
 #include <vpi/Event.h>
@@ -237,6 +238,10 @@ namespace parallax::core {
                 return isp_complete_;
             }
 
+            [[nodiscard]] cudaEvent_t depthCompleteEvent() const noexcept {
+                return depth_complete_;
+            }
+
         private:
             ProductStore product_store_;
 
@@ -263,6 +268,7 @@ namespace parallax::core {
             VPIEvent preprocess_complete_ = nullptr;
             VPIEvent stereo_complete_ = nullptr;
             cudaEvent_t isp_complete_ = nullptr;
+            cudaEvent_t depth_complete_ = nullptr;
 
             bool initialized_ = false;      
     };

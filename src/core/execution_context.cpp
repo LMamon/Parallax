@@ -9,13 +9,11 @@ namespace parallax::core {
         shutdown();
     }
 
-    bool BoundedCpuExecutor::initialize(std::size_t worker_count,
-                                        std::size_t queue_capacity) {
+    bool BoundedCpuExecutor::initialize(std::size_t worker_count, std::size_t queue_capacity) {
         if (initialized_) return true;
         if (worker_count == 0 || queue_capacity == 0) {
             return false;
         }
-
         queue_capacity_ = queue_capacity;
         stopping_ = false;
 
@@ -143,14 +141,18 @@ namespace parallax::core {
         * These are execution-capacity defaults, not producer scheduling policy.
         * Target rates, priority, freshness and supersede later behavior
         */
-
-        if (cudaStreamCreate(&neural_cuda_lane_) != cudaSuccess) {
+       
+       if (cudaStreamCreate(&neural_cuda_lane_) != cudaSuccess) {
+           shutdown();
+           return false;
+        }
+        
+        if (cudaEventCreateWithFlags(&depth_complete_, cudaEventDisableTiming) != cudaSuccess) {
             shutdown();
             return false;
         }
 
-        if (cudaEventCreateWithFlags(&isp_complete_,
-                                    cudaEventDisableTiming) != cudaSuccess) {
+        if (cudaEventCreateWithFlags(&isp_complete_, cudaEventDisableTiming) != cudaSuccess) {
             shutdown();
             return false;
         }
@@ -191,6 +193,11 @@ namespace parallax::core {
         if (stereo_complete_ != nullptr) {
             vpiEventDestroy(stereo_complete_);
             stereo_complete_ = nullptr;
+        }
+
+        if (depth_complete_ != nullptr) {
+            cudaEventDestroy(depth_complete_);
+            depth_complete_ = nullptr;
         }
 
         if (preprocess_complete_ != nullptr) {

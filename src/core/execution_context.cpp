@@ -137,11 +137,6 @@ namespace parallax::core {
             return false;
         }
 
-        if (cudaStreamCreate(&neural_cuda_lane_) != cudaSuccess) {
-            shutdown();
-            return false;
-        }
-
         /**
         * Start conservatively with two CPU workers and a small bounded backlog.
         *

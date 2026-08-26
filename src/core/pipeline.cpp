@@ -107,12 +107,12 @@ namespace parallax::core {
         }
         const auto t_after_isp_sync = Clock::now();
 
-        if (!rectifier_.process()) {
+        if (!rectifier_.process(vpi_stream_.handle())) {
             std::cerr << "Pipeline: stereo rectification failed\n";
             return false;
         }
 
-        if (!matcher_.process()) {
+        if (!matcher_.process(vpi_stream_.handle())) {
             std::cerr << "Pipeline: stereo matching failed\n";
             return false;
         }

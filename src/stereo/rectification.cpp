@@ -205,17 +205,17 @@ namespace parallax::stereo {
         return true;
     }
 
-    bool StereoRectifier::process() {
-        if (!initialized_) return false;
+    bool StereoRectifier::process(VPIStream stream) {
+        if (!initialized_ || stream == nullptr) return false;
 
         VPIStatus status = vpiSubmitRemap(stream_,
-                                        VPI_BACKEND_CUDA,
-                                        left_remap_,
-                                        rgb_left_input_.handle(),
-                                        rgb_left_output_.handle(),
-                                        VPI_INTERP_LINEAR,
-                                        VPI_BORDER_ZERO,
-                                        0);
+                                          VPI_BACKEND_CUDA,
+                                          left_remap_,
+                                          rgb_left_input_.handle(),
+                                          rgb_left_output_.handle(),
+                                          VPI_INTERP_LINEAR,
+                                          VPI_BORDER_ZERO,
+                                          0);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to submit left RGB remap", status);

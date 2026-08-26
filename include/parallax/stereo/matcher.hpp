@@ -19,7 +19,7 @@ namespace parallax::stereo {
             StereoMatcher& operator=(const StereoMatcher&) = delete;
 
             bool initialize(const parallax::isp::RectifiedStereoGrayFrame& input, VPIStream stream);
-            bool process();
+            bool process(VPIStream stream);
 
             const parallax::isp::StereoMatchFrame& output() const { return output_; }
             void shutdown();

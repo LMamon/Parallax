@@ -1,5 +1,6 @@
 #include <parallax/stereo/depth_producer.hpp>
 #include <parallax/cuda/depth.cuh>
+#include <parallax/core/execution_context.hpp>
 
 #include <memory>
 
@@ -31,6 +32,7 @@ namespace parallax::stereo {
 
     parallax::core::SubmitResult DepthProducer::submit(parallax::core::ExecutionContext& context) {
         (void)context;
+        auto& lane = context.stereoLane();
         const auto disparity = store_.latest<parallax::isp::StereoMatchFrame>(parallax::core::ProductId::Disparity);
 
         if (!disparity || !disparity->valid()) {
@@ -42,7 +44,7 @@ namespace parallax::stereo {
                                               static_cast<float>(calibration_.metadata().virtual_fx),
                                               static_cast<float>(calibration_.metadata().baseline_mm / 1000.0),
                                               parallax::isp::StereoMatchFrame::DisparityScale,
-                                              stream_.cudaHandle())) {
+                                              lane.cudaHandle())) {
 
             return parallax::core::SubmitResult::Failed;
         }
@@ -55,7 +57,7 @@ namespace parallax::stereo {
          * Replace this full-stream host barrier with a completion dependency. CPU
          * synchronization belongs at consumers that actually read depth on the host.
         */
-        if (!stream_.synchronize()) {
+        if (!lane.synchronize()) {
             return parallax::core::SubmitResult::Failed;
         }
 

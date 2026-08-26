@@ -23,7 +23,7 @@ namespace parallax::stereo {
                             const parallax::isp::StereoGrayFrame& gray_input,
                             VPIStream stream);
             
-            bool process();
+            bool process(VPIStream stream);
             const parallax::isp::RectifiedStereoFrame& output() const { return output_; } //
             const parallax::isp::RectifiedStereoFrame& rgb() const noexcept { return rgb_output_; }
             const parallax::isp::RectifiedStereoGrayFrame& gray() const noexcept { return gray_output_; }

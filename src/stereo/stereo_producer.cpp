@@ -1,5 +1,6 @@
 #include <parallax/stereo/stereo_producer.hpp>
 #include <parallax/isp/frame_types.hpp>
+#include <parallax/core/execution_context.hpp>
 
 #include <memory>
 
@@ -29,14 +30,22 @@ namespace parallax::stereo {
 
     parallax::core::SubmitResult StereoProducer::submit(parallax::core::ExecutionContext& context) {
         (void)context;
+        auto& lane = context.stereoLane();
         const auto rectified = store_.latest<parallax::isp::RectifiedStereoGrayFrame>(
                                                 parallax::core::ProductId::RectifiedGray);
-
+        
         if (!rectified || !rectified->valid()) {
             return parallax::core::SubmitResult::NoWork;
         }
 
-        if (!matcher_.process()) {
+        if (vpiStreamWaitEvent(lane.handle(), context.preprocessCompleteEvent()) != VPI_SUCCESS) {
+            return parallax::core::SubmitResult::Failed;
+        }
+        if (!matcher_.process(lane.handle())) {
+            return parallax::core::SubmitResult::Failed;
+        }
+
+        if (vpiEventRecord(context.stereoCompleteEvent(), lane.handle()) != VPI_SUCCESS) {
             return parallax::core::SubmitResult::Failed;
         }
 

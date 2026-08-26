@@ -159,12 +159,12 @@ namespace parallax::stereo {
         return true;
     }
 
-    bool StereoMatcher::process() {
+    bool StereoMatcher::process(VPIStream stream) {
         if (!initialized_) return false;
 
         VPIStatus status;
 
-        status = vpiSubmitConvertImageFormat(stream_,
+        status = vpiSubmitConvertImageFormat(stream,
                                             VPI_BACKEND_VIC,
                                             left_input_.handle(),
                                             left_block_linear_,
@@ -175,7 +175,7 @@ namespace parallax::stereo {
             return false;
         }
 
-        status = vpiSubmitConvertImageFormat(stream_,
+        status = vpiSubmitConvertImageFormat(stream,
                                             VPI_BACKEND_VIC,
                                             right_input_.handle(),
                                             right_block_linear_,
@@ -186,7 +186,7 @@ namespace parallax::stereo {
             return false;
         }
 
-        status = vpiSubmitStereoDisparityEstimator(stream_,
+        status = vpiSubmitStereoDisparityEstimator(stream,
                                                    VPI_BACKEND_OFA,
                                                    stereo_,
                                                    left_block_linear_,
@@ -200,7 +200,7 @@ namespace parallax::stereo {
             return false;
         }
 
-        status = vpiSubmitConvertImageFormat(stream_,
+        status = vpiSubmitConvertImageFormat(stream,
                                              VPI_BACKEND_VIC,
                                              disparity_block_linear_,
                                              disparity_image_.handle(),

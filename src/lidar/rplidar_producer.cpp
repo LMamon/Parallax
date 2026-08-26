@@ -1,5 +1,4 @@
 #include <parallax/lidar/rplidar_producer.hpp>
-
 #include <parallax/core/product.hpp>
 
 #include <iostream>

@@ -1,6 +1,6 @@
 #include <parallax/stereo/rectification_producer.hpp>
-#include <parallax/isp/frame_types.hpp>
-
+#include <parallax/core/execution_context.hpp>
+#include <vpi/Event.h>
 #include <memory>
 
 namespace parallax::stereo {
@@ -39,12 +39,22 @@ namespace parallax::stereo {
         if (!gray || !gray->valid()) {
             return parallax::core::SubmitResult::NoWork;
         }
-
+        auto& lane = context.preprocessLane();
         /**
          * StereoRectifier was initialized against the same ISP-owned buffers exposed
          * by GrayStereo. No rebinding or device copy is required here.
          */
-        if (!rectifier_.process()) {
+        if (!rectifier_.process(lane.handle())) {
+            return parallax::core::SubmitResult::Failed;
+        }
+
+        /**
+        * Rectification and stereo execute on independent VPI lanes
+        * Record completion after the final rectification submission so the stereo
+        * lane can depend on the completed rectified images without blocking the host.
+        */
+        if (vpiEventRecord(context.preprocessCompleteEvent(),
+                        lane.handle()) != VPI_SUCCESS) {
             return parallax::core::SubmitResult::Failed;
         }
 

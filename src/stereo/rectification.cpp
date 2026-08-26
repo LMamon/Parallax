@@ -265,10 +265,6 @@ namespace parallax::stereo {
         return true;
     }
 
-    bool StereoRectifier::synchronize() {
-        if (!initialized_) return false;
-        return vpiStreamSync(stream_) == VPI_SUCCESS;
-    }
 
     void StereoRectifier::shutdown() {
         if (left_remap_ != nullptr) {

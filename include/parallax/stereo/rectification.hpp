@@ -29,7 +29,6 @@ namespace parallax::stereo {
             const parallax::isp::RectifiedStereoGrayFrame& gray() const noexcept { return gray_output_; }
 
             void shutdown();
-            bool synchronize();
             [[nodiscard]] bool initialized() const noexcept { return initialized_; }
         
         private:

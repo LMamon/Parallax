@@ -35,7 +35,6 @@ namespace parallax::stereo {
     }
 
     parallax::core::SubmitResult RectificationProducer::submit(parallax::core::ExecutionContext& context) {
-        (void)context;
         const auto gray = store_.latest<parallax::isp::StereoGrayFrame>(parallax::core::ProductId::GrayStereo);
 
         if (!gray || !gray->valid()) {

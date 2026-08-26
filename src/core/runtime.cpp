@@ -257,6 +257,10 @@ namespace parallax::core {
 
         if (lidar_thread_.joinable()) lidar_thread_.join();
 
+
+        if (!context_.drain()) {
+            std::cerr << "Runtime: failed to drain execution context during shutdown\n";
+        }
         publisher_.shutdown();
         foxglove_.shutdown();
 

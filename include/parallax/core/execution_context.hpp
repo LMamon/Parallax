@@ -112,6 +112,7 @@ namespace parallax::core {
              * neural/CUDA and CPU execution resources behind the same lifecycle.
              */
             bool initialize();
+            bool drain() noexcept;
 
             /**
              * Release execution resources in deterministic order.

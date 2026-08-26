@@ -179,17 +179,30 @@ namespace parallax::core {
         return true;
     }
 
+    bool ExecutionContext::drain() noexcept {
+        bool ok = true;
+
+        // Drain dependent lanes before the lanes that feed them.
+        ok = conventional_pose_lane_.synchronize() && ok;
+        ok = stereo_lane_.synchronize() && ok;
+        ok = preprocess_lane_.synchronize() && ok;
+        ok = image_right_lane_.synchronize() && ok;
+        ok = image_left_lane_.synchronize() && ok;
+
+        if (neural_cuda_lane_ != nullptr) {
+            ok = (cudaStreamSynchronize(neural_cuda_lane_) == cudaSuccess) && ok;
+        }
+        return ok;
+    }
+
     void ExecutionContext::shutdown() noexcept {
         cpu_executor_.shutdown();
+
+        (void)drain();
+
         neural_tensorrt_context_ = nullptr;
 
-        /**
-         * Completion events are owned by the execution context.
-         *
-         * They do not own product buffers or execution lanes; they only represent
-         * completion points recorded on those lanes. Destroy them before destroying
-         * the streams that will eventually record/wait on them.
-         */
+        // Events can now be destroyed safely.
         if (stereo_complete_ != nullptr) {
             vpiEventDestroy(stereo_complete_);
             stereo_complete_ = nullptr;
@@ -215,11 +228,6 @@ namespace parallax::core {
             neural_cuda_lane_ = nullptr;
         }
 
-        /**
-         * Explicit draining is added once producers actually submit work to these
-         * lanes. For this commit the context establishes completion-handle
-         * ownership and lifetime only.
-         */
         conventional_pose_lane_.shutdown();
         stereo_lane_.shutdown();
         preprocess_lane_.shutdown();
@@ -228,5 +236,4 @@ namespace parallax::core {
 
         initialized_ = false;
     }
-
-} // namespace parallax::core
+}

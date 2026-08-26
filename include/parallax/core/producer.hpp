@@ -1,5 +1,6 @@
 #pragma once
 
+#include <parallax/core/execution_policy.hpp>
 #include <parallax/core/product.hpp>
 
 #include <string_view>
@@ -8,46 +9,38 @@
 namespace parallax::core {
     class ExecutionContext;
 
-    enum class ResourceAffinity {
-        Cpu, Gpu, Io
-    };
-
-    struct ExecutionPolicy {
-        ResourceAffinity affinity = ResourceAffinity::Cpu;
-        bool async = false;
-    };
-
     enum class SubmitResult {
         Submitted, NoWork, Failed
     };
 
     /**
-     * contract for a computation that produces named products facing the garph
-     * 
-     * Producer describes dependency relationships to the parallax graph.
-     * StereoRectifier, StereoMatcher, pose estimators or LiDAR drivers remain focused on their
-     * own stuff and can be own/referenced by a producer implementation
-     * 
+     * Contract for a computation that produces named products facing the graph.
+     *
+     * Producer describes dependency relationships to the Parallax graph.
+     * StereoRectifier, StereoMatcher, pose estimators, or LiDAR drivers remain
+     * focused on their algorithm-specific work and can be owned/referenced by a
+     * producer implementation.
+     *
      * Source producers are valid producers with no graph inputs.
      */
-     class Producer {
+    class Producer {
         public:
             virtual ~Producer() = default;
+
             [[nodiscard]] virtual std::string_view name() const noexcept = 0;
             [[nodiscard]] virtual const std::vector<ProductId>& inputs() const noexcept = 0;
             [[nodiscard]] virtual const std::vector<ProductId>& outputs() const noexcept = 0;
 
             // Execution characteristics are declared separately from graph dependencies.
-            // and will eventually require explicit lifecycle handling
             [[nodiscard]] virtual ExecutionPolicy execution_policy() const noexcept = 0;
 
             /**
-            * Submit producer work using Runtime-owned shared execution resources.
-            *
-            * Producers continue to own/reference their algorithm-specific state. The
-            * context supplies infrastructure shared across producer families: product
-            * storage, execution lanes, timing, and later completion dependencies.
-            */
+             * Submit producer work using Runtime-owned shared execution resources.
+             *
+             * Producers continue to own/reference their algorithm-specific state.
+             * The context supplies infrastructure shared across producer families:
+             * product storage, execution lanes, timing, and completion dependencies.
+             */
             virtual SubmitResult submit(ExecutionContext& context) = 0;
-     };
+    };
 }

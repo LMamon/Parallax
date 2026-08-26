@@ -17,7 +17,7 @@ namespace parallax::core {
                                                int value) {
             
             ProductMetadata metadata{};
-            metadata.sequence = sequence;
+            metadata.observation.sequence = sequence;
             metadata.timestamp = timestamp;
             metadata.valid = true;
 
@@ -34,7 +34,7 @@ namespace parallax::core {
             const auto latest = store.latest<TestPayload>(ProductId::Depth);
 
             ASSERT_NE(latest, nullptr);
-            EXPECT_EQ(latest->metadata.sequence, 2);
+            EXPECT_EQ(latest->metadata.observation.sequence, 2);
             ASSERT_NE(latest->payload, nullptr);
             EXPECT_EQ(*latest->payload, 20);
         }
@@ -46,7 +46,7 @@ namespace parallax::core {
             store.publish(make_test_product(ProductId::Depth, 10, now, 42));
 
             FreshnessConstraint freshness{};
-            freshness.sequence = 11;
+            freshness.observation = SourceObservation{SourceId::StereoCamera, 11};
 
             const auto result = store.latest_compatible<TestPayload>(ProductId::Depth, freshness, now);
 
@@ -79,8 +79,8 @@ namespace parallax::core {
             const auto history = store.history<TestPayload>(ProductId::Depth);
 
             ASSERT_EQ(history.size(), 2);
-            EXPECT_EQ(history[0]->metadata.sequence, 2);
-            EXPECT_EQ(history[1]->metadata.sequence, 3);
+            EXPECT_EQ(history[0]->metadata.observation.sequence, 2);
+            EXPECT_EQ(history[1]->metadata.observation.sequence, 3);
             EXPECT_EQ(*history[0]->payload, 20);
             EXPECT_EQ(*history[1]->payload, 30);
         }
@@ -103,9 +103,9 @@ namespace parallax::core {
             const auto new_product = store.latest<TestPayload>(ProductId::Depth);
 
             ASSERT_NE(new_product, nullptr);
-            EXPECT_EQ(new_product->metadata.sequence, 2);
+            EXPECT_EQ(new_product->metadata.observation.sequence, 2);
             EXPECT_EQ(*new_product->payload, 20);
-            EXPECT_EQ(old_product->metadata.sequence, 1);
+            EXPECT_EQ(old_product->metadata.observation.sequence, 1);
             EXPECT_EQ(*old_product->payload, 10);
         }
     }

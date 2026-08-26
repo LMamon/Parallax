@@ -26,7 +26,10 @@ namespace parallax::isp {
     parallax::core::ExecutionPolicy IspProducer::execution_policy() const noexcept {
         // keeping existing implementation rather than changing streams or memory
         // ownership while graph boundaries are established.
-        return {parallax::core::ResourceAffinity::Gpu, false};
+        parallax::core::ExecutionPolicy policy{};
+        policy.affinity = parallax::core::ResourceAffinity::Gpu;
+        policy.stateful = false;
+        return policy;
     }
 
     parallax::core::SubmitResult IspProducer::submit(parallax::core::ExecutionContext& context) {
@@ -52,7 +55,8 @@ namespace parallax::isp {
         * stream so downstream accelerator work can depend on these pixels without
         * blocking the host thread.
         */
-        if (cudaEventRecord(context.ispCompleteEvent(), isp_.stream()) != cudaSuccess) {
+        auto completion = context.recordCudaCompletion(isp_.stream());
+        if (!completion.valid()) {
             return parallax::core::SubmitResult::Failed;
         }
 
@@ -69,11 +73,13 @@ namespace parallax::isp {
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::RgbLeft,
                                                     raw->metadata,
-                                                    std::move(rgb)));
+                                                    std::move(rgb),
+                                                    completion));
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::GrayStereo,
                                                     raw->metadata,
-                                                    std::move(gray)));
+                                                    std::move(gray),
+                                                    completion));
 
         return parallax::core::SubmitResult::Submitted;
     }

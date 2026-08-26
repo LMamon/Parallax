@@ -9,6 +9,8 @@
 
 #include <vpi/Event.h>
 
+#include <array>
+#include <memory>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -185,10 +187,6 @@ namespace parallax::core {
                 return preprocess_lane_;
             }
 
-            [[nodiscard]] const parallax::vpi::Stream& stereoLane() const noexcept {
-                return stereo_lane_;
-            }
-
             [[nodiscard]] const parallax::vpi::Stream& conventionalPoseLane() const noexcept {
                 return conventional_pose_lane_;
             }
@@ -227,21 +225,39 @@ namespace parallax::core {
                 return cpu_executor_;
             }
 
-            [[nodiscard]] VPIEvent preprocessCompleteEvent() const noexcept {
-                return preprocess_complete_;
-            }
+            /**
+             * Record completion for one specific submitted generation.
+             *
+             * Native event storage remains owned by ExecutionContext. The returned
+             * handle merely leases the selected slot so it cannot be re-recorded
+             * while a published Product still references that generation.
+             */
+            [[nodiscard]] CompletionHandle recordVpiCompletion(VPIStream stream) noexcept;
 
-            [[nodiscard]] VPIEvent stereoCompleteEvent() const noexcept {
-                return stereo_complete_;
-            }
+            [[nodiscard]] CompletionHandle recordCudaCompletion(cudaStream_t stream) noexcept;
 
-            [[nodiscard]] cudaEvent_t ispCompleteEvent() const noexcept {
-                return isp_complete_;
-            }
+            /**
+             * Establish an accelerator dependency without blocking the host.
+             *
+             * VPI lanes may consume both VPI and CUDA completion dependencies because
+             * the wrapped lane exposes the CUDA stream used by CUDA submissions.
+             */
+            [[nodiscard]] bool waitFor(const CompletionHandle& completion,parallax::vpi::Stream& consumer_lane) noexcept;
 
-            [[nodiscard]] cudaEvent_t depthCompleteEvent() const noexcept {
-                return depth_complete_;
-            }
+            /**
+             * CUDA-only consumers can directly depend on CUDA completion.
+             *
+             * A VPI completion cannot be translated into a generic CUDA wait here;
+             * consumers of VPI work should use the VPI-lane overload so the dependency
+             * remains expressed through VPI.
+             */
+            [[nodiscard]] bool waitFor(const CompletionHandle& completion, cudaStream_t consumer_stream) noexcept;
+
+            /**
+             * Host synchronization is allowed only at an actual CPU observation
+             * boundary, recording boundary, explicit API boundary, or shutdown.
+             */
+            [[nodiscard]] bool waitForHost(const CompletionHandle& completion) noexcept;
 
         private:
             ProductStore product_store_;
@@ -266,10 +282,28 @@ namespace parallax::core {
             // CPU work is bounded so a slow conventional consumer cannot create an ever-growing real-time backlog.
             BoundedCpuExecutor cpu_executor_;
 
-            VPIEvent preprocess_complete_ = nullptr;
-            VPIEvent stereo_complete_ = nullptr;
-            cudaEvent_t isp_complete_ = nullptr;
-            cudaEvent_t depth_complete_ = nullptr;
+            static constexpr std::size_t kCompletionSlotsPerBackend = 16;
+
+            struct VpiCompletionSlot {
+                VPIEvent event = nullptr;
+
+                // A live ticket means some published Product generation still depends
+                // on this event, so the slot cannot yet be re-recorded.
+                std::weak_ptr<const CompletionTicket> lease{};
+
+                std::uint64_t generation = 0;
+            };
+
+            struct CudaCompletionSlot {
+                cudaEvent_t event = nullptr;
+                std::weak_ptr<const CompletionTicket> lease{};
+                std::uint64_t generation = 0;
+            };
+
+            std::array<VpiCompletionSlot, kCompletionSlotsPerBackend> vpi_completion_slots_{};
+            std::array<CudaCompletionSlot, kCompletionSlotsPerBackend> cuda_completion_slots_{};
+
+            std::mutex completion_mutex_;
 
             bool initialized_ = false;      
     };

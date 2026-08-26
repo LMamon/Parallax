@@ -21,7 +21,7 @@ namespace parallax::core {
      * leaving either field empty means that constraint is not being requested.
      */
     struct FreshnessConstraint {
-        std::optional<std::uint64_t> sequence{};
+        std::optional<SourceObservation> observation{};
         std::optional<std::chrono::steady_clock::duration> max_age{};
     };
 
@@ -37,8 +37,7 @@ namespace parallax::core {
             ProductStore(const ProductStore&) = delete;
             ProductStore& operator=(const ProductStore&) = delete;
 
-            template <typename T>
-            void publish(Product<T> product) {
+            template <typename T> void publish(Product<T> product) {
                 // keep the whole Product<T> behind a shared handle so typed erasure
                 // here doesnt copy actual CUDA/VPI/etc payload
                 auto stored = std::make_shared<Product<T>>(std::move(product));
@@ -90,7 +89,7 @@ namespace parallax::core {
                 if (!product || !product->valid()) return {};
                 
                 // when exact sourceframe id matters, accepting a different sequence could associate results from unrelated frames.
-                if (freshness.sequence.has_value() && product->metadata.sequence != *freshness.sequence) {
+                if (freshness.observation.has_value() && product->metadata.observation != *freshness.observation) {
                     return {};
                 }
 

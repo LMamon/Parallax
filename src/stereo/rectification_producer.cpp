@@ -31,7 +31,10 @@ namespace parallax::stereo {
          * stream. Resource/stream ownership is intentionally unchanged until the
          * execution-context and VPI-residency phases
          */
-        return {parallax::core::ResourceAffinity::Gpu, false};
+        parallax::core::ExecutionPolicy policy{};
+        policy.affinity = parallax::core::ResourceAffinity::Gpu;
+        policy.stateful = false;
+        return policy;
     }
 
     parallax::core::SubmitResult RectificationProducer::submit(parallax::core::ExecutionContext& context) {
@@ -42,9 +45,10 @@ namespace parallax::stereo {
         }
         auto& lane = context.preprocessLane();
 
-        if (cudaStreamWaitEvent(lane.cudaHandle(), context.ispCompleteEvent(), 0) != cudaSuccess) {
+        if (!context.waitFor(gray->completion, lane)) {
             return parallax::core::SubmitResult::Failed;
         }
+
         /**
          * StereoRectifier was initialized against the same ISP-owned buffers exposed
          * by GrayStereo. No rebinding or device copy is required here.
@@ -53,13 +57,8 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::Failed;
         }
 
-        /**
-        * Rectification and stereo execute on independent VPI lanes
-        * Record completion after the final rectification submission so the stereo
-        * lane can depend on the completed rectified images without blocking the host.
-        */
-        if (vpiEventRecord(context.preprocessCompleteEvent(),
-                        lane.handle()) != VPI_SUCCESS) {
+        auto completion = context.recordVpiCompletion(lane.handle());
+        if (!completion.valid()) {
             return parallax::core::SubmitResult::Failed;
         }
 
@@ -69,7 +68,8 @@ namespace parallax::stereo {
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::RectifiedGray,
                                                     gray->metadata,
-                                                    std::move(rectified)));
+                                                    std::move(rectified),
+                                                    std::move(completion)));
 
         return parallax::core::SubmitResult::Submitted;
     }

@@ -27,7 +27,10 @@ namespace parallax::stereo {
     }
 
     parallax::core::ExecutionPolicy DepthProducer::execution_policy() const noexcept {
-        return {parallax::core::ResourceAffinity::Gpu, false};
+        parallax::core::ExecutionPolicy policy{};
+        policy.affinity = parallax::core::ResourceAffinity::Gpu;
+        policy.stateful = false;
+        return policy;
     }
 
     parallax::core::SubmitResult DepthProducer::submit(parallax::core::ExecutionContext& context) {
@@ -39,6 +42,10 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::NoWork;
         }
         
+        if (!context.waitFor(disparity->completion, lane)) {
+            return parallax::core::SubmitResult::Failed;
+        }
+
         if (!parallax::cuda::disparityToDepth(disparity->payload->disparity, 
                                               depth_.depth, 
                                               static_cast<float>(calibration_.metadata().virtual_fx),
@@ -53,8 +60,8 @@ namespace parallax::stereo {
          * CUDA stream that produced it so CPU consumers can wait only when they
          * actually need to observe depth values.
          */
-        if (cudaEventRecord(context.depthCompleteEvent(),
-                            lane.cudaHandle()) != cudaSuccess) {
+        auto completion = context.recordCudaCompletion(lane.cudaHandle());
+        if (!completion.valid()) {
             return parallax::core::SubmitResult::Failed;
         }
 
@@ -62,7 +69,8 @@ namespace parallax::stereo {
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::Depth,
                                                     disparity->metadata,
-                                                    std::move(depth)));
+                                                    std::move(depth),
+                                                    std::move(completion)));
 
         return parallax::core::SubmitResult::Submitted;
     }

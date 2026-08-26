@@ -25,7 +25,10 @@ namespace parallax::stereo {
         // StereoMatcher already owns the VPI execution path and its backend
         // resources. This phase preserves that specialization instead of moving
         // stereo work onto a generic CUDA/CPU execution path.
-        return {parallax::core::ResourceAffinity::Gpu, false};
+        parallax::core::ExecutionPolicy policy{};
+        policy.affinity = parallax::core::ResourceAffinity::Gpu;
+        policy.stateful = false;
+        return policy;
     }
 
     parallax::core::SubmitResult StereoProducer::submit(parallax::core::ExecutionContext& context) {
@@ -38,17 +41,18 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::NoWork;
         }
 
-        if (vpiStreamWaitEvent(lane.handle(), context.preprocessCompleteEvent()) != VPI_SUCCESS) {
+        if (!context.waitFor(rectified->completion, lane)) {
             return parallax::core::SubmitResult::Failed;
         }
+
         if (!matcher_.process(lane.handle())) {
             return parallax::core::SubmitResult::Failed;
         }
 
-        if (vpiEventRecord(context.stereoCompleteEvent(), lane.handle()) != VPI_SUCCESS) {
+        auto completion = context.recordVpiCompletion(lane.handle());
+        if (!completion.valid()) {
             return parallax::core::SubmitResult::Failed;
         }
-
         /**
          * StereoMatcher computes disparity and confidence together into one
          * StereoMatchFrame. Both ProductIds intentionally reference that same
@@ -59,11 +63,13 @@ namespace parallax::stereo {
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::Disparity,
                                                     rectified->metadata,
-                                                    match));
+                                                    match,
+                                                    completion));
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::Confidence,
                                                     rectified->metadata,
-                                                    std::move(match)));
+                                                    std::move(match),
+                                                    completion));
 
         return parallax::core::SubmitResult::Submitted;
     }

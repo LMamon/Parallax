@@ -21,7 +21,7 @@ namespace parallax::camera {
     };
 
     // Arducam private V4L2 ioctls.
-    constexpr auto VIDIOC_R_I2C =_IOWR('V', BASE_VIDIOC_PRIVATE + 0, ArducamI2C);
+    constexpr auto VIDIOC_R_I2C = _IOWR('V', BASE_VIDIOC_PRIVATE + 0, ArducamI2C);
     constexpr auto VIDIOC_W_I2C = _IOWR('V', BASE_VIDIOC_PRIVATE + 1, ArducamI2C);
     constexpr auto VIDIOC_R_DEV = _IOWR('V', BASE_VIDIOC_PRIVATE + 2, ArducamDeviceRegister);
     constexpr auto VIDIOC_W_DEV = _IOWR('V', BASE_VIDIOC_PRIVATE + 3, ArducamDeviceRegister);

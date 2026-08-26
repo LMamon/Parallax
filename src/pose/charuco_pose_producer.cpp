@@ -26,7 +26,10 @@ namespace parallax::pose {
     parallax::core::ExecutionPolicy CharucoPoseProducer::execution_policy() const noexcept{
         // the current charuco path uses openCV board detection and pose estimation on host-visible grayscale.
         // keeping that execution characteristic explicit instead of pretending this is a GPU producer
-        return {parallax::core::ResourceAffinity::Cpu, false};
+        parallax::core::ExecutionPolicy policy{};
+        policy.affinity = parallax::core::ResourceAffinity::Cpu;
+        policy.stateful = false;
+        return policy;
     }
 
     parallax::core::SubmitResult CharucoPoseProducer::submit(parallax::core::ExecutionContext& context) {

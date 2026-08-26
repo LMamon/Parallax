@@ -23,7 +23,10 @@ namespace parallax::camera {
     parallax::core::ExecutionPolicy CameraProducer::execution_policy() const noexcept {
         // V4L2 capture is host-driven. The image data may feed accelerator work
         // downstream, but capture itself does not belong to a VPI/CUDA lane.
-        return {parallax::core::ResourceAffinity::Cpu, false};
+        parallax::core::ExecutionPolicy policy{};
+        policy.affinity = parallax::core::ResourceAffinity::Cpu;
+        policy.stateful = false;
+        return policy;
     }
 
     parallax::core::SubmitResult CameraProducer::submit(parallax::core::ExecutionContext& context) {
@@ -51,12 +54,14 @@ namespace parallax::camera {
         );
 
         parallax::core::ProductMetadata metadata{};
-        metadata.sequence = next_sequence_++;
+        metadata.observation.source = parallax::core::SourceId::StereoCamera;
+        metadata.observation.sequence = next_sequence_++;
 
-        // preserve+use monotonic V4L2 timestamps on the active capture path.
+        // preserve+use monotonic V4L2 timestamps on the active capture path
         metadata.timestamp = std::chrono::steady_clock::time_point{frame.timestamp};
+        metadata.production_timestamp = std::chrono::steady_clock::now();
         metadata.valid = true;
-
+        
         store_.publish(parallax::core::make_product(parallax::core::ProductId::RawStereo,
                                                     metadata,
                                                     std::move(payload)));

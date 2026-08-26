@@ -27,7 +27,10 @@ namespace parallax::pose {
     }
 
     parallax::core::ExecutionPolicy MarkerDepthPoducer::execution_policy() const noexcept {
-        return {parallax::core::ResourceAffinity::Cpu, false};
+        parallax::core::ExecutionPolicy policy{};
+        policy.affinity = parallax::core::ResourceAffinity::Cpu;
+        policy.stateful = false;
+        return policy;
     }
 
     parallax::core::SubmitResult MarkerDepthPoducer::submit(parallax::core::ExecutionContext& context) {
@@ -38,7 +41,7 @@ namespace parallax::pose {
         }
 
         parallax::core::FreshnessConstraint freshness{};
-        freshness.sequence = pose->metadata.sequence;
+        freshness.observation = pose->metadata.observation;
 
         const auto depth = store_.latest_compatible<parallax::isp::DepthFrame>(parallax::core::ProductId::Depth,
                                                                                freshness,
@@ -77,17 +80,17 @@ namespace parallax::pose {
                 /**
                  * SYNCHRONIZATION INVENTORY — REQUIRED CPU OBSERVATION
                  *
-                 * MarkerDepth needs one scalar depth value on the CPU. Keep a completion
-                 * boundary here, but do not require the entire depth-producing stream to be
-                 * host-synchronized merely to publish the Depth product.
                  *
-                 * Depth publication does not imply host completion. MarkerDepth is the point
-                 * where the CPU actually observes a depth value, so wait for the producing
-                 * CUDA work here rather than synchronizing the entire stereo lane upstream.
+                 * MarkerDepth needs one scalar depth value on the CPU. The Depth product
+                 * carries the exact completion generation that produced its device buffer,
+                 * so this host wait cannot accidentally synchronize against a newer frame.
+                 *
+                 * Depth publication itself remains asynchronous.
                  */
-                if (cudaEventSynchronize(context.depthCompleteEvent()) != cudaSuccess) {
+                if (!context.waitForHost(depth->completion)) {
                     return parallax::core::SubmitResult::Failed;
                 }
+
                 if (cudaMemcpy(&depth_m, pixel, sizeof(float), 
                                cudaMemcpyDeviceToHost) == cudaSuccess &&
                                std::isfinite(depth_m) &&

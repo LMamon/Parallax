@@ -146,25 +146,20 @@ namespace parallax::core {
            shutdown();
            return false;
         }
-        
-        if (cudaEventCreateWithFlags(&depth_complete_, cudaEventDisableTiming) != cudaSuccess) {
-            shutdown();
-            return false;
+
+        for (auto& slot : vpi_completion_slots_) {
+            if (vpiEventCreate(0, &slot.event) != VPI_SUCCESS) {
+                shutdown();
+                return false;
+            }
         }
 
-        if (cudaEventCreateWithFlags(&isp_complete_, cudaEventDisableTiming) != cudaSuccess) {
-            shutdown();
-            return false;
-        }
-
-        if (vpiEventCreate(0, &preprocess_complete_) != VPI_SUCCESS) {
-            shutdown();
-            return false;
-        }
-
-        if (vpiEventCreate(0, &stereo_complete_) != VPI_SUCCESS) {
-            shutdown();
-            return false;
+        for (auto& slot : cuda_completion_slots_) {
+            if (cudaEventCreateWithFlags(&slot.event,
+                                        cudaEventDisableTiming) != cudaSuccess) {
+                shutdown();
+                return false;
+            }
         }
 
         constexpr std::size_t cpu_worker_count = 2;
@@ -195,32 +190,197 @@ namespace parallax::core {
         return ok;
     }
 
+    CompletionHandle ExecutionContext::recordVpiCompletion(VPIStream stream) noexcept {
+        if (stream == nullptr) return {};
+
+        std::lock_guard<std::mutex> lock(completion_mutex_);
+
+        for (std::size_t i = 0; i < vpi_completion_slots_.size(); ++i) {
+            auto& slot = vpi_completion_slots_[i];
+            if (!slot.lease.expired()) continue;
+
+            ++slot.generation;
+            if (vpiEventRecord(slot.event, stream) != VPI_SUCCESS) {
+                return {};
+            }
+
+            auto ticket = std::make_shared<CompletionTicket>();
+            ticket->kind = CompletionKind::Vpi;
+            ticket->slot = i;
+            ticket->generation = slot.generation;
+
+            slot.lease = ticket;
+
+            return CompletionHandle{CompletionKind::Vpi, std::move(ticket)};
+        }
+
+        // Every completion event is still referenced by an older Product
+        // generation. Do not overwrite one merely to keep producing frames.
+        return {};
+    }    
+
+    CompletionHandle ExecutionContext::recordCudaCompletion(cudaStream_t stream) noexcept {
+        if (stream == nullptr) return {};
+
+        std::lock_guard<std::mutex> lock(completion_mutex_);
+        for (std::size_t i = 0; i < cuda_completion_slots_.size(); ++i) {
+            auto& slot = cuda_completion_slots_[i];
+
+            if (!slot.lease.expired()) continue;
+
+            ++slot.generation;
+            if (cudaEventRecord(slot.event, stream) != cudaSuccess) return {};
+
+            auto ticket = std::make_shared<CompletionTicket>();
+            ticket->kind = CompletionKind::Cuda;
+            ticket->slot = i;
+            ticket->generation = slot.generation;
+
+            slot.lease = ticket;
+
+            return CompletionHandle{CompletionKind::Cuda, std::move(ticket)};
+        }
+        return {};
+    }
+
+    bool ExecutionContext::waitFor(
+        const CompletionHandle& completion,
+        parallax::vpi::Stream& consumer_lane) noexcept {
+
+        if (completion.kind == CompletionKind::None || completion.kind == CompletionKind::CpuReady) {
+            return true;
+        }
+
+        if (!completion.ticket) return false;
+
+        const auto& ticket = *completion.ticket;
+        std::lock_guard<std::mutex> lock(completion_mutex_);
+
+        switch (completion.kind) {
+            case CompletionKind::Vpi: {
+                if (ticket.slot >= vpi_completion_slots_.size()) {
+                    return false;
+                }
+
+                const auto& slot = vpi_completion_slots_[ticket.slot];
+                if (slot.generation != ticket.generation || slot.event == nullptr) {
+                    return false;
+                }
+
+                return vpiStreamWaitEvent(consumer_lane.handle(), slot.event) == VPI_SUCCESS;
+            }
+
+            case CompletionKind::Cuda: {
+                if (ticket.slot >= cuda_completion_slots_.size()) {
+                    return false;
+                }
+
+                const auto& slot = cuda_completion_slots_[ticket.slot];
+                if (slot.generation != ticket.generation || slot.event == nullptr) {
+                    return false;
+                }
+
+                return cudaStreamWaitEvent(consumer_lane.cudaHandle(), slot.event, 0) == cudaSuccess;
+            }
+
+            case CompletionKind::None:
+            case CompletionKind::CpuReady:
+            default:
+                return true;
+        }
+    }
+
+    bool ExecutionContext::waitFor(const CompletionHandle& completion, cudaStream_t consumer_stream) noexcept {
+        if (completion.kind == CompletionKind::None || completion.kind == CompletionKind::CpuReady) {
+            return true;
+        }
+
+        if (completion.kind != CompletionKind::Cuda ||
+            !completion.ticket ||
+            consumer_stream == nullptr) {
+            return false;
+        }
+
+        const auto& ticket = *completion.ticket;
+        std::lock_guard<std::mutex> lock(completion_mutex_);
+
+        if (ticket.slot >= cuda_completion_slots_.size()) return false;
+
+        const auto& slot = cuda_completion_slots_[ticket.slot];
+
+        if (slot.generation != ticket.generation || slot.event == nullptr) {
+            return false;
+        }
+
+        return cudaStreamWaitEvent(consumer_stream, slot.event, 0) == cudaSuccess;
+    }
+
+    bool ExecutionContext::waitForHost(
+        const CompletionHandle& completion) noexcept {
+
+        if (completion.kind == CompletionKind::None || completion.kind == CompletionKind::CpuReady) {
+            return true;
+        }
+
+        if (!completion.ticket) return false;
+
+        const auto& ticket = *completion.ticket;
+
+        std::lock_guard<std::mutex> lock(completion_mutex_);
+
+        switch (completion.kind) {
+            case CompletionKind::Vpi: {
+                if (ticket.slot >= vpi_completion_slots_.size()) return false;
+
+                const auto& slot = vpi_completion_slots_[ticket.slot];
+                if (slot.generation != ticket.generation || slot.event == nullptr) {
+                    return false;
+                }
+                return vpiEventSync(slot.event) == VPI_SUCCESS;
+            }
+
+            case CompletionKind::Cuda: {
+                if (ticket.slot >= cuda_completion_slots_.size()) return false;
+
+                const auto& slot = cuda_completion_slots_[ticket.slot];
+                if (slot.generation != ticket.generation || slot.event == nullptr) {
+                    return false;
+                }
+
+                return cudaEventSynchronize(slot.event) == cudaSuccess;
+            }
+
+            case CompletionKind::None:
+            case CompletionKind::CpuReady:
+            default:
+                return true;
+        }
+    }
+
     void ExecutionContext::shutdown() noexcept {
         cpu_executor_.shutdown();
 
         (void)drain();
-
         neural_tensorrt_context_ = nullptr;
 
-        // Events can now be destroyed safely.
-        if (stereo_complete_ != nullptr) {
-            vpiEventDestroy(stereo_complete_);
-            stereo_complete_ = nullptr;
+        for (auto& slot : vpi_completion_slots_) {
+            if (slot.event != nullptr) {
+                vpiEventDestroy(slot.event);
+                slot.event = nullptr;
+            }
+
+            slot.lease.reset();
+            slot.generation = 0;
         }
 
-        if (depth_complete_ != nullptr) {
-            cudaEventDestroy(depth_complete_);
-            depth_complete_ = nullptr;
-        }
+        for (auto& slot : cuda_completion_slots_) {
+            if (slot.event != nullptr) {
+                cudaEventDestroy(slot.event);
+                slot.event = nullptr;
+            }
 
-        if (preprocess_complete_ != nullptr) {
-            vpiEventDestroy(preprocess_complete_);
-            preprocess_complete_ = nullptr;
-        }
-
-        if (isp_complete_ != nullptr) {
-            cudaEventDestroy(isp_complete_);
-            isp_complete_ = nullptr;
+            slot.lease.reset();
+            slot.generation = 0;
         }
 
         if (neural_cuda_lane_ != nullptr) {

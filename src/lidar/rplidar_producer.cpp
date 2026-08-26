@@ -27,15 +27,14 @@ namespace parallax::lidar {
     }
 
     parallax::core::ExecutionPolicy RplidarSourceProducer::execution_policy() const noexcept {
-        parallax::core::ExecutionPolicy policy;
-
         /**
          * Scan acquisition and SDK interaction are CPU-side. Detailed target
          * rates and scheduling policy land later with the execution-policy
          * update this declaration only records the resource affinity.
          */
+        parallax::core::ExecutionPolicy policy{};
         policy.affinity = parallax::core::ResourceAffinity::Cpu;
-
+        policy.stateful = false;
         return policy;
     }
 
@@ -47,23 +46,26 @@ namespace parallax::lidar {
         if (!lidar_.capture(*scan)) {
             return parallax::core::SubmitResult::Failed;
         }
-
+        
         /**
          * This timestamp describes the LiDAR observation boundary itself.
          * It is intentionally not copied from the latest camera frame:
          * independent sensor clocks/cadences remain independent until a
          * consumer explicitly requests cross-sensor compatibility.
          */
-        parallax::core::ProductMetadata metadata;
-        metadata.sequence = ++sequence_;
-        metadata.timestamp = std::chrono::steady_clock::now();
+        const auto now = std::chrono::steady_clock::now();
+        parallax::core::ProductMetadata metadata{};
+        metadata.observation.source = parallax::core::SourceId::Rplidar;
+        metadata.observation.sequence = ++sequence_;
+        metadata.timestamp = now;
+        metadata.production_timestamp = now;
+
         metadata.valid = scan->valid();
 
         if (!metadata.valid) {
             return parallax::core::SubmitResult::NoWork;
         }
-        
-        const std::size_t point_count = scan->points.size();
+    
         // Product payloads become immutable once published. Finish building the
         // scan first, then explicitly convert to the const shared-pointer type
         // expected by make_product().

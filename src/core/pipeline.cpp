@@ -183,7 +183,8 @@ namespace parallax::core {
         output.stereo = &matcher_.output();
         output.depth = &depth_;
 
-        output.metadata.sequence = sequence_++;
+        output.metadata.observation.source = parallax::core::SourceId::StereoCamera;
+        output.metadata.observation.sequence = sequence_++;
         output.metadata.timestamp = std::chrono::steady_clock::now();
         output.metadata.valid = true;
 

@@ -1,6 +1,8 @@
 #include <parallax/stereo/rectification_producer.hpp>
 #include <parallax/core/execution_context.hpp>
 #include <vpi/Event.h>
+
+#include <cuda_runtime.h>
 #include <memory>
 
 namespace parallax::stereo {
@@ -40,6 +42,10 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::NoWork;
         }
         auto& lane = context.preprocessLane();
+
+        if (cudaStreamWaitEvent(lane.cudaHandle(), context.ispCompleteEvent(), 0) != cudaSuccess) {
+            return parallax::core::SubmitResult::Failed;
+        }
         /**
          * StereoRectifier was initialized against the same ISP-owned buffers exposed
          * by GrayStereo. No rebinding or device copy is required here.

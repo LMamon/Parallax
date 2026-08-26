@@ -1,6 +1,8 @@
 #include <parallax/isp/isp_producer.hpp>
 #include <parallax/camera/frame_types.hpp>
 
+#include <parallax/core/execution_context.hpp>
+#include <cuda_runtime.h>
 #include <memory>
 
 
@@ -28,7 +30,6 @@ namespace parallax::isp {
     }
 
     parallax::core::SubmitResult IspProducer::submit(parallax::core::ExecutionContext& context) {
-        (void)context;
         const auto raw = store_.latest<parallax::camera::RawFrame>(parallax::core::ProductId::RawStereo);
 
         if (!raw || !raw->valid()) {
@@ -47,11 +48,11 @@ namespace parallax::isp {
         * executes through the downstream VPI stream. This host synchronization
         * currently prevents VPI from consuming incomplete ISP-owned buffers.
         *
-        * No CPU consumer observes these pixels here. Replace this barrier with a
-        * completion dependency carried from the ISP producer to dependent
-        * accelerator lanes.
+        * ISP output remains CUDA-resident. Record completion on the ISP-owned CUDA
+        * stream so downstream accelerator work can depend on these pixels without
+        * blocking the host thread.
         */
-        if(!isp_.synchronize()) {
+        if (cudaEventRecord(context.ispCompleteEvent(), isp_.stream()) != cudaSuccess) {
             return parallax::core::SubmitResult::Failed;
         }
 

@@ -31,6 +31,9 @@ namespace parallax::isp {
 
             const StereoRgbFrame& rgb() const noexcept { return rgb_output_; }
             const StereoGrayFrame& gray() const noexcept { return gray_output_; }
+            [[nodiscard]] cudaStream_t stream() const noexcept {
+                return stream_;
+            }
 
         private:
             bool upload(const parallax::camera::RawFrame& input);

@@ -150,6 +150,26 @@ namespace parallax::core {
                     break;
                 }
 
+                const auto policy = producer->execution_policy();
+                const auto observation = input_observation(*producer, context_.products());
+
+                if (!producer->inputs().empty()) {
+                    /**
+                     * Missing or incompatible inputs mean this producer has no valid
+                     * observation to consume.
+                     */
+                    if (!observation) {
+                        frame_failed = true;
+                        break;
+                    }
+
+                    auto& state = producer_execution_state_[producer];
+
+                    if (!should_submit(policy, state, *observation)) {
+                        continue;
+                    }
+                }
+
                 const SubmitResult result = producer->submit(context_);
 
                 if (result == SubmitResult::Failed) {
@@ -159,15 +179,15 @@ namespace parallax::core {
                 }
 
                 if (result == SubmitResult::NoWork) {
-                    /**
-                     * A source may transiently fail to provide a frame. Downstream
-                     * producers must not execute against stale products from the
-                     * previous iteration.
-                     */
                     frame_failed = true;
                     break;
                 }
+
+                if (observation) {
+                    record_submission(producer_execution_state_[producer], policy, *observation);
+                }
             }
+
 
             if (frame_failed) {
                 if (++failed_frames >= 10) {
@@ -266,7 +286,7 @@ namespace parallax::core {
          * devices because Graph stores only non-owning producer pointers.
          */
         context_.products().clear();
-
+        producer_execution_state_.clear();
         marker_depth_producer_.reset();
         charuco_pose_producer_.reset();
         depth_producer_.reset();

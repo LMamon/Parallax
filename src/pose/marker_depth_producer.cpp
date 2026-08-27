@@ -28,6 +28,7 @@ namespace parallax::pose {
 
     parallax::core::ExecutionPolicy MarkerDepthPoducer::execution_policy() const noexcept {
         parallax::core::ExecutionPolicy policy{};
+        policy.drop_policy = parallax::core::DropPolicy::Supersede;
         policy.affinity = parallax::core::ResourceAffinity::Cpu;
         policy.stateful = false;
         return policy;

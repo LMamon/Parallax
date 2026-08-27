@@ -27,6 +27,7 @@ namespace parallax::isp {
         // keeping existing implementation rather than changing streams or memory
         // ownership while graph boundaries are established.
         parallax::core::ExecutionPolicy policy{};
+        policy.drop_policy = parallax::core::DropPolicy::Supersede;
         policy.affinity = parallax::core::ResourceAffinity::Gpu;
         policy.stateful = false;
         return policy;

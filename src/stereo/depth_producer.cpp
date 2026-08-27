@@ -24,6 +24,7 @@ namespace parallax::stereo {
 
     parallax::core::ExecutionPolicy DepthProducer::execution_policy() const noexcept {
         parallax::core::ExecutionPolicy policy{};
+        policy.drop_policy = parallax::core::DropPolicy::Supersede;
         policy.affinity = parallax::core::ResourceAffinity::Gpu;
         policy.stateful = false;
         return policy;
@@ -92,7 +93,7 @@ namespace parallax::stereo {
         if (!completion.valid()) {
             return parallax::core::SubmitResult::Failed;
         }
-        
+
         std::shared_ptr<const void> input_lifetime = disparity->payload;
         store_.publish(parallax::core::make_product(parallax::core::ProductId::Depth,
                                                     disparity->metadata,

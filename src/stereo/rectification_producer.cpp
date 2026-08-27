@@ -32,6 +32,7 @@ namespace parallax::stereo {
          * execution-context and VPI-residency phases
          */
         parallax::core::ExecutionPolicy policy{};
+        policy.drop_policy = parallax::core::DropPolicy::Supersede;
         policy.affinity = parallax::core::ResourceAffinity::Gpu;
         policy.stateful = false;
         return policy;

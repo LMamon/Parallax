@@ -26,6 +26,7 @@ namespace parallax::stereo {
         // resources. This phase preserves that specialization instead of moving
         // stereo work onto a generic CUDA/CPU execution path.
         parallax::core::ExecutionPolicy policy{};
+        policy.drop_policy = parallax::core::DropPolicy::Supersede;
         policy.affinity = parallax::core::ResourceAffinity::Gpu;
         policy.stateful = false;
         return policy;

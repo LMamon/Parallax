@@ -1,6 +1,10 @@
 #include <parallax/core/graph.hpp>
 #include <parallax/core/dependency_resolver.hpp>
+#include <parallax/core/execution_gate.hpp>
+#include <parallax/core/product_store.hpp>
 
+#include <chrono>
+#include <memory>
 #include <gtest/gtest.h>
 
 #include <stdexcept>
@@ -39,6 +43,20 @@ namespace parallax::core {
                 
                 int submit_count_ = 0;
         };
+
+        void publish_test_product(
+            ProductStore& store,
+            ProductId id,
+            SourceObservation observation) {
+
+            ProductMetadata metadata{};
+            metadata.observation = observation;
+            metadata.timestamp = std::chrono::steady_clock::now();
+            metadata.production_timestamp = metadata.timestamp;
+            metadata.valid = true;
+
+            store.publish(make_product<int>(id, metadata, std::make_shared<const int>(1)));
+        }
 
         TEST(GraphTest, ProductLookupReturnsRegisteredProducer) {
             Graph graph;
@@ -286,6 +304,71 @@ namespace parallax::core {
 
             ASSERT_EQ(resolved.size(), 1);
             EXPECT_EQ(resolved[0], &lidar);
+        }
+
+        TEST(ExecutionGateTest, CompatibleInputsProduceOneObservation) {
+            ProductStore store;
+
+            const SourceObservation observation{SourceId::StereoCamera, 42};
+
+            publish_test_product(store, ProductId::Pose, observation);
+            publish_test_product(store, ProductId::Depth, observation);
+
+            TestProducer producer{
+                "marker-depth",
+                {ProductId::Pose, ProductId::Depth},
+                {ProductId::MarkerDepth}
+            };
+
+            const auto result = input_observation(producer, store);
+
+            ASSERT_TRUE(result.has_value());
+            EXPECT_EQ(*result, observation);
+        }
+
+        TEST(ExecutionGateTest, IncompatibleInputsAreRejected) {
+            ProductStore store;
+
+            publish_test_product(store, ProductId::Pose, {SourceId::StereoCamera, 42});
+
+            publish_test_product(store, ProductId::Depth, {SourceId::StereoCamera, 43});
+
+            TestProducer producer{
+                "marker-depth",
+                {ProductId::Pose, ProductId::Depth},
+                {ProductId::MarkerDepth}
+            };
+
+            EXPECT_FALSE(input_observation(producer, store).has_value());
+        }
+
+        TEST(ExecutionGateTest, SupersedeRejectsAlreadyConsumedObservation) {
+            ExecutionPolicy policy{};
+            policy.drop_policy = DropPolicy::Supersede;
+
+            ProducerExecutionState state{};
+
+            const SourceObservation observation{SourceId::StereoCamera, 42};
+
+            ASSERT_TRUE(should_submit(policy, state, observation));
+            record_submission(state, policy, observation);
+
+            EXPECT_FALSE(should_submit(policy, state, observation));
+        }
+
+        TEST(ExecutionGateTest, SupersedeAcceptsNewerObservation) {
+            ExecutionPolicy policy{};
+            policy.drop_policy = DropPolicy::Supersede;
+
+            ProducerExecutionState state{};
+
+            const SourceObservation first{SourceId::StereoCamera, 42};
+
+            const SourceObservation newer{SourceId::StereoCamera, 45};
+
+            record_submission(state, policy, first);
+
+            EXPECT_TRUE(should_submit(policy, state, newer));
         }
     }
 }

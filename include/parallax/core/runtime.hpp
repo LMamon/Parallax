@@ -7,6 +7,7 @@
 #include <parallax/camera/stereo_camera.hpp>
 
 #include <parallax/core/execution_context.hpp>
+#include <parallax/core/execution_gate.hpp>
 #include <parallax/core/pipeline.hpp>
 #include <parallax/core/sensor_frame.hpp>
 #include <parallax/core/graph.hpp>
@@ -31,6 +32,7 @@
 #include <filesystem>
 #include <memory>
 #include <thread>
+#include <unordered_map>
 
 namespace parallax::core {
     class Runtime {
@@ -60,6 +62,7 @@ namespace parallax::core {
             [[nodiscard]] const DependencyResolver& resolver() const noexcept { return resolver_; }
 
         private:
+            std::unordered_map<const Producer*, ProducerExecutionState> producer_execution_state_;
             void runLidarSource();
             parallax::camera::CameraConfig config_{};
             

@@ -26,6 +26,15 @@ namespace parallax::core {
         return it->second.capacity;
     }
 
+    std::optional<ProductMetadata> ProductStore::metadata(ProductId id) const noexcept {
+        std::shared_lock lock(mutex_);
+
+        const auto it = entries_.find(id);
+        if (it == entries_.end()) return std::nullopt;
+
+        return it->second.metadata;
+    }
+    
     bool ProductStore::contains(ProductId id) const noexcept {
         std::shared_lock lock(mutex_);
         return entries_.find(id) != entries_.end();

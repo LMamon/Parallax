@@ -67,7 +67,7 @@ namespace parallax::core {
                 auto stored = std::make_shared<Product<T>>(std::move(product));
                 const ProductId id = stored->id;
 
-                Entry entry{std::type_index(typeid(T)), stored};
+                Entry entry{std::type_index(typeid(T)), stored, stored->metadata};
 
                 entries_[id] = entry;
 
@@ -133,6 +133,7 @@ namespace parallax::core {
             }
 
             [[nodiscard]] bool contains(ProductId id) const noexcept;
+            [[nodiscard]] std::optional<ProductMetadata> metadata(ProductId id) const noexcept;
             void clear() noexcept;
 
         private:
@@ -145,6 +146,7 @@ namespace parallax::core {
             struct Entry {
                 std::type_index type{typeid(void)};
                 std::shared_ptr<const void> product{};
+                ProductMetadata metadata{};
             };
 
             struct History {

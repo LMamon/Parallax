@@ -342,33 +342,132 @@ namespace parallax::core {
             EXPECT_FALSE(input_observation(producer, store).has_value());
         }
 
-        TEST(ExecutionGateTest, SupersedeRejectsAlreadyConsumedObservation) {
+        TEST(ExecutionGateTest, UnthrottledProducerIsAlwaysDue) {
             ExecutionPolicy policy{};
-            policy.drop_policy = DropPolicy::Supersede;
+            policy.target_hz = 0.0;
 
             ProducerExecutionState state{};
+            state.has_last_submission = true;
 
-            const SourceObservation observation{SourceId::StereoCamera, 42};
+            const auto now = std::chrono::steady_clock::now();
+            state.last_submission = now;
 
-            ASSERT_TRUE(should_submit(policy, state, observation));
-            record_submission(state, policy, observation);
+            InputObservation input{};
+            SourceObservation{SourceId::StereoCamera, 1};
+            input.timestamp = now;
 
-            EXPECT_FALSE(should_submit(policy, state, observation));
+            EXPECT_TRUE(should_submit(policy, state, input, now));
         }
 
-        TEST(ExecutionGateTest, SupersedeAcceptsNewerObservation) {
+        TEST(ExecutionGateTest, TargetRateRejectsEarlyExecution) {
+            ExecutionPolicy policy{};
+            policy.target_hz = 10.0; // 100 ms period
+
+            ProducerExecutionState state{};
+            state.has_last_submission = true;
+
+            const auto now = std::chrono::steady_clock::now();
+            state.last_submission = now - std::chrono::milliseconds(50);
+
+            InputObservation input{};
+            SourceObservation{SourceId::StereoCamera, 1};
+            input.timestamp = now;
+
+            EXPECT_FALSE(should_submit(policy, state, input, now));
+        }
+
+        TEST(ExecutionGateTest, TargetRateAcceptsDueExecution) {
+            ExecutionPolicy policy{};
+            policy.target_hz = 10.0; // 100 ms period
+
+            ProducerExecutionState state{};
+            state.has_last_submission = true;
+
+            const auto now = std::chrono::steady_clock::now();
+            state.last_submission = now - std::chrono::milliseconds(100);
+
+            InputObservation input{};
+            SourceObservation{SourceId::StereoCamera, 1};
+            input.timestamp = now;
+
+            EXPECT_TRUE(should_submit(policy, state, input, now));
+        }
+
+        TEST(ExecutionGateTest, FreshnessDisabledAcceptsOldInput) {
+            ExecutionPolicy policy{};
+            policy.max_input_age_ms = 0.0;
+
+            ProducerExecutionState state{};
+
+            const auto now = std::chrono::steady_clock::now();
+
+            InputObservation input{};
+            SourceObservation{SourceId::StereoCamera, 1};
+            input.timestamp = now - std::chrono::seconds(10);
+
+            EXPECT_TRUE(should_submit(policy, state, input, now));
+        }
+
+        TEST(ExecutionGateTest, FreshInputIsAccepted) {
+            ExecutionPolicy policy{};
+            policy.max_input_age_ms = 100.0;
+
+            ProducerExecutionState state{};
+
+            const auto now = std::chrono::steady_clock::now();
+
+            InputObservation input{};
+            SourceObservation{SourceId::StereoCamera, 1};
+            input.timestamp = now - std::chrono::milliseconds(50);
+
+            EXPECT_TRUE(should_submit(policy, state, input, now));
+        }
+
+        TEST(ExecutionGateTest, StaleInputIsRejected) {
+            ExecutionPolicy policy{};
+            policy.max_input_age_ms = 100.0;
+
+            ProducerExecutionState state{};
+
+            const auto now = std::chrono::steady_clock::now();
+
+            InputObservation input{};
+            SourceObservation{SourceId::StereoCamera, 1};
+            input.timestamp = now - std::chrono::milliseconds(101);
+
+            EXPECT_FALSE(should_submit(policy, state, input, now));
+        }
+
+        TEST(ExecutionGateTest, FutureTimestampIsRejected) {
+            ExecutionPolicy policy{};
+            policy.max_input_age_ms = 100.0;
+
+            ProducerExecutionState state{};
+
+            const auto now = std::chrono::steady_clock::now();
+
+            InputObservation input{};
+            SourceObservation{SourceId::StereoCamera, 1};
+            input.timestamp = now + std::chrono::milliseconds(1);
+
+            EXPECT_FALSE(should_submit(policy, state, input, now));
+        }
+
+        TEST(ExecutionGateTest, SupersedeStillRejectsConsumedObservation) {
             ExecutionPolicy policy{};
             policy.drop_policy = DropPolicy::Supersede;
 
             ProducerExecutionState state{};
 
-            const SourceObservation first{SourceId::StereoCamera, 42};
+            const auto now = std::chrono::steady_clock::now();
 
-            const SourceObservation newer{SourceId::StereoCamera, 45};
+            InputObservation input{};
+            SourceObservation{SourceId::StereoCamera, 42};
+            input.timestamp = now;
 
-            record_submission(state, policy, first);
-
-            EXPECT_TRUE(should_submit(policy, state, newer));
+            ASSERT_TRUE(should_submit(policy, state, input, now));
+            record_submission(state, policy, input, now);
+            EXPECT_FALSE(should_submit(policy, state, input, now));
         }
     }
 }

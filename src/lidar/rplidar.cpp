@@ -42,14 +42,11 @@ namespace parallax::lidar {
 
     Rplidar::~Rplidar() { shutdown(); }
 
-    bool Rplidar::initialize(
-        const std::string& device,
-        std::uint32_t baud_rate) {
+    bool Rplidar::initialize(const std::string& device, std::uint32_t baud_rate) {
 
-        if (initialized_) { return true; }
+        if (initialized_) return true;
 
         auto driver_result = sl::createLidarDriver();
-
         if (!driver_result) {
             std::cerr << "Rplidar: failed to create SLAMTEC driver\n";
             return false;
@@ -58,7 +55,6 @@ namespace parallax::lidar {
         driver_ = *driver_result;
 
         auto channel_result = sl::createSerialPortChannel(device, baud_rate);
-
         if (!channel_result) {
             std::cerr << "Rplidar: failed to create serial channel for " << device << '\n';
 
@@ -69,7 +65,6 @@ namespace parallax::lidar {
         channel_ = *channel_result;
 
         const sl_result connect_result = driver_->connect(channel_);
-
         if (SL_IS_FAIL(connect_result)) {
             std::cerr << "Rplidar: failed to connect to " << device
                       << " at "<< baud_rate
@@ -174,7 +169,6 @@ namespace parallax::lidar {
         }
 
         const sl_result ascend_result = driver_->ascendScanData(nodes.data(), count);
-
         if (SL_IS_FAIL(ascend_result)) {
             std::cerr << "Rplidar: failed to order scan measurements\n";
 

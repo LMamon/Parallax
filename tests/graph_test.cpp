@@ -469,5 +469,82 @@ namespace parallax::core {
             record_submission(state, policy, input, now);
             EXPECT_FALSE(should_submit(policy, state, input, now));
         }
+
+        TEST(ExecutionGateTest, SubmissionDecisionReportsRateLimit) {
+            ExecutionPolicy policy{};
+            policy.target_hz = 10.0;
+
+            ProducerExecutionState state{};
+            const auto now = std::chrono::steady_clock::now();
+
+            state.has_last_submission = true;
+            state.last_submission = now - std::chrono::milliseconds(20);
+
+            InputObservation input{
+                SourceObservation{SourceId::StereoCamera, 1},
+                now
+            };
+
+            EXPECT_EQ(
+                submission_decision(policy, state, input, now),
+                SubmissionDecision::RateLimited);
+        }
+
+        TEST(ExecutionGateTest, SubmissionDecisionReportsStaleInput) {
+            ExecutionPolicy policy{};
+            policy.max_input_age_ms = 50.0;
+
+            ProducerExecutionState state{};
+            const auto now = std::chrono::steady_clock::now();
+
+            InputObservation input{
+                SourceObservation{SourceId::StereoCamera, 1},
+                now - std::chrono::milliseconds(100)
+            };
+
+            EXPECT_EQ(
+                submission_decision(policy, state, input, now),
+                SubmissionDecision::StaleInput);
+        }
+
+        TEST(ExecutionGateTest, SubmissionDecisionReportsSupersededInput) {
+            ExecutionPolicy policy{};
+            policy.drop_policy = DropPolicy::Supersede;
+
+            ProducerExecutionState state{};
+            state.has_last_observation = true;
+            state.last_observation =
+                SourceObservation{SourceId::StereoCamera, 7};
+
+            const auto now = std::chrono::steady_clock::now();
+
+            InputObservation input{
+                SourceObservation{SourceId::StereoCamera, 7},
+                now
+            };
+
+            EXPECT_EQ(
+                submission_decision(policy, state, input, now),
+                SubmissionDecision::Superseded);
+        }
+
+        TEST(ExecutionGateTest, SubmissionDecisionAcceptsRunnableInput) {
+            ExecutionPolicy policy{};
+            policy.target_hz = 30.0;
+            policy.max_input_age_ms = 100.0;
+            policy.drop_policy = DropPolicy::Supersede;
+
+            ProducerExecutionState state{};
+            const auto now = std::chrono::steady_clock::now();
+
+            InputObservation input{
+                SourceObservation{SourceId::StereoCamera, 8},
+                now - std::chrono::milliseconds(5)
+            };
+
+            EXPECT_EQ(
+                submission_decision(policy, state, input, now),
+                SubmissionDecision::Submit);
+        }
     }
 }

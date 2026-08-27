@@ -16,6 +16,7 @@
 #include <parallax/visualization/publisher.hpp>
 
 #include <parallax/isp/isp_producer.hpp>
+#include <parallax/core/execution_stats.hpp>
 
 #include <parallax/stereo/rectification_producer.hpp>
 #include <parallax/stereo/stereo_producer.hpp>
@@ -63,6 +64,8 @@ namespace parallax::core {
 
         private:
             std::unordered_map<const Producer*, ProducerExecutionState> producer_execution_state_;
+            std::unordered_map<const Producer*, ProducerExecutionStats> producer_execution_stats_;
+            
             void runLidarSource();
             parallax::camera::CameraConfig config_{};
             

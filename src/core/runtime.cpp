@@ -26,7 +26,6 @@ namespace parallax::core {
         }
 
         camera_ = std::make_unique<parallax::camera::StereoCamera>(config_);
-
         if (!camera_->initialize()) {
             std::cerr << "Runtime: failed to initialize camera\n";
             shutdown();
@@ -34,7 +33,6 @@ namespace parallax::core {
         }
 
         lidar_ = std::make_unique<parallax::lidar::Rplidar>();
-
         if (!lidar_->initialize()) {
             std::cerr << "Runtime: failed to initialize RPLIDAR\n";
             shutdown();
@@ -133,12 +131,26 @@ namespace parallax::core {
          * DependencyResolver deduplicates shared producers and returns them in
          * dependency-first order.
          */
-        const std::vector<ProductId> requested_products{
-            ProductId::MarkerDepth,
-            ProductId::Confidence
-        };
-
+        const std::vector<ProductId> requested_products{ProductId::MarkerDepth, ProductId::Confidence};
         const auto execution_plan = resolver_.resolve(requested_products);
+
+        /**
+         * Populate the stats map before the LiDAR worker starts.
+         *
+         * The camera thread and LiDAR thread then mutate only their own already-created
+         * ProducerExecutionStats entries. Neither thread inserts into the unordered_map
+         * while the other is running.
+         */
+        for (Producer* producer : execution_plan) {
+            if (producer != nullptr) {
+                producer_execution_stats_.try_emplace(producer);
+            }
+        }
+
+        if (lidar_producer_) {
+            producer_execution_stats_.try_emplace(lidar_producer_.get());
+        }
+
         lidar_thread_ = std::thread(&Runtime::runLidarSource, this);
 
         while (running_.load() && !stop_requested) {
@@ -150,41 +162,58 @@ namespace parallax::core {
                     break;
                 }
 
+                auto& stats = producer_execution_stats_.at(producer);
+                ++stats.considered;
+
                 const auto policy = producer->execution_policy();
-                const auto observation = input_observation(*producer, context_.products());
+                const auto input = input_observation_with_timestamp(*producer, context_.products());
 
                 if (!producer->inputs().empty()) {
-                    /**
-                     * Missing or incompatible inputs mean this producer has no valid
-                     * observation to consume.
-                     */
-                    if (!observation) {
+                    if (!input) {
+                        ++stats.missing_or_incompatible_input;
                         frame_failed = true;
                         break;
                     }
 
                     auto& state = producer_execution_state_[producer];
+                    const auto now = ExecutionContext::now();
 
-                    if (!should_submit(policy, state, *observation)) {
-                        continue;
+                    switch (submission_decision(policy, state, *input, now)) {
+                        case SubmissionDecision::Submit:
+                            break;
+
+                        case SubmissionDecision::StaleInput:
+                            ++stats.stale_input;
+                            continue;
+
+                        case SubmissionDecision::RateLimited:
+                            ++stats.rate_limited;
+                            continue;
+
+                        case SubmissionDecision::Superseded:
+                            ++stats.superseded;
+                            continue;
                     }
                 }
 
                 const SubmitResult result = producer->submit(context_);
-
                 if (result == SubmitResult::Failed) {
+                    ++stats.failed;
                     std::cerr << "Runtime: producer failed: " << producer->name() << '\n';
                     frame_failed = true;
                     break;
                 }
 
                 if (result == SubmitResult::NoWork) {
+                    ++stats.no_work;
                     frame_failed = true;
                     break;
                 }
 
-                if (observation) {
-                    record_submission(producer_execution_state_[producer], policy, *observation);
+                ++stats.submitted;
+
+                if (input) {
+                    record_submission(producer_execution_state_[producer], policy, *input, ExecutionContext::now());
                 }
             }
 
@@ -250,18 +279,24 @@ namespace parallax::core {
                     return;
                 }
 
+                auto& stats = producer_execution_stats_.at(producer);
+                ++stats.considered;
+
                 const SubmitResult result = producer->submit(context_);
                 if (result == SubmitResult::Failed) {
-                    /**
-                    * A LiDAR acquisition failure does not invalidate the camera
-                    * branch. Stop this source worker without taking down unrelated
-                    * products; source-health policy can become more sophisticated
-                    * in the later
-                    */
-                   std::cerr << "Runtime: lidar producer failed: " << producer->name() << "\n";
-                   return;
+                    ++stats.failed;
+
+                    std::cerr << "Runtime: lidar producer failed: " << producer->name() << '\n';
+
+                    return;
                 }
-                if (result == SubmitResult::NoWork) continue;
+
+                if (result == SubmitResult::NoWork) {
+                    ++stats.no_work;
+                    continue;
+                }
+
+                ++stats.submitted;
             }
         }
     }

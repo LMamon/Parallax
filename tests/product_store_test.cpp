@@ -1,3 +1,4 @@
+#include <parallax/core/fixed_payload_pool.hpp>
 #include <parallax/core/product_store.hpp>
 #include <gtest/gtest.h>
 
@@ -215,6 +216,84 @@ namespace parallax::core {
 
             ASSERT_NE(latest, nullptr);
             EXPECT_EQ(latest->metadata.observation.sequence, iterations);
+        }
+
+        TEST(FixedPayloadPoolTest, CapacityIsBounded) {
+            FixedPayloadPool<int, 2> pool;
+
+            ASSERT_TRUE(pool.initialize([](int& slot, std::size_t index) {
+                slot = static_cast<int>(index);
+                return true;
+            }));
+
+            EXPECT_EQ(pool.capacity(), 2);
+
+            auto first = pool.acquire();
+            auto second = pool.acquire();
+
+            ASSERT_NE(first, nullptr);
+            ASSERT_NE(second, nullptr);
+            EXPECT_NE(first.get(), second.get());
+
+            // Both preallocated slots are leased. acquire() must not allocate
+            // another payload or grow the pool.
+            auto exhausted = pool.acquire();
+
+            EXPECT_EQ(exhausted, nullptr);
+        }
+
+        TEST(FixedPayloadPoolTest, HeldPayloadCannotBeReused) {
+            FixedPayloadPool<int, 2> pool;
+
+            ASSERT_TRUE(pool.initialize([](int& slot, std::size_t index) {
+                slot = static_cast<int>(index);
+                return true;
+            }));
+
+            auto held = pool.acquire();
+            ASSERT_NE(held, nullptr);
+
+            int* const held_address = held.get();
+            auto other = pool.acquire();
+
+            ASSERT_NE(other, nullptr);
+            EXPECT_NE(other.get(), held_address);
+
+            // Both slots are currently leased.
+            EXPECT_EQ(pool.acquire(), nullptr);
+
+            other.reset();
+            auto reacquired = pool.acquire();
+
+            ASSERT_NE(reacquired, nullptr);
+            // The held slot is still protected by shared ownership, so the only
+            // reusable slot must be the one just released.
+            EXPECT_NE(reacquired.get(), held_address);
+        }
+
+        TEST(FixedPayloadPoolTest, ReleasedPayloadBecomesReusable) {
+            FixedPayloadPool<int, 1> pool;
+
+            ASSERT_TRUE(pool.initialize([](int& slot, std::size_t) {
+                slot = 42;
+                return true;
+            }));
+
+            auto first = pool.acquire();
+
+            ASSERT_NE(first, nullptr);
+            int* const address = first.get();
+
+            EXPECT_EQ(pool.acquire(), nullptr);
+
+            first.reset();
+            auto second = pool.acquire();
+
+            ASSERT_NE(second, nullptr);
+            // No allocation/growth occurred. The original preallocated slot was
+            // returned to the reusable set once its lease disappeared.
+            EXPECT_EQ(second.get(), address);
+            EXPECT_EQ(*second, 42);
         }
     }
 } 

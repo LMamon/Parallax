@@ -1,4 +1,5 @@
 #include <parallax/core/execution_context.hpp>
+#include <parallax/core/runtime_metrics.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -175,6 +176,7 @@ namespace parallax::core {
     }
 
     bool ExecutionContext::drain() noexcept {
+        ++runtime_metrics().context_drains;
         bool ok = true;
 
         // Drain dependent lanes before the lanes that feed them.
@@ -194,7 +196,6 @@ namespace parallax::core {
         if (stream == nullptr) return {};
 
         std::lock_guard<std::mutex> lock(completion_mutex_);
-
         for (std::size_t i = 0; i < vpi_completion_slots_.size(); ++i) {
             auto& slot = vpi_completion_slots_[i];
             if (!slot.lease.expired()) continue;
@@ -243,10 +244,7 @@ namespace parallax::core {
         return {};
     }
 
-    bool ExecutionContext::waitFor(
-        const CompletionHandle& completion,
-        parallax::vpi::Stream& consumer_lane) noexcept {
-
+    bool ExecutionContext::waitFor(const CompletionHandle& completion, parallax::vpi::Stream& consumer_lane) noexcept {
         if (completion.kind == CompletionKind::None || completion.kind == CompletionKind::CpuReady) {
             return true;
         }
@@ -267,6 +265,7 @@ namespace parallax::core {
                     return false;
                 }
 
+                ++runtime_metrics().accelerator_waits;
                 return vpiStreamWaitEvent(consumer_lane.handle(), slot.event) == VPI_SUCCESS;
             }
 
@@ -280,6 +279,7 @@ namespace parallax::core {
                     return false;
                 }
 
+                ++runtime_metrics().accelerator_waits;
                 return cudaStreamWaitEvent(consumer_lane.cudaHandle(), slot.event, 0) == cudaSuccess;
             }
 
@@ -295,9 +295,7 @@ namespace parallax::core {
             return true;
         }
 
-        if (completion.kind != CompletionKind::Cuda ||
-            !completion.ticket ||
-            consumer_stream == nullptr) {
+        if (completion.kind != CompletionKind::Cuda || !completion.ticket || consumer_stream == nullptr) {
             return false;
         }
 
@@ -315,9 +313,7 @@ namespace parallax::core {
         return cudaStreamWaitEvent(consumer_stream, slot.event, 0) == cudaSuccess;
     }
 
-    bool ExecutionContext::waitForHost(
-        const CompletionHandle& completion) noexcept {
-
+    bool ExecutionContext::waitForHost(const CompletionHandle& completion) noexcept {
         if (completion.kind == CompletionKind::None || completion.kind == CompletionKind::CpuReady) {
             return true;
         }
@@ -327,7 +323,6 @@ namespace parallax::core {
         const auto& ticket = *completion.ticket;
 
         std::lock_guard<std::mutex> lock(completion_mutex_);
-
         switch (completion.kind) {
             case CompletionKind::Vpi: {
                 if (ticket.slot >= vpi_completion_slots_.size()) return false;
@@ -336,6 +331,8 @@ namespace parallax::core {
                 if (slot.generation != ticket.generation || slot.event == nullptr) {
                     return false;
                 }
+                
+                ++runtime_metrics().host_waits;
                 return vpiEventSync(slot.event) == VPI_SUCCESS;
             }
 
@@ -346,7 +343,8 @@ namespace parallax::core {
                 if (slot.generation != ticket.generation || slot.event == nullptr) {
                     return false;
                 }
-
+                
+                ++runtime_metrics().host_waits;
                 return cudaEventSynchronize(slot.event) == cudaSuccess;
             }
 

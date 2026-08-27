@@ -2,6 +2,8 @@
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/pose/charuco_pose.hpp>
 #include <parallax/core/execution_context.hpp>
+#include <parallax/core/runtime_metrics.hpp>
+
 
 #include <cuda_runtime.h>
 
@@ -96,10 +98,17 @@ namespace parallax::pose {
                     return parallax::core::SubmitResult::Failed;
                 }
 
-                if (cudaMemcpy(&depth_m, pixel, sizeof(float), 
-                               cudaMemcpyDeviceToHost) == cudaSuccess &&
-                               std::isfinite(depth_m) &&
-                               depth_m > 0.0f) {
+                const cudaError_t copy_status = cudaMemcpy(&depth_m, pixel, sizeof(float), cudaMemcpyDeviceToHost);
+
+                if (copy_status == cudaSuccess) {
+                    auto& metrics = parallax::core::runtime_metrics();
+                    ++metrics.device_to_host_transfers;
+                    metrics.device_to_host_bytes += sizeof(float);
+                }
+
+                if (copy_status == cudaSuccess &&
+                    std::isfinite(depth_m) &&
+                    depth_m > 0.0f) {
 
                     result->depth_m = depth_m;
                     result->depth_valid = true;

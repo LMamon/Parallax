@@ -1,4 +1,5 @@
 #include <parallax/cuda/cuda_buffer.cuh>
+#include <parallax/core/runtime_metrics.hpp>
 
 #include <limits>
 #include <utility>
@@ -13,7 +14,7 @@ namespace parallax::cuda {
         return lhs > std::numeric_limits<std::size_t>::max() / rhs;
     }
 
-    } // namespace
+    }
 
     CudaBuffer::CudaBuffer(std::uint32_t width, std::uint32_t height, std::uint32_t channels, std::size_t element_size) {
         allocate(width, height, channels, element_size);
@@ -52,9 +53,9 @@ namespace parallax::cuda {
         std::size_t allocation_pitch = 0;
 
         const cudaError_t error = cudaMallocPitch(&allocation, 
-                                                &allocation_pitch, 
-                                                row_bytes, 
-                                                static_cast<std::size_t>(height));
+                                                  &allocation_pitch, 
+                                                  row_bytes, 
+                                                  static_cast<std::size_t>(height));
 
         if (error != cudaSuccess) return false;
 
@@ -67,22 +68,26 @@ namespace parallax::cuda {
         element_size_ = element_size;
         pitch_ = allocation_pitch;
 
+        auto& metrics = parallax::core::runtime_metrics();
+        ++metrics.cuda_allocations;
+        metrics.cuda_allocated_bytes += allocatedBytes();
+
         return true;
     }
 
     void CudaBuffer::release() noexcept {
         if (device_ptr_ != nullptr) {
             /*
-            * cudaFree may synchronize work that uses this allocation.
-            * deliberately avoided cudaDeviceSynchronize(), which would
-            * stall unrelated work on the entire device.
-            *
-            * The owning pipeline must ensure that no future operation
-            * references this buffer before destruction.
-            */
+             * cudaFree may synchronize work that uses this allocation.
+             * deliberately avoided cudaDeviceSynchronize(), which would
+             * stall unrelated work on the entire device.
+             *
+             * The owning pipeline must ensure that no future operation
+             * references this buffer before destruction.
+             */
             cudaFree(device_ptr_);
+            ++parallax::core::runtime_metrics().cuda_frees;
         }
-
         resetMetadata();
     }
 
@@ -100,7 +105,13 @@ namespace parallax::cuda {
                                                     cudaMemcpyHostToDevice,
                                                     stream);
 
-        return error == cudaSuccess;
+        if (error != cudaSuccess) return false;
+
+        auto& metrics = parallax::core::runtime_metrics();
+        ++metrics.host_to_device_transfers;
+        metrics.host_to_device_bytes += logicalBytes();
+
+        return true;
     }
 
     bool CudaBuffer::downloadAsync(void* host_data, std::size_t host_pitch, cudaStream_t stream) const {
@@ -117,7 +128,13 @@ namespace parallax::cuda {
                                                     cudaMemcpyDeviceToHost,
                                                     stream);
 
-        return error == cudaSuccess;
+        if (error != cudaSuccess) return false;
+
+        auto& metrics = parallax::core::runtime_metrics();
+        ++metrics.device_to_host_transfers;
+        metrics.device_to_host_bytes += logicalBytes();
+
+        return true;
     }
 
     bool CudaBuffer::copyFromAsync(const CudaBuffer& source, cudaStream_t stream) {
@@ -138,7 +155,13 @@ namespace parallax::cuda {
                                                     cudaMemcpyDeviceToDevice,
                                                     stream);
 
-        return error == cudaSuccess;
+        if (error != cudaSuccess) return false;
+
+        auto& metrics = parallax::core::runtime_metrics();
+        ++metrics.device_to_device_transfers;
+        metrics.device_to_device_bytes += logicalBytes();
+
+        return true;
     }
 
     bool CudaBuffer::isAllocated() const noexcept { return device_ptr_ != nullptr; }

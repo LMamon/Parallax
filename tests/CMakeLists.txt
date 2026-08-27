@@ -20,6 +20,18 @@ target_link_libraries(parallax_rplidar_smoke
         parallax_lidar
 )
 
+add_executable(parallax_runtime_metrics_test
+    runtime_metrics_test.cpp
+)
+
+target_link_libraries(parallax_runtime_metrics_test
+    PRIVATE
+        parallax_core
+        parallax_cuda
+        CUDA::cudart
+        GTest::gtest_main
+)
+
 target_link_libraries(parallax_tests
     PRIVATE
         parallax_core
@@ -42,3 +54,4 @@ include(GoogleTest)
 gtest_discover_tests(parallax_tests)
 gtest_discover_tests(parallax_product_store_test)
 gtest_discover_tests(parallax_graph_test)
+gtest_discover_tests(parallax_runtime_metrics_test)

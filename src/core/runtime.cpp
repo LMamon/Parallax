@@ -67,11 +67,8 @@ namespace parallax::core {
 
         stereo_producer_ = std::make_unique<parallax::stereo::StereoProducer>(pipeline_.matcher(), context_.products());
 
-        depth_producer_ = std::make_unique<parallax::stereo::DepthProducer>(
-                                           pipeline_.calibration(),
-                                           pipeline_.depth(),
-                                           pipeline_.vpiStream(),
-                                           context_.products());
+        depth_producer_ = std::make_unique<parallax::stereo::DepthProducer>(pipeline_.calibration(),
+                                                                            context_.products());
 
         charuco_pose_producer_ = std::make_unique<parallax::pose::CharucoPoseProducer>(
                                                   pipeline_.charucoPose(),
@@ -174,8 +171,7 @@ namespace parallax::core {
 
             if (frame_failed) {
                 if (++failed_frames >= 10) {
-                    std::cerr
-                        << "Runtime: graph failed to produce a valid frame\n";
+                    std::cerr << "Runtime: graph failed to produce a valid frame\n";
                     break;
                 }
                 continue;

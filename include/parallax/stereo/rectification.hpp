@@ -3,7 +3,9 @@
 #include <parallax/stereo/calibration.hpp>
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/vpi/image_wrapper.hpp>
+#include <parallax/core/fixed_payload_pool.hpp>
 
+#include <memory>
 #include <vpi/Stream.h>
 #include <vpi/WarpMap.h>
 #include <vpi/algo/Remap.h>
@@ -24,14 +26,47 @@ namespace parallax::stereo {
                             VPIStream stream);
             
             bool process(VPIStream stream);
-            const parallax::isp::RectifiedStereoFrame& output() const { return output_; } //
-            const parallax::isp::RectifiedStereoFrame& rgb() const noexcept { return rgb_output_; }
-            const parallax::isp::RectifiedStereoGrayFrame& gray() const noexcept { return gray_output_; }
+            static constexpr std::size_t OutputSlotCount = 3;
+
+            struct OutputSlot {
+                parallax::isp::RectifiedStereoFrame rgb{};
+                parallax::isp::RectifiedStereoGrayFrame gray{};
+            };
+
+            [[nodiscard]] std::shared_ptr<OutputSlot> acquireOutput() {
+                return output_pool_.acquire();
+            }
+
+            bool process(const parallax::isp::StereoRgbFrame& rgb_input,
+                         const parallax::isp::StereoGrayFrame& gray_input, 
+                         OutputSlot& output, 
+                         VPIStream stream);
+
+
+            const parallax::isp::RectifiedStereoFrame& rgb() const noexcept {
+                if (latest_output_ != nullptr) {
+                    return latest_output_->rgb;
+                }
+
+                return output_pool_.prototype()->rgb;
+            }
+
+            const parallax::isp::RectifiedStereoGrayFrame& gray() const noexcept {
+                return output_pool_.prototype()->gray;
+            }
 
             void shutdown();
             [[nodiscard]] bool initialized() const noexcept { return initialized_; }
         
         private:
+            /**
+             * Non-owning pointer to the most recently submitted output slot.
+             *
+             * Lifetime remains governed by the fixed pool and published Product handles.
+             * This exists only to preserve the established visualization accessor while
+             * output ownership becomes generation-specific.
+             */
+            const OutputSlot* latest_output_ = nullptr;
             // Current rectified outputs are CUDA-owned, pitch-linear
             // CudaBuffers. The VPI ImageWrapper members below are non-owning
             // views over these allocations.
@@ -39,16 +74,7 @@ namespace parallax::stereo {
             // Phase 7 will reconsider this boundary independently for RGB and
             // grayscale: RGB remains CUDA-friendly for appearance consumers,
             // while rectified grayscale is a candidate for VPI ownership.
-            parallax::isp::RectifiedStereoFrame rgb_output_{};
-            parallax::isp::RectifiedStereoGrayFrame gray_output_{};
-
-            // Legacy members retained during the ownership audit. Do not
-            // remove as part of the documentation-only commit.
-            parallax::isp::RectifiedStereoFrame output_{};
-            parallax::vpi::ImageWrapper left_input_;
-            parallax::vpi::ImageWrapper right_input_;
-            parallax::vpi::ImageWrapper left_output_;
-            parallax::vpi::ImageWrapper right_output_;
+            parallax::core::FixedPayloadPool<OutputSlot, OutputSlotCount> output_pool_;
 
             // Non-owning VPI wrappers over CUDA-owned RGB storage.
             // Inputs are owned by ISP; outputs are owned by StereoRectifier.

@@ -2,10 +2,11 @@
 
 #include <parallax/camera/camera_config.hpp>
 #include <parallax/camera/frame_types.hpp>
-
+#include <parallax/core/fixed_payload_pool.hpp>
 #include <parallax/isp/frame_types.hpp>
 
 #include <cuda_runtime.h>
+#include <memory>
 
 namespace parallax::isp {
 
@@ -20,17 +21,34 @@ namespace parallax::isp {
             ISP(ISP&&) = delete;
             ISP& operator=(ISP&&) = delete;
 
-            bool initialize(const parallax::camera::CameraConfig& config); //maybe change interface to params instead of config
+            static constexpr std::size_t OutputSlotCount = 3;
 
-            bool process(const parallax::camera::RawFrame& input);
+            struct OutputSlot {
+                StereoRgbFrame rgb{};
+                StereoGrayFrame gray{};
+            };
+
+            bool initialize(const parallax::camera::CameraConfig& config); //maybe change interface to params instead of config
+            bool process(const parallax::camera::RawFrame& input, OutputSlot& output);
+
+            [[nodiscard]] std::shared_ptr<OutputSlot> acquireOutput() {
+                return output_pool_.acquire();
+            }
 
             bool synchronize();
+
             void shutdown();
 
             bool downloadRaw(std::uint16_t* host_data, std::size_t host_pitch) const;
 
-            const StereoRgbFrame& rgb() const noexcept { return rgb_output_; }
-            const StereoGrayFrame& gray() const noexcept { return gray_output_; }
+            const StereoRgbFrame& rgb() const noexcept {
+                return output_pool_.prototype()->rgb;
+            }
+
+            const StereoGrayFrame& gray() const noexcept {
+                return output_pool_.prototype()->gray;
+            }
+
             [[nodiscard]] cudaStream_t stream() const noexcept {
                 return stream_;
             }
@@ -47,21 +65,14 @@ namespace parallax::isp {
             // consumed directly by the custom CUDA demosaic/split kernel.
             GpuBayerFrame gpu_input_;
 
-            // CUDA-owned, pitch-linear RGB output.
-            //
-            // Keep RGB CUDA-friendly because it is an appearance product and
-            // future TensorRT/detector consumers should not require a VPI
-            // ownership transition. VPI may wrap this storage when needed,
-            // but the allocation remains owned by ISP.
-            StereoRgbFrame rgb_output_{};
-
-            // CUDA-owned, pitch-linear grayscale output produced by the ISP.
-            //
-            // Rectification currently wraps these allocations as VPI images
-            // without copying or taking ownership. This boundary is a
-            // migration candidate because downstream grayscale processing is
-            // predominantly VPI/OFA based.
-            StereoGrayFrame gray_output_{};
+            /**
+             * Three preallocated generations bound accelerator retention.
+             *
+             * The pool owns one baseline reference to each allocation. Published
+             * products lease a slot through shared ownership. ISP never overwrites a
+             * slot while any product/consumer still holds that generation.
+             */
+            parallax::core::FixedPayloadPool<OutputSlot, OutputSlotCount> output_pool_;
 
             bool initialized_ = false;
         };

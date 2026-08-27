@@ -6,12 +6,8 @@
 
 namespace parallax::stereo {
     DepthProducer::DepthProducer(const StereoCalibration& calibration,
-                                 parallax::isp::DepthFrame& depth,
-                                 parallax::vpi::Stream& stream,
                                  parallax::core::ProductStore& store) :
                                  calibration_(calibration),
-                                 depth_(depth),
-                                 stream_(stream),
                                  store_(store) {}
 
     std::string_view DepthProducer::name() const noexcept {
@@ -35,19 +31,51 @@ namespace parallax::stereo {
 
     parallax::core::SubmitResult DepthProducer::submit(parallax::core::ExecutionContext& context) {
         (void)context;
-        auto& lane = context.stereoLane();
         const auto disparity = store_.latest<parallax::isp::StereoMatchFrame>(parallax::core::ProductId::Disparity);
 
         if (!disparity || !disparity->valid()) {
             return parallax::core::SubmitResult::NoWork;
         }
         
+        if (!output_pool_initialized_) {
+            const auto width = disparity->payload->width;
+            const auto height = disparity->payload->height;
+
+            if (width == 0 || height == 0) {
+                return parallax::core::SubmitResult::Failed;
+            }
+
+            if (!output_pool_.initialize([&](parallax::isp::DepthFrame& depth, std::size_t index) {
+                        depth.width = width;
+                        depth.height = height;
+                        depth.storage_slot = static_cast<std::uint32_t>(index);
+
+                        return depth.depth.allocate(width, height, 1, sizeof(float));
+                    })) {
+
+                return parallax::core::SubmitResult::Failed;
+            }
+
+            output_pool_initialized_ = true;
+        }
+
+        auto& lane = context.stereoLane();
         if (!context.waitFor(disparity->completion, lane)) {
             return parallax::core::SubmitResult::Failed;
         }
 
-        if (!parallax::cuda::disparityToDepth(disparity->payload->disparity, 
-                                              depth_.depth, 
+        auto depth = output_pool_.acquire();
+        if (!depth) {
+            /**
+             * Every preallocated depth generation is still retained.
+             * Never overwrite retained depth and never allocate another large
+             * device buffer in steady state.
+             */
+            return parallax::core::SubmitResult::NoWork;
+        }
+
+        if (!parallax::cuda::disparityToDepth(disparity->payload->disparity,
+                                              depth->depth,
                                               static_cast<float>(calibration_.metadata().virtual_fx),
                                               static_cast<float>(calibration_.metadata().baseline_mm / 1000.0),
                                               parallax::isp::StereoMatchFrame::DisparityScale,
@@ -64,13 +92,14 @@ namespace parallax::stereo {
         if (!completion.valid()) {
             return parallax::core::SubmitResult::Failed;
         }
-
-        auto depth = std::shared_ptr<const parallax::isp::DepthFrame>(&depth_, [](const parallax::isp::DepthFrame*) {});
-
+        
+        std::shared_ptr<const void> input_lifetime = disparity->payload;
         store_.publish(parallax::core::make_product(parallax::core::ProductId::Depth,
                                                     disparity->metadata,
-                                                    std::move(depth),
-                                                    std::move(completion)));
+                                                    std::shared_ptr<const parallax::isp::DepthFrame>(
+                                                        std::move(depth)),
+                                                        std::move(completion),
+                                                        std::move(input_lifetime)));
 
         return parallax::core::SubmitResult::Submitted;
     }

@@ -31,8 +31,10 @@ namespace parallax::isp {
         parallax::cuda::CudaBuffer left;
         parallax::cuda::CudaBuffer right;
 
+        std::uint32_t storage_slot = 0;
         std::uint32_t width = 0;
         std::uint32_t height = 0;
+
         static constexpr std::uint32_t Channels = 3;
         static constexpr PixelFormat Format = PixelFormat::RGB8;
     };
@@ -41,6 +43,7 @@ namespace parallax::isp {
         parallax::cuda::CudaBuffer left;
         parallax::cuda::CudaBuffer right;
 
+        std::uint32_t storage_slot = 0;
         std::uint32_t width = 0;
         std::uint32_t height = 0;
 
@@ -52,6 +55,7 @@ namespace parallax::isp {
         parallax::cuda::CudaBuffer left;
         parallax::cuda::CudaBuffer right;
 
+        std::uint32_t storage_slot = 0;
         std::uint32_t width = 0;
         std::uint32_t height = 0;
 
@@ -63,6 +67,7 @@ namespace parallax::isp {
         parallax::cuda::CudaBuffer left;
         parallax::cuda::CudaBuffer right;
 
+        std::uint32_t storage_slot = 0;
         std::uint32_t width = 0;
         std::uint32_t height = 0;
 
@@ -74,6 +79,7 @@ namespace parallax::isp {
         parallax::cuda::CudaBuffer disparity;
         parallax::cuda::CudaBuffer confidence;
         
+        std::uint32_t storage_slot = 0;
         std::uint32_t width = 0;
         std::uint32_t height = 0;
 
@@ -85,6 +91,7 @@ namespace parallax::isp {
     struct DepthFrame {
         parallax::cuda::CudaBuffer depth;
 
+        std::uint32_t storage_slot = 0;
         std::uint32_t width = 0;
         std::uint32_t height = 0;
 

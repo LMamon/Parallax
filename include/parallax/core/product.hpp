@@ -66,6 +66,7 @@ namespace parallax::core {
         ProductId id{};
         ProductMetadata metadata{};
         CompletionHandle completion{};
+        std::shared_ptr<const void> lifetime_dependency{};
         std::shared_ptr<const T> payload{};
 
         [[nodiscard]] bool valid() const noexcept {
@@ -80,8 +81,9 @@ namespace parallax::core {
     template <typename T> [[nodiscard]] Product<T> make_product(ProductId id,
                                                                 ProductMetadata metadata,
                                                                 std::shared_ptr<const T> payload,
-                                                                CompletionHandle completion = CompletionHandle::cpu_ready()) {
+                                                                CompletionHandle completion = CompletionHandle::cpu_ready(),
+                                                                std::shared_ptr<const void> lifetime_dependency = {}) {
 
-        return Product<T>{id, metadata, std::move(completion), std::move(payload)};
+        return Product<T>{id, metadata, std::move(completion), std::move(lifetime_dependency), std::move(payload)};
     }
 }

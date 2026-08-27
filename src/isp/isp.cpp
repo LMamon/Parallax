@@ -26,25 +26,45 @@ namespace parallax::isp {
         // gpu_input_.fourcc = device_->getPixelFormat();
         const std::uint32_t stereo_width = config.width / 2;
 
-        // Allocate reusable RGB images.
-        if (!rgb_output_.left.allocate(stereo_width, config.height, StereoRgbFrame::Channels, sizeof(std::uint8_t)) ||
-            !rgb_output_.right.allocate(stereo_width, config.height, StereoRgbFrame::Channels, sizeof(std::uint8_t))) {
+        if (!output_pool_.initialize([&](OutputSlot& slot, std::size_t index) {
+                    slot.rgb.width = stereo_width;
+                    slot.rgb.height = config.height;
+                    slot.rgb.storage_slot = static_cast<std::uint32_t>(index);
+
+                    slot.gray.width = stereo_width;
+                    slot.gray.height = config.height;
+                    slot.gray.storage_slot = static_cast<std::uint32_t>(index);
+
+                    if (!slot.rgb.left.allocate(stereo_width,
+                                                config.height,
+                                                StereoRgbFrame::Channels,
+                                                sizeof(std::uint8_t)) ||
+                        !slot.rgb.right.allocate(stereo_width,
+                                                 config.height,
+                                                 StereoRgbFrame::Channels,
+                                                 sizeof(std::uint8_t))) {
+
+                        return false;
+                    }
+
+                    if (!slot.gray.left.allocate(stereo_width,
+                                                 config.height,
+                                                 StereoGrayFrame::Channels,
+                                                 sizeof(std::uint8_t)) ||
+                        !slot.gray.right.allocate(stereo_width,
+                                                  config.height,
+                                                  StereoGrayFrame::Channels,
+                                                  sizeof(std::uint8_t))) {
+
+                        return false;
+                    }
+
+                    return true;
+                })) {
+
             shutdown();
             return false;
         }
-
-        rgb_output_.width = stereo_width;
-        rgb_output_.height = config.height;
-
-        // Allocate reusable gray images
-        if (!gray_output_.left.allocate(stereo_width, config.height, StereoGrayFrame::Channels, sizeof(std::uint8_t)) ||
-            !gray_output_.right.allocate(stereo_width, config.height, StereoGrayFrame::Channels, sizeof(std::uint8_t))) {
-            shutdown();
-            return false;
-        }
-
-        gray_output_.width = stereo_width;
-        gray_output_.height = config.height;
 
         if (cudaStreamCreate(&stream_) != cudaSuccess) {
             shutdown();
@@ -61,11 +81,11 @@ namespace parallax::isp {
         return gpu_input_.buffer.downloadAsync(host_data, host_pitch, stream_);
     }
 
-    bool ISP::process(const parallax::camera::RawFrame& input) {
+    bool ISP::process(const parallax::camera::RawFrame& input, OutputSlot& output) {
         if (!initialized_) return false;
         if (!upload(input)) return false;
 
-        return demosaicAndSplit(gpu_input_, rgb_output_, gray_output_, stream_);
+        return demosaicAndSplit(gpu_input_, output.rgb, output.gray, stream_);
     }
 
     bool ISP::upload(const parallax::camera::RawFrame& input) {
@@ -81,18 +101,7 @@ namespace parallax::isp {
         }
 
         gpu_input_.buffer.release();
-
-        rgb_output_.left.release();
-        rgb_output_.right.release();
-
-        gray_output_.left.release();
-        gray_output_.right.release();
-
-        rgb_output_.width = 0;
-        rgb_output_.height = 0;
-
-        gray_output_.width = 0;
-        gray_output_.height = 0;
+        output_pool_.reset();
 
         initialized_ = false;
     }

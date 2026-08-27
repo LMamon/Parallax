@@ -17,6 +17,7 @@ namespace parallax::vpi {
             ImageWrapper& operator=(ImageWrapper&& other) noexcept;
 
             bool create(const parallax::cuda::CudaBuffer& buffer, VPIImageFormat format);
+            bool rebind(const parallax::cuda::CudaBuffer& buffer, VPIImageFormat format);
 
             void release() noexcept;
 

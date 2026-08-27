@@ -6,7 +6,9 @@
 #include <parallax/stereo/calibration.hpp>
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/vpi/stream.hpp>
+#include <parallax/core/fixed_payload_pool.hpp>
 
+#include <memory>
 #include <vector>
 
 namespace parallax::stereo {
@@ -25,10 +27,7 @@ namespace parallax::stereo {
      */
     class DepthProducer final : public parallax::core::Producer {
         public:
-            DepthProducer(const StereoCalibration& calibration, 
-                          parallax::isp::DepthFrame& depth,
-                          parallax::vpi::Stream& stream,
-                          parallax::core::ProductStore& store);
+            DepthProducer(const StereoCalibration& calibration, parallax::core::ProductStore& store);
 
             [[nodiscard]] std::string_view name() const noexcept override;
             
@@ -44,10 +43,19 @@ namespace parallax::stereo {
             // calibration lifetime is owned outside the producer.
             const StereoCalibration& calibration_;
             
-            
-            // moves orchestration without duplicating accelerator allocations.
-            parallax::isp::DepthFrame& depth_;
-            parallax::vpi::Stream& stream_;
+            static constexpr std::size_t OutputSlotCount = 3;
+
+            /**
+             * Published depth uses bounded generation-specific storage.
+             *
+             * The legacy sequential Pipeline keeps its own single DepthFrame because
+             * that path synchronizes before reuse and does not publish retained
+             * generations. Graph publication must instead preserve old depth pixels
+             * while consumers still hold them.
+             */
+            parallax::core::FixedPayloadPool<parallax::isp::DepthFrame, OutputSlotCount> output_pool_;
+
+            bool output_pool_initialized_ = false;
             
             parallax::core::ProductStore& store_;
             const std::vector<parallax::core::ProductId> inputs_{

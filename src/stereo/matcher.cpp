@@ -42,75 +42,67 @@ namespace parallax::stereo {
         }
 
         stream_ = stream;
-        output_.width = input.width;
-        output_.height = input.height;
-
-        if (!output_.disparity.allocate(input.width, input.height, 1, sizeof(std::int16_t))) {
-            std::cerr << "Failed to allocate disparity buffer\n";
-            shutdown();
-            return false;
-        }
-
-        // if (!output_.confidence.allocate(input.width, input.height, 1, sizeof(std::uint16_t))) {
-        //     std::cerr << "Failed to allocate confidence buffer\n";
-        //     shutdown();
-        //     return false;
-        // }
-        
-        // Wrap all CUDA allocations without copying
-        if (!left_input_.create(input.left, VPI_IMAGE_FORMAT_Y8_ER) ||
-            !right_input_.create(input.right, VPI_IMAGE_FORMAT_Y8_ER) ||
-            !disparity_image_.create(output_.disparity, VPI_IMAGE_FORMAT_S16)) {
-
-            std::cerr << "Failed to create StereoMatcher VPI wrappers\n";
-            shutdown();
-            return false;
-        }
         // OFA in VPI 3.2 requires block-linear stereo input.
         //
         // Rectification intentionally remains pitch-linear Y8_ER because VPI Remap
         // requires input/output format equality. VIC performs the required layout
         // transition here without CPU staging.
-        VPIStatus status = vpiImageCreate(static_cast<int32_t>(input.width),
-                                          static_cast<int32_t>(input.height),
-                                          VPI_IMAGE_FORMAT_Y8_ER_BL,
-                                          VPI_BACKEND_VIC | VPI_BACKEND_OFA,
-                                          &left_block_linear_);
+        VPIStatus status;
+        if (!output_pool_.initialize([&](OutputSlot& slot, std::size_t index) {
 
-        if (status != VPI_SUCCESS) {
-            logVpiError("Failed to create left block-linear image", status);
-            shutdown();
-            return false;
-        }
+                    slot.output.width = input.width;
+                    slot.output.height = input.height;
+                    slot.output.storage_slot = static_cast<std::uint32_t>(index);
 
-        // OFA in VPI 3.2 requires block-linear stereo input.
-        //
-        // Rectification intentionally remains pitch-linear Y8_ER because VPI Remap
-        // requires input/output format equality. VIC performs the required layout
-        // transition here without CPU staging.
-        status = vpiImageCreate(static_cast<int32_t>(input.width),
-                                static_cast<int32_t>(input.height),
-                                VPI_IMAGE_FORMAT_Y8_ER_BL,
-                                VPI_BACKEND_VIC | VPI_BACKEND_OFA,
-                                &right_block_linear_);
+                    if (!slot.output.disparity.allocate(input.width,
+                                                        input.height,
+                                                        1,
+                                                        sizeof(std::int16_t))) {
 
-        if (status != VPI_SUCCESS) {
-            logVpiError("Failed to create right block-linear image", status);
-            shutdown();
-            return false;
-        }
+                        return false;
+                    }
 
+                    if (!slot.disparity_image.create(slot.output.disparity, VPI_IMAGE_FORMAT_S16)) {
+                        return false;
+                    }
 
-        // OFA-only stereo requires block-linear S16 disparity. Values are Q10.5
-        // fixed point and retain the existing StereoMatchFrame::DisparityScale = 32.
-        status = vpiImageCreate(static_cast<int32_t>(input.width),
-                                static_cast<int32_t>(input.height),
-                                VPI_IMAGE_FORMAT_S16_BL,
-                                VPI_BACKEND_OFA | VPI_BACKEND_VIC,
-                                &disparity_block_linear_);
+                    status = vpiImageCreate(static_cast<int32_t>(input.width),
+                                                     static_cast<int32_t>(input.height),
+                                                     VPI_IMAGE_FORMAT_Y8_ER_BL,
+                                                     VPI_BACKEND_VIC | VPI_BACKEND_OFA,
+                                                     &slot.left_block_linear);
 
-        if (status != VPI_SUCCESS) {
-            logVpiError("Failed to create block-linear disparity image", status);
+                    if (status != VPI_SUCCESS) {
+                        logVpiError("Failed to create left block-linear image", status);
+                        return false;
+                    }
+
+                    status = vpiImageCreate(static_cast<int32_t>(input.width),
+                                            static_cast<int32_t>(input.height),
+                                            VPI_IMAGE_FORMAT_Y8_ER_BL,
+                                            VPI_BACKEND_VIC | VPI_BACKEND_OFA,
+                                            &slot.right_block_linear);
+
+                    if (status != VPI_SUCCESS) {
+                        logVpiError("Failed to create right block-linear image", status);
+                        return false;
+                    }
+
+                    status = vpiImageCreate(static_cast<int32_t>(input.width),
+                                            static_cast<int32_t>(input.height),
+                                            VPI_IMAGE_FORMAT_S16_BL,
+                                            VPI_BACKEND_OFA | VPI_BACKEND_VIC,
+                                            &slot.disparity_block_linear);
+
+                    if (status != VPI_SUCCESS) {
+                        logVpiError("Failed to create block-linear disparity image", status);
+                        return false;
+                    }
+
+                    return true;
+                })) {
+
+            std::cerr << "Failed to initialize StereoMatcher output pool\n";
             shutdown();
             return false;
         }
@@ -159,16 +151,30 @@ namespace parallax::stereo {
         return true;
     }
 
-    bool StereoMatcher::process(VPIStream stream) {
-        if (!initialized_) return false;
+    bool StereoMatcher::process(const parallax::isp::RectifiedStereoGrayFrame& input,
+                                OutputSlot& output,
+                                VPIStream stream) {
 
-        VPIStatus status;
+        if (!initialized_ || stream == nullptr) {
+            return false;
+        }
 
-        status = vpiSubmitConvertImageFormat(stream,
-                                            VPI_BACKEND_VIC,
-                                            left_input_.handle(),
-                                            left_block_linear_,
-                                            nullptr);
+        /**
+         * Rectification output is now rotating pooled storage. Rebind the input
+         * wrappers to the exact RectifiedGray generation consumed by this
+         * submission.
+         */
+        if (!left_input_.rebind(input.left, VPI_IMAGE_FORMAT_Y8_ER) ||
+            !right_input_.rebind(input.right, VPI_IMAGE_FORMAT_Y8_ER)) {
+
+            return false;
+        }
+
+        VPIStatus status = vpiSubmitConvertImageFormat(stream,
+                                                       VPI_BACKEND_VIC,
+                                                       left_input_.handle(),
+                                                       output.left_block_linear,
+                                                       nullptr);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to convert left image to block-linear", status);
@@ -176,10 +182,10 @@ namespace parallax::stereo {
         }
 
         status = vpiSubmitConvertImageFormat(stream,
-                                            VPI_BACKEND_VIC,
-                                            right_input_.handle(),
-                                            right_block_linear_,
-                                            nullptr);
+                                             VPI_BACKEND_VIC,
+                                             right_input_.handle(),
+                                             output.right_block_linear,
+                                             nullptr);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to convert right image to block-linear", status);
@@ -187,13 +193,13 @@ namespace parallax::stereo {
         }
 
         status = vpiSubmitStereoDisparityEstimator(stream,
-                                                   VPI_BACKEND_OFA,
-                                                   stereo_,
-                                                   left_block_linear_,
-                                                   right_block_linear_,
-                                                   disparity_block_linear_,
-                                                   nullptr,
-                                                   &submit_params_);
+                                                  VPI_BACKEND_OFA,
+                                                  stereo_,
+                                                  output.left_block_linear,
+                                                  output.right_block_linear,
+                                                  output.disparity_block_linear,
+                                                  nullptr,
+                                                  &submit_params_);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to submit OFA stereo disparity estimator", status);
@@ -201,10 +207,10 @@ namespace parallax::stereo {
         }
 
         status = vpiSubmitConvertImageFormat(stream,
-                                             VPI_BACKEND_VIC,
-                                             disparity_block_linear_,
-                                             disparity_image_.handle(),
-                                             nullptr);
+                                            VPI_BACKEND_VIC,
+                                            output.disparity_block_linear,
+                                            output.disparity_image.handle(),
+                                            nullptr);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to convert disparity to pitch-linear", status);
@@ -222,31 +228,9 @@ namespace parallax::stereo {
             stereo_ = nullptr;
         }
 
-        if (left_block_linear_ != nullptr) {
-            vpiImageDestroy(left_block_linear_);
-            left_block_linear_ = nullptr;
-        }
-
-        if (right_block_linear_ != nullptr) {
-            vpiImageDestroy(right_block_linear_);
-            right_block_linear_ = nullptr;
-        }
-
-        if (disparity_block_linear_ != nullptr) {
-            vpiImageDestroy(disparity_block_linear_);
-            disparity_block_linear_ = nullptr;
-        }
-
         left_input_.release();
         right_input_.release();
-
-        disparity_image_.release();
-
-        output_.disparity.release();
-        // output_.confidence.release();
-
-        output_.width = 0;
-        output_.height = 0;
+        output_pool_.reset();
 
         stream_ = nullptr;
         initialized_ = false;

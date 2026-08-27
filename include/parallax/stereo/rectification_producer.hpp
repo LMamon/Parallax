@@ -36,6 +36,7 @@ namespace parallax::stereo {
             parallax::core::ProductStore& store_;
 
             const std::vector<parallax::core::ProductId> inputs_{
+                parallax::core::ProductId::RgbLeft,
                 parallax::core::ProductId::GrayStereo
             };
 

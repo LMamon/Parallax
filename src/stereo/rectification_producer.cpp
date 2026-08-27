@@ -38,22 +38,25 @@ namespace parallax::stereo {
     }
 
     parallax::core::SubmitResult RectificationProducer::submit(parallax::core::ExecutionContext& context) {
+        const auto rgb = store_.latest<parallax::isp::StereoRgbFrame>(parallax::core::ProductId::RgbLeft);
         const auto gray = store_.latest<parallax::isp::StereoGrayFrame>(parallax::core::ProductId::GrayStereo);
 
-        if (!gray || !gray->valid()) {
+        if (!rgb || !rgb->valid() || !gray || !gray->valid()) {
             return parallax::core::SubmitResult::NoWork;
         }
+
         auto& lane = context.preprocessLane();
 
         if (!context.waitFor(gray->completion, lane)) {
             return parallax::core::SubmitResult::Failed;
         }
 
-        /**
-         * StereoRectifier was initialized against the same ISP-owned buffers exposed
-         * by GrayStereo. No rebinding or device copy is required here.
-         */
-        if (!rectifier_.process(lane.handle())) {
+        auto output = rectifier_.acquireOutput();
+        if (!output) {
+            return parallax::core::SubmitResult::NoWork;
+        }
+
+        if (!rectifier_.process(*rgb->payload, *gray->payload, *output, lane.handle())) {
             return parallax::core::SubmitResult::Failed;
         }
 
@@ -62,9 +65,12 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::Failed;
         }
 
-        auto rectified = std::shared_ptr<const parallax::isp::RectifiedStereoGrayFrame>(&rectifier_.gray(),
-                                                                                        [](const parallax::isp::RectifiedStereoGrayFrame*) 
-                                                                                        {});
+        /**
+         * Alias the gray member while retaining shared ownership of the complete
+         * pooled output slot. The slot cannot be reused until consumers release
+         * this product generation.
+         */
+        std::shared_ptr<const parallax::isp::RectifiedStereoGrayFrame> rectified(output, &output->gray);
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::RectifiedGray,
                                                     gray->metadata,
@@ -73,5 +79,4 @@ namespace parallax::stereo {
 
         return parallax::core::SubmitResult::Submitted;
     }
-
 }

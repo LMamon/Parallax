@@ -122,53 +122,56 @@ namespace parallax::stereo {
         }
         stream_ = stream;
 
-        rgb_output_.width = rgb_input.width;
-        rgb_output_.height = rgb_input.height;
+        if (!output_pool_.initialize([&](OutputSlot& slot, std::size_t index) {
+                    slot.rgb.width = rgb_input.width;
+                    slot.rgb.height = rgb_input.height;
+                    slot.rgb.storage_slot = static_cast<std::uint32_t>(index);
 
-        gray_output_.width = gray_input.width;
-        gray_output_.height = gray_input.height;
+                    slot.gray.width = gray_input.width;
+                    slot.gray.height = gray_input.height;
+                    slot.gray.storage_slot = static_cast<std::uint32_t>(index);
 
-        // allocate gpu-resident output images
-        if (!rgb_output_.left.allocate(rgb_input.width, rgb_input.height, parallax::isp::RectifiedStereoFrame::Channels, sizeof(std::uint8_t)) ||
-            !rgb_output_.right.allocate(rgb_input.width, rgb_input.height, parallax::isp::RectifiedStereoFrame::Channels, sizeof(std::uint8_t))) {
+                    if (!slot.rgb.left.allocate(rgb_input.width,
+                                                rgb_input.height,
+                                                parallax::isp::RectifiedStereoFrame::Channels,
+                                                sizeof(std::uint8_t)) ||
+                        !slot.rgb.right.allocate(rgb_input.width,
+                                                 rgb_input.height,
+                                                 parallax::isp::RectifiedStereoFrame::Channels,
+                                                 sizeof(std::uint8_t))) {
 
-            std::cerr << "Failed to allocated rectified stereo buffers\n";
+                        return false;
+                    }
+
+                    if (!slot.gray.left.allocate(gray_input.width,
+                                                 gray_input.height,
+                                                 parallax::isp::RectifiedStereoGrayFrame::Channels,
+                                                 sizeof(std::uint8_t)) ||
+                        !slot.gray.right.allocate(gray_input.width,
+                                                 gray_input.height,
+                                                 parallax::isp::RectifiedStereoGrayFrame::Channels,
+                                                 sizeof(std::uint8_t))) {
+
+                        return false;
+                    }
+
+                    return true;
+                })) {
+
+            std::cerr << "Failed to allocate rectification output pool\n";
             shutdown();
             return false;
         }
-        if (!gray_output_.left.allocate(gray_input.width, 
-                                        gray_input.height, 
-                                        parallax::isp::RectifiedStereoGrayFrame::Channels, 
-                                        sizeof(std::uint8_t)) ||
 
-            !gray_output_.right.allocate(gray_input.width, 
-                                        gray_input.height, 
-                                        parallax::isp::RectifiedStereoGrayFrame::Channels, 
-                                        sizeof(std::uint8_t))) {
-
-            std::cerr << "Failed to allocate rectified grayscale buffers\n";
-            shutdown();
-            return false;
-        }
-        // wrap existing CUDA allocations for VPI
-        // input.left/right are owned by ISP.
-        // output_.left/right are owned by this StereoRectifier
+        // Input buffers are owned by ISP.
+        // Rectified output buffers are owned by slots in output_pool_.
+        // The VPI wrappers are non-owning views over the currently acquired slot.
         if (!rgb_left_input_.create(rgb_input.left, VPI_IMAGE_FORMAT_RGB8) ||
             !rgb_right_input_.create(rgb_input.right, VPI_IMAGE_FORMAT_RGB8) ||
-            !rgb_left_output_.create(rgb_output_.left, VPI_IMAGE_FORMAT_RGB8) ||
-            !rgb_right_output_.create(rgb_output_.right, VPI_IMAGE_FORMAT_RGB8)) {
+            !gray_left_input_.create(gray_input.left, VPI_IMAGE_FORMAT_Y8_ER) ||
+            !gray_right_input_.create(gray_input.right, VPI_IMAGE_FORMAT_Y8_ER)) {
 
-            std::cerr << "Failed to create RGB VPI image wrappers\n";
-            shutdown();
-            return false;
-        }
-
-        if (!gray_left_input_.create(gray_input.left, VPI_IMAGE_FORMAT_Y8_ER) ||
-            !gray_right_input_.create(gray_input.right, VPI_IMAGE_FORMAT_Y8_ER) ||
-            !gray_left_output_.create(gray_output_.left, VPI_IMAGE_FORMAT_Y8_ER) ||
-            !gray_right_output_.create(gray_output_.right, VPI_IMAGE_FORMAT_Y8_ER)) {
-
-            std::cerr << "Failed to create grayscale VPI image wrappers\n";
+            std::cerr << "Failed to create RGB input wrappers\n";
             shutdown();
             return false;
         }
@@ -205,23 +208,46 @@ namespace parallax::stereo {
         return true;
     }
 
-    bool StereoRectifier::process(VPIStream stream) {
+    bool StereoRectifier::process(const parallax::isp::StereoRgbFrame& rgb_input,
+                                  const parallax::isp::StereoGrayFrame& gray_input,
+                                  OutputSlot& output,
+                                  VPIStream stream) {
+
         if (!initialized_ || stream == nullptr) return false;
 
-        VPIStatus status = vpiSubmitRemap(stream_,
-                                          VPI_BACKEND_CUDA,
-                                          left_remap_,
-                                          rgb_left_input_.handle(),
-                                          rgb_left_output_.handle(),
-                                          VPI_INTERP_LINEAR,
-                                          VPI_BORDER_ZERO,
-                                          0);
+        /*
+        * ISP and rectification both use bounded rotating storage. Rebind the
+        * persistent VPI views to the exact input/output generation selected for
+        * this submission. Rebinding changes only the external-memory view; it
+        * does not allocate or copy image data.
+        */
+        if (!rgb_left_input_.rebind(rgb_input.left, VPI_IMAGE_FORMAT_RGB8) ||
+            !rgb_right_input_.rebind(rgb_input.right, VPI_IMAGE_FORMAT_RGB8) ||
+            !gray_left_input_.rebind(gray_input.left, VPI_IMAGE_FORMAT_Y8_ER) ||
+            !gray_right_input_.rebind(gray_input.right, VPI_IMAGE_FORMAT_Y8_ER) ||
+            !rgb_left_output_.rebind(output.rgb.left, VPI_IMAGE_FORMAT_RGB8) ||
+            !rgb_right_output_.rebind(output.rgb.right, VPI_IMAGE_FORMAT_RGB8) ||
+            !gray_left_output_.rebind(output.gray.left, VPI_IMAGE_FORMAT_Y8_ER) ||
+            !gray_right_output_.rebind(output.gray.right, VPI_IMAGE_FORMAT_Y8_ER)) {
+
+            return false;
+        }
+
+        VPIStatus status = vpiSubmitRemap(stream,
+                                         VPI_BACKEND_CUDA,
+                                         left_remap_,
+                                         rgb_left_input_.handle(),
+                                         rgb_left_output_.handle(),
+                                         VPI_INTERP_LINEAR,
+                                         VPI_BORDER_ZERO,
+                                         0);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to submit left RGB remap", status);
             return false;
         }
-        status = vpiSubmitRemap(stream_,
+
+        status = vpiSubmitRemap(stream,
                                 VPI_BACKEND_CUDA,
                                 right_remap_,
                                 rgb_right_input_.handle(),
@@ -235,7 +261,7 @@ namespace parallax::stereo {
             return false;
         }
 
-        status = vpiSubmitRemap(stream_,
+        status = vpiSubmitRemap(stream,
                                 VPI_BACKEND_CUDA,
                                 left_remap_,
                                 gray_left_input_.handle(),
@@ -249,7 +275,7 @@ namespace parallax::stereo {
             return false;
         }
 
-        status = vpiSubmitRemap(stream_,
+        status = vpiSubmitRemap(stream,
                                 VPI_BACKEND_CUDA,
                                 right_remap_,
                                 gray_right_input_.handle(),
@@ -262,9 +288,10 @@ namespace parallax::stereo {
             logVpiError("Failed to submit right grayscale remap", status);
             return false;
         }
+
+        latest_output_ = &output;
         return true;
     }
-
 
     void StereoRectifier::shutdown() {
         if (left_remap_ != nullptr) {
@@ -297,17 +324,8 @@ namespace parallax::stereo {
         gray_left_output_.release();
         gray_right_output_.release();
 
-        rgb_output_.left.release();
-        rgb_output_.right.release();
-
-        gray_output_.left.release();
-        gray_output_.right.release();
-
-        rgb_output_.width = 0;
-        rgb_output_.height = 0;
-
-        gray_output_.width = 0;
-        gray_output_.height = 0;
+        latest_output_ = nullptr;
+        output_pool_.reset();
 
         stream_ = nullptr;
         initialized_ = false;

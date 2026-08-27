@@ -45,7 +45,12 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::Failed;
         }
 
-        if (!matcher_.process(lane.handle())) {
+        auto output = matcher_.acquireOutput();
+        if (!output) {
+            return parallax::core::SubmitResult::NoWork;
+        }
+
+        if (!matcher_.process(*rectified->payload, *output, lane.handle())) {
             return parallax::core::SubmitResult::Failed;
         }
 
@@ -58,18 +63,20 @@ namespace parallax::stereo {
          * StereoMatchFrame. Both ProductIds intentionally reference that same
          * device-resident payload.
          */
-        auto match = std::shared_ptr<const parallax::isp::StereoMatchFrame>(&matcher_.output(),
-                                                                            [](const parallax::isp::StereoMatchFrame*) {});
+        std::shared_ptr<const parallax::isp::StereoMatchFrame> match(output, &output->output);
+        std::shared_ptr<const void> input_lifetime = rectified->payload;
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::Disparity,
                                                     rectified->metadata,
                                                     match,
-                                                    completion));
+                                                    completion,
+                                                    input_lifetime));
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::Confidence,
                                                     rectified->metadata,
                                                     std::move(match),
-                                                    completion));
+                                                    completion,
+                                                    std::move(input_lifetime)));
 
         return parallax::core::SubmitResult::Submitted;
     }

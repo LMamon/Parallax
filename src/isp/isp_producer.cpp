@@ -39,7 +39,20 @@ namespace parallax::isp {
             return parallax::core::SubmitResult::Failed;
         }
 
-        if (!isp_.process(*raw->payload)) {
+        auto output = isp_.acquireOutput();
+
+        if (!output) {
+            /**
+             * Every preallocated ISP generation is still retained by a consumer.
+             * Do not overwrite one and do not allocate another large frame.
+             *
+             * Later policy work will expose this as a supersede/backpressure
+             * counter. For now NoWork preserves the bounded-memory contract.
+             */
+            return parallax::core::SubmitResult::NoWork;
+        }
+
+        if (!isp_.process(*raw->payload, *output)) {
             return parallax::core::SubmitResult::Failed;
         }
 
@@ -63,23 +76,29 @@ namespace parallax::isp {
         // these payloads remain in device storage for ISP. ProductStore receives
         // non-owning shared handles rather than copies/host downloads
 
-        auto rgb = std::shared_ptr<const parallax::isp::StereoRgbFrame>(&isp_.rgb(),
-                                                                        [](const parallax::isp::StereoRgbFrame*)
-                                                                        {});
-
-        auto gray = std::shared_ptr<const parallax::isp::StereoGrayFrame>(&isp_.gray(),
-                                                                        [](const parallax::isp::StereoGrayFrame*)
-                                                                        {});
+        /**
+         * Both published products lease the same preallocated ISP generation.
+         *
+         * The aliasing shared_ptr points at the requested frame member while its
+         * control block owns OutputSlot. The slot therefore cannot return to the
+         * ISP pool until both RGB/gray publications and all downstream consumers
+         * release it.
+         */
+        std::shared_ptr<const parallax::isp::StereoRgbFrame> rgb(output, &output->rgb);
+        std::shared_ptr<const parallax::isp::StereoGrayFrame> gray(output, &output->gray);
+        std::shared_ptr<const void> raw_lifetime = raw->payload;
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::RgbLeft,
                                                     raw->metadata,
                                                     std::move(rgb),
-                                                    completion));
+                                                    completion,
+                                                    raw_lifetime));
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::GrayStereo,
                                                     raw->metadata,
                                                     std::move(gray),
-                                                    completion));
+                                                    completion,
+                                                    std::move(raw_lifetime)));
 
         return parallax::core::SubmitResult::Submitted;
     }

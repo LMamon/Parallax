@@ -87,10 +87,10 @@ namespace parallax::core {
             return std::chrono::duration<double, std::milli>(end - start).count();
         };
 
-        if (!isp_.process(input)) {
-            std::cerr << "Pipeline: ISP processing failed\n";
-            return false;
-        }
+        auto isp_output = isp_.acquireOutput();
+
+        if (!isp_output) return false;
+        if (!isp_.process(input, *isp_output)) return false;
         // sensitive area 
         /*
         * ISP uses its own CUDA stream while the downstream rectifier/matcher 
@@ -105,24 +105,37 @@ namespace parallax::core {
             std::cerr << "Pipeline: ISP synchronization failed\n";
             return false;
         }
-        const auto t_after_isp_sync = Clock::now();
 
-        if (!rectifier_.process(vpi_stream_.handle())) {
+        const auto t_after_isp_sync = Clock::now();
+        auto rectified_output = rectifier_.acquireOutput();
+
+        if (!rectified_output) {
+            std::cerr << "Pipeline: no free rectification output slot\n";
+            return false;
+        }
+
+        if (!rectifier_.process(isp_output->rgb, isp_output->gray, *rectified_output, vpi_stream_.handle())) {
             std::cerr << "Pipeline: stereo rectification failed\n";
             return false;
         }
 
-        if (!matcher_.process(vpi_stream_.handle())) {
+        auto matcher_output = matcher_.acquireOutput();
+        if (!matcher_output) {
+            std::cerr << "Pipeline: no free matcher output slot\n";
+            return false;
+        }
+
+        if (!matcher_.process(rectified_output->gray, *matcher_output, vpi_stream_.handle())) {
             std::cerr << "Pipeline: stereo matching failed\n";
             return false;
         }
 
-        if (!parallax::cuda::disparityToDepth(matcher_.output().disparity,
-                                            depth_.depth,
-                                            static_cast<float>(calibration_.metadata().virtual_fx),
-                                            static_cast<float>(calibration_.metadata().baseline_mm / 1000.0),
-                                            parallax::isp::StereoMatchFrame::DisparityScale,
-                                            vpi_stream_.cudaHandle())) {
+        if (!parallax::cuda::disparityToDepth(matcher_output->output.disparity,
+                                              depth_.depth,
+                                              static_cast<float>(calibration_.metadata().virtual_fx),
+                                              static_cast<float>(calibration_.metadata().baseline_mm / 1000.0),
+                                              parallax::isp::StereoMatchFrame::DisparityScale,
+                                              vpi_stream_.cudaHandle())) {
 
             std::cerr << "Pipeline: depth conversion failed\n";
             return false;
@@ -135,12 +148,8 @@ namespace parallax::core {
         const auto t_depth_done = Clock::now();
 
         ++timing_frames;
-        // if (!vpi_stream_.synchronize()) {
-        //     std::cerr << "Pipeline: VPI synchronization failed before pose\n";
-        //     return false;
-        // }
 
-        if (!charuco_pose_.process(rectifier_.gray(), output.pose)) {
+        if (!charuco_pose_.process(rectified_output->gray, output.pose)) {
             std::cerr << "Pipeline: ChArUco processing failed\n";
             return false;
         }
@@ -179,8 +188,8 @@ namespace parallax::core {
 
         // !!!Do not sync VPI stream here
         // sensitive area
-        output.rgb = &rectifier_.rgb();
-        output.stereo = &matcher_.output();
+        output.rgb = &rectified_output->rgb;        
+        output.stereo = &matcher_output->output;
         output.depth = &depth_;
 
         output.metadata.observation.source = parallax::core::SourceId::StereoCamera;

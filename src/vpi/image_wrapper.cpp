@@ -61,6 +61,42 @@ namespace parallax::vpi {
         return true;
     }
 
+    bool ImageWrapper::rebind(const parallax::cuda::CudaBuffer& buffer, VPIImageFormat format) {
+        if (image_ == nullptr) return create(buffer, format);
+
+        if (!buffer.isAllocated()) {
+            std::cerr << "Cannot rebind VPI wrapper to unallocated CUDA buffer\n";
+            return false;
+        }
+
+        VPIImageData data{};
+        data.bufferType = VPI_IMAGE_BUFFER_CUDA_PITCH_LINEAR;
+
+        auto& pitch = data.buffer.pitch;
+
+        pitch.format = format;
+        pitch.numPlanes = 1;
+
+        pitch.planes[0].data = const_cast<void*>(buffer.data());
+        pitch.planes[0].width = static_cast<int32_t>(buffer.width());
+        pitch.planes[0].height = static_cast<int32_t>(buffer.height());
+        pitch.planes[0].pitchBytes = static_cast<int32_t>(buffer.pitch());
+
+        VPIStatus status = vpiImageSetWrapper(image_, &data);
+
+        if (status != VPI_SUCCESS) {
+            char message[VPI_MAX_STATUS_MESSAGE_LENGTH]{};
+            vpiGetLastStatusMessage(message, sizeof(message));
+
+            std::cerr << "Failed to rebind VPI image wrapper: "
+                      << vpiStatusGetName(status)
+                      << " - " << message << '\n';
+
+            return false;
+        }
+        return true;
+    }
+
     void ImageWrapper::release() noexcept {
         if (image_ != nullptr){
             vpiImageDestroy(image_);

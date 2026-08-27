@@ -7,11 +7,13 @@
 #include <cstddef>
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <typeindex>
 #include <unordered_map>
 #include <vector>
- 
+
 namespace parallax::core {
     /**
      * Freshness answers only one question:
@@ -52,15 +54,23 @@ namespace parallax::core {
             ProductStore& operator=(const ProductStore&) = delete;
 
             template <typename T> void publish(Product<T> product) {
-                // keep the whole Product<T> behind a shared handle so typed erasure
-                // here doesnt copy actual CUDA/VPI/etc payload
+                /**
+                 * ProductStore is shared by independently scheduled producers.
+                 *
+                 * Publication mutates both the latest-value map and optional history,
+                 * so those changes occur under one exclusive lock. Consumers either
+                 * observe the previous publication or the new publication; they never
+                 * observe a partially updated store state.
+                 */
+                std::unique_lock lock(mutex_);
+
                 auto stored = std::make_shared<Product<T>>(std::move(product));
                 const ProductId id = stored->id;
 
                 Entry entry{std::type_index(typeid(T)), stored};
-                // latest-valie remains the default contract regardless of whether ProductId
-                // also opted into short bounded history.
+
                 entries_[id] = entry;
+
                 const auto history_it = histories_.find(id);
                 if (history_it == histories_.end() || history_it->second.capacity == 0) {
                     return;
@@ -74,42 +84,25 @@ namespace parallax::core {
                 }
             }
             
-            template<typename T>
-            [[nodiscard]] std::shared_ptr<const Product<T>> latest(ProductId id) const {
-                const auto it = entries_.find(id);
-                if (it == entries_.end()) return {};
-
-                /**
-                 * ProductId describes the semantic product, but multiple product IDs can
-                 * eventually use the same/different C++ payload types. check the stored 
-                 * type before recovering typed Product<T>
-                 */
-                if (it->second.type != std::type_index(typeid(T))) return {};
-
-                return std::static_pointer_cast<const Product<T>>(it->second.product);
+            template <typename T> [[nodiscard]] std::shared_ptr<const Product<T>> latest(ProductId id) const {
+                std::shared_lock lock(mutex_);
+                return latest_unlocked<T>(id);
             }
 
             template <typename T> [[nodiscard]] std::shared_ptr<const Product<T>> latest_fresh(ProductId id,
                                                                                                const FreshnessConstraint& freshness,
                                                                                                std::chrono::steady_clock::time_point now) const {
 
-                /**
-                 * ProductStore answers freshness only. It does not decide whether two
-                 * observations are semantically valid to combine.
-                 *
-                 * Consumers requiring exact-frame or cross-sensor association apply
-                 * their compatibility rule explicitly after lookup.
-                 */
-                const auto product = latest<T>(id);
+                std::shared_lock lock(mutex_);
+
+                const auto product = latest_unlocked<T>(id);
 
                 if (!product || !product->valid()) return {};
                 if (!freshness.max_age.has_value()) return product;
-
-                // A future observation relative to this lookup cannot be considered
-                // fresh in the current steady-clock domain.
                 if (product->metadata.timestamp > now) return {};
 
                 const auto age = now - product->metadata.timestamp;
+
                 if (age > *freshness.max_age) return {};
 
                 return product;
@@ -120,8 +113,9 @@ namespace parallax::core {
             
             [[nodiscard]] std::size_t history_capacity(ProductId id) const noexcept;
 
-            template <typename T>
-            [[nodiscard]] std::vector<std::shared_ptr<const Product<T>>> history(ProductId id) const {
+            template <typename T>[[nodiscard]] std::vector<std::shared_ptr<const Product<T>>> history(ProductId id) const {
+                std::shared_lock lock(mutex_);
+
                 const auto it = histories_.find(id);
                 if (it == histories_.end()) return {};
 
@@ -129,7 +123,9 @@ namespace parallax::core {
                 result.reserve(it->second.entries.size());
 
                 for (const auto& entry : it->second.entries) {
-                    if (entry.type != std::type_index(typeid(T))) return {};
+                    if (entry.type != std::type_index(typeid(T))) {
+                        return {};
+                    }
 
                     result.push_back(std::static_pointer_cast<const Product<T>>(entry.product));
                 }
@@ -156,12 +152,22 @@ namespace parallax::core {
                 std::deque<Entry> entries{};
             };
 
+            template <typename T> [[nodiscard]] std::shared_ptr<const Product<T>> latest_unlocked(ProductId id) const {
+                const auto it = entries_.find(id);
+
+                if (it == entries_.end()) return {};
+                if (it->second.type != std::type_index(typeid(T))) return {};
+
+                return std::static_pointer_cast<const Product<T>>(it->second.product);
+            }
+
             // one entry per ProductId on purpose. historu in opt-in later rather than 
             // making every realtime product accumulate frames by default
             
             // replacing the current product only releases the stores reference.
             // it does not invalidate an accelerator allocation that a consumer is
             // still using because Product<T> keeps the payload behind shared ownership.
+            mutable std::shared_mutex mutex_;
             std::unordered_map<ProductId, Entry, ProductIdHash> entries_;
             std::unordered_map<ProductId, History, ProductIdHash> histories_;
         };

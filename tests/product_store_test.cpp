@@ -1,7 +1,9 @@
 #include <parallax/core/product_store.hpp>
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
+#include <thread>
 #include <cstdint>
 #include <memory>
 
@@ -161,6 +163,58 @@ namespace parallax::core {
             EXPECT_EQ(*new_product->payload, 20);
             EXPECT_EQ(old_product->metadata.observation.sequence, 1);
             EXPECT_EQ(*old_product->payload, 10);
+        }
+
+        TEST(ProductStoreTest, ConcurrentPublishAndReadIsSafe) {
+            ProductStore store;
+
+            constexpr std::uint64_t iterations = 10000;
+
+            std::atomic<bool> writer_done{false};
+            std::atomic<bool> reader_failed{false};
+
+            std::thread writer([&]() {
+                for (std::uint64_t sequence = 1; sequence <= iterations; ++sequence) {
+                    store.publish(make_test_product(ProductId::Depth, sequence, Clock::now(), static_cast<int>(sequence)));
+                }
+
+                writer_done.store(true, std::memory_order_release);
+            });
+
+            std::thread reader([&]() {
+                std::uint64_t last_sequence = 0;
+
+                while (!writer_done.load(
+                    std::memory_order_acquire)) {
+
+                    const auto product = store.latest<TestPayload>(ProductId::Depth);
+
+                    if (!product) continue;
+
+                    const auto sequence = product->metadata.observation.sequence;
+                    if (sequence < last_sequence) {
+                        reader_failed.store(true);
+                        return;
+                    }
+
+                    if (!product->payload || *product->payload != static_cast<int>(sequence)) {
+                        reader_failed.store(true);
+                        return;
+                    }
+
+                    last_sequence = sequence;
+                }
+            });
+
+            writer.join();
+            reader.join();
+
+            EXPECT_FALSE(reader_failed.load());
+
+            const auto latest = store.latest<TestPayload>(ProductId::Depth);
+
+            ASSERT_NE(latest, nullptr);
+            EXPECT_EQ(latest->metadata.observation.sequence, iterations);
         }
     }
 } 

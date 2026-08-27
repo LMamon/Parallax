@@ -1,11 +1,9 @@
 #include <parallax/core/product_store.hpp>
 
 namespace parallax::core {
-    bool ProductStore::contains(ProductId id) const noexcept {
-        return entries_.find(id) != entries_.end();
-    }
-
     void ProductStore::set_history_capacity(ProductId id, std::size_t capacity) {
+        std::unique_lock lock(mutex_);
+
         if (capacity == 0) {
             histories_.erase(id);
             return;
@@ -14,23 +12,33 @@ namespace parallax::core {
         auto& history = histories_[id];
         history.capacity = capacity;
 
-        // shrinking capacity drops the oldest retained products first.
-        while (history.entries.size() > history.capacity) history.entries.pop_front();
+        while (history.entries.size() > capacity) {
+            history.entries.pop_front();
+        }
     }
 
     std::size_t ProductStore::history_capacity(ProductId id) const noexcept {
-        const auto it = histories_.find(id);
+        std::shared_lock lock(mutex_);
 
+        const auto it = histories_.find(id);
         if (it == histories_.end()) return 0;
 
         return it->second.capacity;
     }
 
-    void ProductStore::clear() noexcept {
-        // clearing only releases the stores references. any consumer hold a Product<T>
-        // or its payload can keep that alloc alive
-        entries_.clear();
-        histories_.clear();
+    bool ProductStore::contains(ProductId id) const noexcept {
+        std::shared_lock lock(mutex_);
+        return entries_.find(id) != entries_.end();
     }
 
+    void ProductStore::clear() noexcept {
+        std::unique_lock lock(mutex_);
+
+        entries_.clear();
+
+        for (auto& [id, history] : histories_) {
+            (void)id;
+            history.entries.clear();
+        }
+    }
 }

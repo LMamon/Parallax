@@ -40,14 +40,19 @@ namespace parallax::pose {
             return parallax::core::SubmitResult::NoWork;
         }
 
-        parallax::core::FreshnessConstraint freshness{};
-        freshness.observation = pose->metadata.observation;
-
-        const auto depth = store_.latest_compatible<parallax::isp::DepthFrame>(parallax::core::ProductId::Depth,
-                                                                               freshness,
-                                                                               std::chrono::steady_clock::now());
+        const auto depth = store_.latest<parallax::isp::DepthFrame>(parallax::core::ProductId::Depth);
 
         if (!depth || !depth->valid()) {
+            return parallax::core::SubmitResult::NoWork;
+        }
+
+        /**
+         * Marker pose and metric depth must describe the same stereo-camera
+         * observation. Freshness alone cannot establish that relationship:
+         * a newer depth product may be perfectly fresh while belonging to a
+         * different camera frame.
+         */
+        if (!parallax::core::same_source_observation(*depth, pose->metadata.observation)) {
             return parallax::core::SubmitResult::NoWork;
         }
 
@@ -75,7 +80,6 @@ namespace parallax::pose {
 
                 const float* pixel = reinterpret_cast<const float*>(row) + x;
                 float depth_m = 0.0f;
-
 
                 /**
                  * SYNCHRONIZATION INVENTORY — REQUIRED CPU OBSERVATION

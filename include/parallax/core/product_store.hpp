@@ -14,16 +14,30 @@
  
 namespace parallax::core {
     /**
-     * sequence is useful when two products are expected to come from the same
-     * source frame. max age is useful when branches run at different rates and
-     * exact frame lockstep is unnecessary
-     * 
-     * leaving either field empty means that constraint is not being requested.
+     * Freshness answers only one question:
+     *
+     *     Is this product recent enough to still be useful?
+     *
+     * Source identity and frame association are compatibility concerns and
+     * intentionally do not belong here.
      */
     struct FreshnessConstraint {
-        std::optional<SourceObservation> observation{};
         std::optional<std::chrono::steady_clock::duration> max_age{};
     };
+
+    /**
+     * Test whether a product was produced from one exact source observation.
+     *
+     * This is a strong compatibility rule appropriate when two products must
+     * describe the same sensor observation. Consumers needing looser temporal
+     * association should implement that policy themselves rather than teaching
+     * ProductStore domain-specific semantics.
+     */
+    template <typename T> [[nodiscard]] bool same_source_observation(const Product<T>& product,
+                                                                     const SourceObservation& required) noexcept {
+
+        return product.metadata.observation == required;
+    }
 
     /**
      * latest-value storage for completed graph products
@@ -75,31 +89,29 @@ namespace parallax::core {
                 return std::static_pointer_cast<const Product<T>>(it->second.product);
             }
 
-            template <typename T>
-            [[nodiscard]] std::shared_ptr<const Product<T>> latest_compatible(ProductId id,
-                                                                              const FreshnessConstraint& freshness,
-                                                                              std::chrono::steady_clock::time_point now)
-                                                                                    const {
+            template <typename T> [[nodiscard]] std::shared_ptr<const Product<T>> latest_fresh(ProductId id,
+                                                                                               const FreshnessConstraint& freshness,
+                                                                                               std::chrono::steady_clock::time_point now) const {
+
                 /**
-                 * latest compatible does not search for an older matching product.
-                 * the store is still latest-vale onluy at this point. get the current
-                 * product first, then either accept/reject it as stale
+                 * ProductStore answers freshness only. It does not decide whether two
+                 * observations are semantically valid to combine.
+                 *
+                 * Consumers requiring exact-frame or cross-sensor association apply
+                 * their compatibility rule explicitly after lookup.
                  */
                 const auto product = latest<T>(id);
+
                 if (!product || !product->valid()) return {};
-                
-                // when exact sourceframe id matters, accepting a different sequence could associate results from unrelated frames.
-                if (freshness.observation.has_value() && product->metadata.observation != *freshness.observation) {
-                    return {};
-                }
+                if (!freshness.max_age.has_value()) return product;
 
-                if (freshness.max_age.has_value()) {
-                    // a product timestamp in the future relative to this lookup is not compatible.
-                    if (product->metadata.timestamp > now) return {};
+                // A future observation relative to this lookup cannot be considered
+                // fresh in the current steady-clock domain.
+                if (product->metadata.timestamp > now) return {};
 
-                    const auto age = now - product->metadata.timestamp;
-                    if (age > *freshness.max_age) return {};
-                }
+                const auto age = now - product->metadata.timestamp;
+                if (age > *freshness.max_age) return {};
+
                 return product;
             }
 

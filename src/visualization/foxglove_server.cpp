@@ -36,6 +36,21 @@ namespace parallax::visualization {
             schema.data_len = kMarkerDepthSchema.size();
             return schema;
         }
+
+        constexpr std::string_view kRuntimeTelemetrySchema = R"json({
+                                                                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                                                                "title": "parallax.RuntimeTelemetry",
+                                                                "type": "object"
+                                                            })json";
+
+        foxglove::Schema runtimeTelemetrySchema() {
+            foxglove::Schema schema;
+            schema.name = "parallax.RuntimeTelemetry";
+            schema.encoding = "jsonschema";
+            schema.data = reinterpret_cast<const std::byte*>(kRuntimeTelemetrySchema.data());
+            schema.data_len = kRuntimeTelemetrySchema.size();
+            return schema;
+        }
     }
 
     FoxgloveServer::~FoxgloveServer() { shutdown(); }
@@ -274,6 +289,20 @@ namespace parallax::visualization {
         lidar_scan_channel_.emplace(std::move(lidar_scan.value()));
         bindProduct(lidar_scan_channel_->id(), ProductId::LidarScan);
 
+        auto runtime_telemetry = foxglove::RawChannel::create("/parallax/runtime",
+                                                              "json",
+                                                              runtimeTelemetrySchema(),
+                                                              context_);
+
+        if (!runtime_telemetry.has_value()) {
+            std::cerr << "Failed to create /parallax/runtime channel: "
+                      << foxglove::strerror(runtime_telemetry.error()) << '\n';
+
+            return false;
+        }
+
+        runtime_telemetry_channel_.emplace(std::move(runtime_telemetry.value()));
+
         return true;
     }
 
@@ -299,6 +328,7 @@ namespace parallax::visualization {
         options.name = "Parallax";
         options.host = "0.0.0.0";
         options.port = 8765;
+        options.message_backlog_size = 32;
 
         /**
         * Foxglove owns client/channel subscription semantics. Parallax observes
@@ -382,6 +412,11 @@ namespace parallax::visualization {
         if (transform_channel_) {
             transform_channel_->close();
             transform_channel_.reset();
+        }
+
+        if (runtime_telemetry_channel_) {
+            runtime_telemetry_channel_->close();
+            runtime_telemetry_channel_.reset();
         }
 
         if (server_) {

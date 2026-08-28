@@ -16,7 +16,7 @@ namespace parallax::visualization {
         bool checkFoxglove(const foxglove::FoxgloveError& error, const char* message) {
             if (error != foxglove::FoxgloveError::Ok) {
                 std::cerr << message << ": "
-                        << foxglove::strerror(error) << '\n';
+                          << foxglove::strerror(error) << '\n';
 
                 return false;
             }
@@ -225,7 +225,6 @@ namespace parallax::visualization {
          * Foxglove channel actually has a sink.
          */
         const bool disparity_requested = foxglove_->disparityChannel().hasSinks();
-
         if (disparity_requested) {
             const auto stereo = store.latest<parallax::isp::StereoMatchFrame>(parallax::core::ProductId::Disparity);
 
@@ -373,6 +372,17 @@ namespace parallax::visualization {
         std::memcpy(message.data.data(), host_depth_, bytes);
 
         return checkFoxglove(foxglove_->depthChannel().log(message), "Failed to publish /stereo/depth");
+    }
+
+    bool Publisher::publishRuntimeTelemetry(const std::string& json) {
+        if (!initialized_ || foxglove_ == nullptr) {
+            return false;
+        }
+
+        return checkFoxglove(foxglove_->runtimeTelemetryChannel().log(
+                                        reinterpret_cast<const std::byte*>(json.data()),
+                                        json.size()),
+                                        "Failed to publish /parallax/runtime");
     }
 
     bool Publisher::publishDisparity(const parallax::isp::StereoMatchFrame& frame) {

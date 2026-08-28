@@ -621,5 +621,32 @@ namespace parallax::core {
             EXPECT_EQ(submission_decision(slow_policy, slow_state, slow_input, now), SubmissionDecision::RateLimited);
             EXPECT_EQ(submission_decision(fast_policy, fast_state, fast_input, now), SubmissionDecision::Submit);
         }
+
+        TEST(DependencyResolverTest, DemandSourcesRemainIndependent) {
+            Graph graph;
+            DependencyResolver resolver{graph};
+
+            resolver.acquire(ProductId::Depth, DemandSource::RuntimeBaseline);
+            resolver.acquire(ProductId::Depth, DemandSource::FoxgloveSubscriber);
+
+            EXPECT_EQ(resolver.demand(ProductId::Depth, DemandSource::RuntimeBaseline), 1);
+
+            EXPECT_EQ(resolver.demand(ProductId::Depth, DemandSource::FoxgloveSubscriber), 1);
+
+            EXPECT_EQ(resolver.total_demand(ProductId::Depth), 2);
+            EXPECT_TRUE(resolver.demanded(ProductId::Depth));
+
+            resolver.release(ProductId::Depth, DemandSource::FoxgloveSubscriber);
+
+            EXPECT_EQ(resolver.demand(ProductId::Depth, DemandSource::FoxgloveSubscriber), 0);
+            EXPECT_EQ(resolver.demand(ProductId::Depth, DemandSource::RuntimeBaseline), 1);
+            EXPECT_EQ(resolver.total_demand(ProductId::Depth), 1);
+            EXPECT_TRUE(resolver.demanded(ProductId::Depth));
+
+            resolver.release(ProductId::Depth, DemandSource::RuntimeBaseline);
+
+            EXPECT_EQ(resolver.total_demand(ProductId::Depth), 0);
+            EXPECT_FALSE(resolver.demanded(ProductId::Depth));
+        }
     }
 }

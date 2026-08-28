@@ -70,12 +70,6 @@ namespace parallax::stereo {
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::Disparity,
                                                     rectified->metadata,
-                                                    match,
-                                                    completion,
-                                                    input_lifetime));
-
-        store_.publish(parallax::core::make_product(parallax::core::ProductId::Confidence,
-                                                    rectified->metadata,
                                                     std::move(match),
                                                     completion,
                                                     std::move(input_lifetime)));

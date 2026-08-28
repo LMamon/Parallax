@@ -45,8 +45,7 @@ namespace parallax::stereo {
             // matcher produces both outputs from one VPI stereo submission
             // but remain independently addressable products
             const std::vector<parallax::core::ProductId> outputs_{
-                parallax::core::ProductId::Disparity,
-                parallax::core::ProductId::Confidence
+                parallax::core::ProductId::Disparity
             };
      };
 }

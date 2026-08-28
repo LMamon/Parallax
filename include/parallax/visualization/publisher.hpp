@@ -15,6 +15,7 @@
 #include <foxglove/websocket.hpp>
 #include <cuda_runtime.h>
 
+#include <string>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -44,6 +45,7 @@ namespace parallax::visualization {
             bool publishLeftCalibration(const parallax::stereo::StereoCalibration& calibration);
             bool publishStaticTransforms(const parallax::core::SensorExtrinsics& extrinsics);
             bool publishAvailable(const parallax::core::ProductStore& store, const HostWait& wait_for_host);
+            bool publishRuntimeTelemetry(const std::string& json);
             void shutdown();
 
             [[nodiscard]] bool initialized() const noexcept { return initialized_; }
@@ -54,7 +56,6 @@ namespace parallax::visualization {
             
             bool publishDepth(const parallax::isp::DepthFrame& frame);
             bool publishDisparity(const parallax::isp::StereoMatchFrame& frame);
-            bool publishConfidence(const parallax::isp::StereoMatchFrame& frame);
             bool publishLidarScan(const parallax::lidar::LidarScan& scan);
 
             VideoEncoder video_encoder_;
@@ -63,7 +64,6 @@ namespace parallax::visualization {
             // Reusable pinned host staging.
             std::uint8_t* host_rgb_ = nullptr;
             std::int16_t* host_disparity_ = nullptr;
-            std::uint16_t* host_confidence_ = nullptr;
             float* host_depth_ = nullptr;
 
             // Converted disparity for Foxglove 32FC1.

@@ -30,6 +30,7 @@
 #include <parallax/lidar/rplidar_producer.hpp>
 
 #include <csignal>
+#include <chrono>
 #include <atomic>
 #include <filesystem>
 #include <memory>
@@ -67,6 +68,7 @@ namespace parallax::core {
         private:
             std::unordered_map<const Producer*, ProducerExecutionState> producer_execution_state_;
             std::unordered_map<const Producer*, ProducerExecutionStats> producer_execution_stats_;
+            std::chrono::steady_clock::time_point last_telemetry_publish_{};
             
             void runLidarSource();
             parallax::camera::CameraConfig config_{};

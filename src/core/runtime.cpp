@@ -3,8 +3,10 @@
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/pose/charuco_pose.hpp>
 #include <parallax/core/history_configuration.hpp>
+#include <parallax/core/runtime_metrics.hpp>
 
-
+#include <nlohmann/json.hpp>
+#include <chrono>
 #include <vector>
 #include <iostream>
 
@@ -114,7 +116,7 @@ namespace parallax::core {
          * Foxglove observation is not required for any of these products to exist.
          */
         resolver_.acquire(ProductId::RectifiedRgb, DemandSource::RuntimeBaseline);
-        resolver_.acquire(ProductId::Confidence, DemandSource::RuntimeBaseline);
+        resolver_.acquire(ProductId::Disparity, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::MarkerDepth, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::LidarScan, DemandSource::RuntimeBaseline);
 
@@ -157,6 +159,7 @@ namespace parallax::core {
         if (!initialized_) return;
         running_.store(true);
         int failed_frames = 0;
+        last_telemetry_publish_ = std::chrono::steady_clock::now();
 
         /**
         * Camera-domain baseline execution.
@@ -169,7 +172,7 @@ namespace parallax::core {
         */
 
         const std::vector<ProductId> baseline_camera_products{
-            ProductId::RectifiedRgb, ProductId::Confidence, ProductId::MarkerDepth
+            ProductId::RectifiedRgb, ProductId::Disparity, ProductId::MarkerDepth
         };
         const auto execution_plan = resolver_.resolve(baseline_camera_products);
 
@@ -290,6 +293,54 @@ namespace parallax::core {
             if (!published) {
                 std::cerr << "Runtime: visualization publication failed\n";
                 break;
+            }
+
+            const auto telemetry_now = std::chrono::steady_clock::now();
+
+            if (foxglove_.runtimeTelemetryChannel().hasSinks() &&
+                telemetry_now - last_telemetry_publish_ >=
+                std::chrono::seconds(1)) {
+
+                nlohmann::json message;
+
+                message["producers"] = nlohmann::json::array();
+
+                for (const auto& [producer, stats] : producer_execution_stats_) {
+                    if (producer == nullptr) continue;
+
+                    message["producers"].push_back({{"name", producer->name()},
+                                                    {"considered", stats.considered.load()},
+                                                    {"submitted", stats.submitted.load()},
+                                                    {"no_work", stats.no_work.load()},
+                                                    {"failed", stats.failed.load()},
+                                                    {"missing_or_incompatible_input", stats.missing_or_incompatible_input.load()},
+                                                    {"rate_limited", stats.rate_limited.load()},
+                                                    {"stale_input", stats.stale_input.load()},
+                                                    {"superseded", stats.superseded.load()}
+                                                });
+                }
+
+                const auto& metrics = runtime_metrics();
+
+                message["resources"] = {{"cuda_allocations", metrics.cuda_allocations.load()},
+                                        {"cuda_allocated_bytes", metrics.cuda_allocated_bytes.load()},
+                                        {"cuda_frees", metrics.cuda_frees.load()},
+                                        {"host_to_device_transfers", metrics.host_to_device_transfers.load()},
+                                        {"host_to_device_bytes", metrics.host_to_device_bytes.load()},
+                                        {"device_to_host_transfers", metrics.device_to_host_transfers.load()},
+                                        {"device_to_host_bytes", metrics.device_to_host_bytes.load()},
+                                        {"device_to_device_transfers", metrics.device_to_device_transfers.load()},
+                                        {"device_to_device_bytes", metrics.device_to_device_bytes.load()},
+                                        {"accelerator_waits", metrics.accelerator_waits.load()},
+                                        {"host_waits", metrics.host_waits.load()},
+                                        {"context_drains", metrics.context_drains.load()}};
+
+                if (!publisher_.publishRuntimeTelemetry(message.dump())) {
+                    std::cerr << "Runtime: telemetry publication failed\n";
+                    break;
+                }
+
+                last_telemetry_publish_ = telemetry_now;
             }
 
             // processCommands();

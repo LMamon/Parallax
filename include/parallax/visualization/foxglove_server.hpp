@@ -100,8 +100,8 @@ namespace parallax::visualization {
                 return *disparity_channel_;
             }
 
-            [[nodiscard]] foxglove::messages::RawImageChannel& confidenceChannel() noexcept {
-                return *confidence_channel_;
+            [[nodiscard]] foxglove::RawChannel& runtimeTelemetryChannel() noexcept {
+                return *runtime_telemetry_channel_;
             }
 
             [[nodiscard]] foxglove::messages::RawImageChannel& depthChannel() noexcept {
@@ -148,10 +148,10 @@ namespace parallax::visualization {
             foxglove::Context context_{};
 
             std::unique_ptr<foxglove::WebSocketServer> server_;
+            std::optional<foxglove::RawChannel> runtime_telemetry_channel_;
             std::optional<foxglove::messages::CompressedVideoChannel> left_image_channel_;
             std::optional<foxglove::messages::CameraCalibrationChannel> left_calibration_channel_;
             std::optional<foxglove::messages::RawImageChannel> disparity_channel_;
-            std::optional<foxglove::messages::RawImageChannel> confidence_channel_;
             std::optional<foxglove::messages::RawImageChannel> depth_channel_;
             std::optional<foxglove::messages::PoseInFrameChannel> marker_pose_channel_;
 

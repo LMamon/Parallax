@@ -7,6 +7,10 @@
 #include <foxglove/messages.hpp>
 #include <foxglove/websocket.hpp>
 
+
+#include <functional>
+#include <mutex>
+#include <vector>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -33,7 +37,27 @@ namespace parallax::visualization {
             FoxgloveServer(const FoxgloveServer&) = delete;
             FoxgloveServer& operator=(const FoxgloveServer&) = delete;
 
-            bool initialize();
+            /**
+            * Narrow bridge from Foxglove subscription state into application-owned
+            * demand accounting.
+            *
+            * FoxgloveServer intentionally does not know about DependencyResolver.
+            * parallax_core already owns/links visualization, so making visualization
+            * depend back on core execution implementation would invert the dependency
+            * boundary.
+            *
+            * These callbacks record demand only. They must not submit producers.
+            */
+            struct DemandCallbacks {
+                std::function<void(parallax::core::ProductId)> acquire;
+                std::function<void(parallax::core::ProductId)> release;
+
+                [[nodiscard]] bool valid() const noexcept {
+                    return static_cast<bool>(acquire) && static_cast<bool>(release);
+                }
+            };
+
+            bool initialize(DemandCallbacks demand_callbacks);
             void shutdown();
 
             [[nodiscard]] foxglove::WebSocketServer& server() noexcept {
@@ -90,6 +114,10 @@ namespace parallax::visualization {
         private:
             bool initializeChannels();
             void bindProduct(std::uint64_t channel_id, parallax::core::ProductId product);
+            void onSubscribe(std::uint64_t channel_id, const foxglove::ClientMetadata& client);
+            void onUnsubscribe(std::uint64_t channel_id, const foxglove::ClientMetadata& client);
+
+            void releaseOutstandingDemand();
 
             /**
              * Dedicated Foxglove context for Parallax.
@@ -126,6 +154,33 @@ namespace parallax::visualization {
              * definitions above; this map deliberately does not duplicate them.
              */
             std::unordered_map<std::uint64_t, parallax::core::ProductId> product_by_channel_id_;
+
+            /**
+             * Foxglove reports subscriptions per client, while Parallax wants one
+             * graph-level Foxglove demand reference per observable product channel.
+             *
+             * Therefore:
+             *
+             *   first client:  0 -> 1  acquire graph demand
+             *   more clients:  1 -> N  no additional graph reference
+             *   intermediate:  N -> 1  keep graph demand
+             *   last client:   1 -> 0  release graph demand
+             *
+             * WebSocket callbacks may execute concurrently, so this map and the channel
+             * binding lookup share one small mutex.
+             */
+            mutable std::mutex subscription_mutex_;
+
+            std::unordered_map<std::uint64_t, std::size_t>
+                subscriber_count_by_channel_;
+
+            /**
+             * Non-owning behavior supplied by Runtime.
+             *
+             * Runtime outlives FoxgloveServer and shuts it down before destroying the
+             * resolver that implements these callbacks.
+             */
+            DemandCallbacks demand_callbacks_{};
 
             bool initialized_ = false;
     };

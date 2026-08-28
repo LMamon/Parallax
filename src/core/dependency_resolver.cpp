@@ -32,11 +32,13 @@ namespace parallax::core {
     }
 
     void DependencyResolver::acquire(ProductId product, DemandSource source) {
+        std::lock_guard<std::mutex> lock(demand_mutex_);
         auto& counts = demand_[product];
         ++count_for(counts, source);
     }
 
     void DependencyResolver::release(ProductId product, DemandSource source) {
+        std::lock_guard<std::mutex> lock(demand_mutex_);
         const auto it = demand_.find(product);
         if (it == demand_.end()) return;
 
@@ -52,6 +54,7 @@ namespace parallax::core {
     }
 
     std::size_t DependencyResolver::demand(ProductId product, DemandSource source) const noexcept {
+        std::lock_guard<std::mutex> lock(demand_mutex_);
         const auto it = demand_.find(product);
         if (it == demand_.end()) {
             return 0;
@@ -61,6 +64,7 @@ namespace parallax::core {
     }
 
     std::size_t DependencyResolver::total_demand(ProductId product) const noexcept {
+        std::lock_guard<std::mutex> lock(demand_mutex_);
         const auto it = demand_.find(product);
         if (it == demand_.end()) return 0;
 

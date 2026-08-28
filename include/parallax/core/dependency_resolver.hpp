@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -57,6 +58,18 @@ namespace parallax::core {
 
             const Graph& graph_;
 
+            /**
+            * Demand has multiple independent owners.
+            *
+            * Foxglove subscription callbacks may execute concurrently with Runtime
+            * application requests, so reference-count mutations and observations must
+            * share one synchronization boundary.
+            *
+            * This mutex protects only the small demand-accounting map. Graph traversal,
+            * producer execution, ProductStore access, and accelerator work are deliberately
+            * outside this critical section.
+            */
+            mutable std::mutex demand_mutex_;
             std::unordered_map<ProductId, DemandCounts, ProductIdHash> demand_;
     };
 }

@@ -94,7 +94,23 @@ namespace parallax::core {
 
         configure_ordered_history(graph_, context_.products());
 
-        if (!foxglove_.initialize()) {
+        parallax::visualization::FoxgloveServer::DemandCallbacks foxglove_demand;
+
+        foxglove_demand.acquire = [this](ProductId product) {
+                /**
+                 * Subscription callbacks record external demand only.
+                 * They deliberately do not resolve or submit the graph here.
+                 */
+                resolver_.acquire(product, DemandSource::FoxgloveSubscriber);
+            };
+
+        foxglove_demand.release = [this](ProductId product) { 
+                                    resolver_.release(
+                                    product,
+                                    DemandSource::FoxgloveSubscriber);
+            };
+
+        if (!foxglove_.initialize(std::move(foxglove_demand))) {
             std::cerr << "Runtime: failed to initialize Foxglove server\n";
             shutdown();
             return false;

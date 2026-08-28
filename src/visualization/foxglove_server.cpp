@@ -47,10 +47,118 @@ namespace parallax::visualization {
     }
 
     std::optional<parallax::core::ProductId> FoxgloveServer::productForChannel(std::uint64_t channel_id) const noexcept {
+        std::lock_guard<std::mutex> lock(subscription_mutex_);
         const auto it = product_by_channel_id_.find(channel_id);
-        if (it == product_by_channel_id_.end()) return std::nullopt;
+        if (it == product_by_channel_id_.end()) {
+            return std::nullopt;
+        }
 
         return it->second;
+    }
+
+    void FoxgloveServer::onSubscribe(std::uint64_t channel_id, const foxglove::ClientMetadata&) {
+        std::optional<parallax::core::ProductId> product;
+        bool acquire = false;
+
+        {
+            /**
+             * Foxglove may invoke callbacks concurrently.
+             *
+             * Keep this critical section limited to channel lookup + subscriber
+             * accounting. The demand callback is invoked after releasing this mutex
+             * so visualization locks never nest around external application logic.
+             */
+            std::lock_guard<std::mutex> lock(subscription_mutex_);
+
+            const auto binding = product_by_channel_id_.find(channel_id);
+            if (binding == product_by_channel_id_.end()) {
+                // Calibration and other non-graph channels intentionally carry
+                // no ProductId demand.
+                return;
+            }
+
+            auto& subscribers = subscriber_count_by_channel_[channel_id];
+            acquire = (subscribers == 0);
+            ++subscribers;
+            product = binding->second;
+        }
+
+        if (acquire && product && demand_callbacks_.acquire) {
+            demand_callbacks_.acquire(*product);
+        }
+    }
+
+    void FoxgloveServer::onUnsubscribe(std::uint64_t channel_id, const foxglove::ClientMetadata&) {
+        std::optional<parallax::core::ProductId> product;
+        bool release = false;
+
+        {
+            std::lock_guard<std::mutex> lock(subscription_mutex_);
+
+            const auto binding = product_by_channel_id_.find(channel_id);
+            if (binding == product_by_channel_id_.end()) return;
+
+            const auto count_it = subscriber_count_by_channel_.find(channel_id);
+
+            if (count_it == subscriber_count_by_channel_.end() ||
+                count_it->second == 0) {
+
+                /**
+                 * Defensive saturation.
+                 *
+                 * Foxglove documents balanced subscription callbacks, but an
+                 * unexpected duplicate/unordered teardown notification must not
+                 * underflow our size_t subscriber count.
+                 */
+                return;
+            }
+
+            --count_it->second;
+
+            if (count_it->second == 0) {
+                subscriber_count_by_channel_.erase(count_it);
+                release = true;
+            }
+            product = binding->second;
+        }
+
+        if (release && product && demand_callbacks_.release) {
+            demand_callbacks_.release(*product);
+        }
+    }
+
+    void FoxgloveServer::releaseOutstandingDemand() {
+        std::vector<parallax::core::ProductId> outstanding;
+        {
+            std::lock_guard<std::mutex> lock(subscription_mutex_);
+
+            outstanding.reserve(
+                subscriber_count_by_channel_.size());
+
+            /**
+             * Resolver receives one Foxglove-owned reference per channel on 0 -> 1,
+             * not one reference per subscribing client. Therefore each still-active
+             * channel needs exactly one compensating release here.
+             */
+            for (const auto& [channel_id, subscriber_count] : subscriber_count_by_channel_) {
+                if (subscriber_count == 0) {
+                    continue;
+                }
+
+                const auto binding = product_by_channel_id_.find(channel_id);
+                if (binding != product_by_channel_id_.end()) {
+                    outstanding.push_back(binding->second);
+                }
+            }
+
+            subscriber_count_by_channel_.clear();
+        }
+
+        for (const auto product : outstanding) {
+            if (demand_callbacks_.release) {
+                demand_callbacks_.release(product);
+            }
+        }
     }
 
     bool FoxgloveServer::initializeChannels() {
@@ -162,8 +270,14 @@ namespace parallax::visualization {
         return true;
     }
 
-    bool FoxgloveServer::initialize() {
+    bool FoxgloveServer::initialize(DemandCallbacks demand_callbacks) {
         if (initialized_) return true;
+        if (!demand_callbacks.valid()) {
+            std::cerr << "Foxglove demand callbacks are not configured\n";
+            return false;
+        }
+
+        demand_callbacks_ = std::move(demand_callbacks);
         foxglove::setLogLevel(foxglove::LogLevel::Info);
 
         /**
@@ -180,11 +294,23 @@ namespace parallax::visualization {
         options.port = 8765;
 
         /**
-         * Do not install subscribe/unsubscribe callbacks here yet.
-         * Commit 1 proves that capability advertisement is execution-neutral.
-         * Commit 2 will attach native callbacks and translate their channel IDs
-         * into scoped ProductId demand.
-         */
+        * Foxglove owns client/channel subscription semantics. Parallax observes
+        * those native transitions rather than polling hasSinks() or maintaining
+        * a second subscription protocol.
+        *
+        * SDK callbacks may run concurrently, so handlers below perform only
+        * synchronized reference accounting and bounded demand notification.
+        * They never serialize products or submit graph work.
+        */
+
+        options.callbacks.onSubscribe = [this](std::uint64_t channel_id, const foxglove::ClientMetadata& client) {
+                onSubscribe(channel_id, client);
+            };
+
+        options.callbacks.onUnsubscribe = [this](std::uint64_t channel_id, const foxglove::ClientMetadata& client) {
+                onUnsubscribe(channel_id, client);
+            };
+            
         auto result = foxglove::WebSocketServer::create(std::move(options));
 
         if (!result.has_value()) {
@@ -252,12 +378,18 @@ namespace parallax::visualization {
             lidar_scan_channel_.reset();
         }
 
-        product_by_channel_id_.clear();
-
         if (server_) {
             server_->stop();
             server_.reset();
         }
+
+        releaseOutstandingDemand();
+        {
+            std::lock_guard<std::mutex> lock(subscription_mutex_);
+            product_by_channel_id_.clear();
+        }
+
+        demand_callbacks_ = {};
         initialized_ = false;
     }
 }

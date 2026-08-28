@@ -41,6 +41,7 @@ namespace parallax::stereo {
             };
 
             const std::vector<parallax::core::ProductId> outputs_{
+                parallax::core::ProductId::RectifiedRgb,
                 parallax::core::ProductId::RectifiedGray
             };
     };

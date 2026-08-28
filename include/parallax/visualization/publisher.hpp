@@ -4,6 +4,8 @@
 #include <parallax/visualization/video_encoder.hpp>
 #include <parallax/stereo/calibration.hpp>
 #include <parallax/pose/charuco_pose.hpp>
+#include <parallax/visualization/foxglove_server.hpp>
+
 
 #include <foxglove/websocket.hpp>
 #include <cuda_runtime.h>
@@ -22,7 +24,7 @@ namespace parallax::visualization {
             Publisher(const Publisher&) = delete;
             Publisher& operator=(const Publisher&) = delete;
 
-            bool initialize(std::uint32_t width, std::uint32_t height, std::uint32_t fps);
+            bool initialize(FoxgloveServer& foxglove, std::uint32_t width, std::uint32_t height, std::uint32_t fps);
 
             bool publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame, 
                                   const parallax::pose::CharucoPoseResult& pose,
@@ -40,13 +42,7 @@ namespace parallax::visualization {
 
         private:
             VideoEncoder video_encoder_;
-            
-            std::optional<foxglove::messages::CompressedVideoChannel> left_image_channel_;
-            std::optional<foxglove::messages::CameraCalibrationChannel> left_calibration_channel_;
-            std::optional<foxglove::messages::RawImageChannel> disparity_channel_;
-            std::optional<foxglove::messages::RawImageChannel> confidence_channel_;
-            std::optional<foxglove::messages::RawImageChannel> depth_channel_;
-            
+
             cudaStream_t stream_ = nullptr;
             
             // Reusable pinned host staging.
@@ -65,6 +61,14 @@ namespace parallax::visualization {
             std::uint32_t height_ = 0;
             std::uint32_t fps_ = 0;
 
+            /**
+             * Non-owning access to the native Foxglove capability surface.
+             *
+             * Runtime owns FoxgloveServer and shuts Publisher down before the server.
+             * Publisher performs serialization/logging only; it does not define channel
+             * lifetime or subscription semantics.
+             */
+            FoxgloveServer* foxglove_ = nullptr;
 
             bool initialized_ = false;
     };

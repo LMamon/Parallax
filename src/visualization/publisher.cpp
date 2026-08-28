@@ -39,7 +39,7 @@ namespace parallax::visualization {
 
     Publisher::~Publisher() { shutdown(); }
 
-    bool Publisher::initialize(std::uint32_t width, std::uint32_t height, std::uint32_t fps) {
+    bool Publisher::initialize(FoxgloveServer& foxglove, std::uint32_t width, std::uint32_t height, std::uint32_t fps) {
         if (initialized_) return true;
 
         if (width == 0 || height == 0 || fps == 0) {
@@ -47,62 +47,16 @@ namespace parallax::visualization {
             return false;
         }
 
+        if (!foxglove.initialized()) {
+            std::cerr << "Foxglove server must be initialized before Publisher\n";
+            return false;
+        }
+
+        foxglove_ = &foxglove;
+
         width_ = width;
         height_ = height;
         fps_ = fps;
-
-        auto left_result = foxglove::messages::CompressedVideoChannel::create("/camera/left/image");
-        if (!left_result.has_value()) {
-            std::cerr
-                << "Failed to create /camera/left/image channel: "
-                << foxglove::strerror(left_result.error()) << '\n';
-
-            shutdown();
-            return false;
-        }
-        left_image_channel_.emplace(std::move(left_result.value()));
-
-        auto calibration_result = foxglove::messages::CameraCalibrationChannel::create("/camera/left/calibration");
-        if (!calibration_result.has_value()) {
-            std::cerr
-                << "Failed to create /camera/left/calibration channel: "
-                << foxglove::strerror(calibration_result.error()) << '\n';
-
-            shutdown();
-            return false;
-        }
-        left_calibration_channel_.emplace(std::move(calibration_result.value()));
-
-        auto disparity_result = foxglove::messages::RawImageChannel::create("/stereo/disparity");
-        if (!disparity_result.has_value()) {
-            std::cerr
-                << "Failed to create /stereo/disparity channel: "
-                << foxglove::strerror(disparity_result.error()) << '\n';
-
-            shutdown();
-            return false;
-        }
-        disparity_channel_.emplace(std::move(disparity_result.value()));
-
-        auto confidence_result = foxglove::messages::RawImageChannel::create("/stereo/confidence");
-        if (!confidence_result.has_value()) {
-            std::cerr << "Failed to create /stereo/confidence channel: "
-                    << foxglove::strerror(confidence_result.error()) << '\n';
-
-            shutdown();
-            return false;
-        }
-        confidence_channel_.emplace(std::move(confidence_result.value()));
-
-        auto depth_result = foxglove::messages::RawImageChannel::create("/stereo/depth");
-        if (!depth_result.has_value()) {
-            std::cerr << "Failed to create /stereo/depth: "
-                    << foxglove::strerror(depth_result.error()) << '\n';
-            
-            shutdown();
-            return false;
-        }
-        depth_channel_.emplace(std::move(depth_result.value()));
 
         if (cudaStreamCreate(&stream_) != cudaSuccess) {
             std::cerr << "Failed to create visualization CUDA stream\n";
@@ -156,7 +110,7 @@ namespace parallax::visualization {
 
     bool Publisher::publishLeftCalibration(const parallax::stereo::StereoCalibration& calibration) {
         if (!initialized_ ||
-            !left_calibration_channel_ ||
+            foxglove_ == nullptr ||
             !calibration.loaded()) {
             return false;
         }
@@ -187,14 +141,14 @@ namespace parallax::visualization {
 
         message.p = p1;
 
-        return checkFoxglove(left_calibration_channel_->log(message), "Failed to publish /camera/left/calibration");
+        return checkFoxglove(foxglove_->leftCalibrationChannel().log(message), "Failed to publish /camera/left/calibration");
     }
 
     bool Publisher::publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame,
                                      const parallax::pose::CharucoPoseResult& pose,
                                      std::chrono::steady_clock::time_point timestamp) {
 
-        if (!initialized_ || !left_image_channel_ || !frame.left.isAllocated()) {
+        if (!initialized_ || foxglove_ == nullptr || !frame.left.isAllocated()) {
             return false;
         }
 
@@ -255,11 +209,11 @@ namespace parallax::visualization {
         message.format = "h264";
         message.data = encoded_video_;
 
-        return checkFoxglove(left_image_channel_->log(message), "Failed to publish /camera/left/image");
+        return checkFoxglove(foxglove_->leftImageChannel().log(message), "Failed to publish /camera/left/image");
     }
 
     bool Publisher::publishDepth(const parallax::isp::DepthFrame& frame) {
-        if (!initialized_ || !depth_channel_ || !frame.depth.isAllocated()) {
+        if (!initialized_ || foxglove_ == nullptr || !frame.depth.isAllocated()) {
             return false;
         }
 
@@ -295,11 +249,11 @@ namespace parallax::visualization {
 
         std::memcpy(message.data.data(), host_depth_, bytes);
 
-        return checkFoxglove(depth_channel_->log(message), "Failed to publish /stereo/depth");
+        return checkFoxglove(foxglove_->depthChannel().log(message), "Failed to publish /stereo/depth");
     }
 
     bool Publisher::publishDisparity(const parallax::isp::StereoMatchFrame& frame) {
-        if (!initialized_ || !disparity_channel_ || !frame.disparity.isAllocated()) {
+        if (!initialized_ || foxglove_ == nullptr || !frame.disparity.isAllocated()) {
             return false;
         }
 
@@ -331,11 +285,11 @@ namespace parallax::visualization {
 
         std::memcpy( message.data.data(), disparity_float_.data(), message.data.size());
 
-        return checkFoxglove(disparity_channel_->log(message), "Failed to publish /stereo/disparity");
+        return checkFoxglove(foxglove_->disparityChannel().log(message), "Failed to publish /stereo/disparity");
     }
 
     bool Publisher::publishConfidence(const parallax::isp::StereoMatchFrame& frame) {
-        if (!initialized_ || !confidence_channel_ || !frame.confidence.isAllocated()) {
+        if (!initialized_ || foxglove_ == nullptr || !frame.confidence.isAllocated()) {
             return false;
         }
 
@@ -364,35 +318,11 @@ namespace parallax::visualization {
 
         std::memcpy(message.data.data(), host_confidence_, bytes);
 
-        return checkFoxglove(confidence_channel_->log(message), "Failed to publish /stereo/confidence");
+        return checkFoxglove(foxglove_->confidenceChannel().log(message), "Failed to publish /stereo/confidence");
     }
 
     void Publisher::shutdown() {
         video_encoder_.shutdown();
-
-        if (left_image_channel_) {
-            left_image_channel_->close();
-            left_image_channel_.reset();
-        }
-        if (left_calibration_channel_) {
-            left_calibration_channel_->close();
-            left_calibration_channel_.reset();
-        }
-
-        if (depth_channel_) {
-            depth_channel_->close();
-            depth_channel_.reset();
-        }
-
-        if (disparity_channel_) {
-            disparity_channel_->close();
-            disparity_channel_.reset();
-        }
-
-        if (confidence_channel_) {
-            confidence_channel_->close();
-            confidence_channel_.reset();
-        }
 
         if (host_rgb_ != nullptr) {
             cudaFreeHost(host_rgb_);
@@ -427,5 +357,6 @@ namespace parallax::visualization {
         fps_ = 0;
 
         initialized_ = false;
+        foxglove_ = nullptr;
     }
 }

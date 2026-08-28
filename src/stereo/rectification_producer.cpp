@@ -67,15 +67,28 @@ namespace parallax::stereo {
         }
 
         /**
-         * Alias the gray member while retaining shared ownership of the complete
-         * pooled output slot. The slot cannot be reused until consumers release
-         * this product generation.
+         * Both rectified representations belong to the same pooled output
+         * generation and complete on the same VPI submission.
+         *
+         * Aliasing shared_ptr instances expose the individual frame members while
+         * retaining ownership of OutputSlot. The pool therefore cannot recycle this
+         * generation while either RGB or grayscale is still observed downstream.
+         *
+         * RectifiedRgb is made explicit here because the established Foxglove image
+         * surface already consumes this data. Publication must eventually read it
+         * from ProductStore rather than borrowing StereoRectifier::rgb().
          */
-        std::shared_ptr<const parallax::isp::RectifiedStereoGrayFrame> rectified(output, &output->gray);
+        std::shared_ptr<const parallax::isp::RectifiedStereoFrame> rectified_rgb(output, &output->rgb);
+        std::shared_ptr<const parallax::isp::RectifiedStereoGrayFrame> rectified_gray(output, &output->gray);
+
+        store_.publish(parallax::core::make_product(parallax::core::ProductId::RectifiedRgb,
+                                                    rgb->metadata,
+                                                    std::move(rectified_rgb),
+                                                    completion));
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::RectifiedGray,
                                                     gray->metadata,
-                                                    std::move(rectified),
+                                                    std::move(rectified_gray),
                                                     std::move(completion)));
 
         return parallax::core::SubmitResult::Submitted;

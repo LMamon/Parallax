@@ -102,7 +102,7 @@ namespace parallax::core {
 
         const auto& rgb = pipeline_.rgb();
 
-        if (!publisher_.initialize(rgb.width, rgb.height, config_.frame_rate)) {
+        if (!publisher_.initialize(foxglove_, rgb.width, rgb.height, config_.frame_rate)) {
             std::cerr << "Runtime: failed to initialize visualization publisher\n";
 
             shutdown();

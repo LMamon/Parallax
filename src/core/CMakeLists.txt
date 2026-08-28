@@ -4,6 +4,7 @@ add_library(parallax_core STATIC
     graph.cpp
     pipeline.cpp
     product_store.cpp
+    sensor_extrinsics.cpp
     runtime.cpp
 )
 

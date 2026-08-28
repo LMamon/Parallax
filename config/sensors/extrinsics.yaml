@@ -1,0 +1,28 @@
+frames:
+  body: stereo_body
+  left_camera: camera_left_optical
+  lidar: lidar
+
+left_camera_from_body:
+  translation_m:
+    x: 0.0
+    y: 0.0482994032149552
+    z: 0.0
+
+  rotation_xyzw:
+    x: -0.5
+    y: 0.5
+    z: -0.5
+    w: 0.5
+
+lidar_from_body:
+  translation_m:
+    x: -0.034925
+    y: 0.0
+    z: 0.028575
+
+  rotation_xyzw:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    w: 1.0

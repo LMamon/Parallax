@@ -456,9 +456,7 @@ namespace parallax::core {
 
             const auto now = std::chrono::steady_clock::now();
 
-            InputObservation input{};
-            SourceObservation{SourceId::StereoCamera, 42};
-            input.timestamp = now;
+            InputObservation input{SourceObservation{SourceId::StereoCamera, 42}, now};
 
             EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::Submit);
             record_submission(state, policy, input, now);
@@ -593,6 +591,35 @@ namespace parallax::core {
 
             ASSERT_NE(next, nullptr);
             EXPECT_EQ(next->metadata.observation, (SourceObservation{SourceId::StereoCamera, 11}));
+        }
+
+        TEST(ExecutionGateTest, RateLimitedProducerDoesNotThrottleIndependentProducer) {
+            const auto now = std::chrono::steady_clock::now();
+
+            /**
+             * Simulate two unrelated producer scheduling states.
+             *
+             * The slow producer is still inside its 100 ms period. The fast producer
+             * is unthrottled and must remain independently runnable.
+             */
+            ExecutionPolicy slow_policy{};
+            slow_policy.target_hz = 10.0;
+
+            ProducerExecutionState slow_state{};
+            slow_state.has_last_submission = true;
+            slow_state.last_submission = now - std::chrono::milliseconds(20);
+
+            InputObservation slow_input{SourceObservation{SourceId::Rplidar, 10}, now};
+
+            ExecutionPolicy fast_policy{};
+            fast_policy.target_hz = 0.0;
+
+            ProducerExecutionState fast_state{};
+
+            InputObservation fast_input{SourceObservation{SourceId::StereoCamera, 100}, now};
+
+            EXPECT_EQ(submission_decision(slow_policy, slow_state, slow_input, now), SubmissionDecision::RateLimited);
+            EXPECT_EQ(submission_decision(fast_policy, fast_state, fast_input, now), SubmissionDecision::Submit);
         }
     }
 }

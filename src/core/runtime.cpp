@@ -148,18 +148,6 @@ namespace parallax::core {
             shutdown();
             return false;
         }
-
-        if (!publisher_.publishLeftCalibration(pipeline_.calibration())) {
-            std::cerr << "Runtime: failed to publish left camera calibration\n";
-            shutdown();
-            return false;
-        }
-
-        if (!publisher_.publishStaticTransforms(sensor_extrinsics_)) {
-            std::cerr << "Runtime: failed to publish static sensor transforms\n";
-            shutdown();
-            return false;
-        }
         
         initialized_ = true;
         return true;
@@ -279,7 +267,21 @@ namespace parallax::core {
 
             failed_frames = 0;
 
-            const bool published = publisher_.publishAvailable(context_.products(), 
+            if (foxglove_.takeCalibrationRequest()) {
+                if (!publisher_.publishLeftCalibration(pipeline_.calibration())) {
+                    std::cerr << "Runtime: calibration publication failed\n";
+                    break;
+                }
+            }
+
+            if (foxglove_.takeTransformRequest()) {
+                if (!publisher_.publishStaticTransforms(sensor_extrinsics_)) {
+                    std::cerr << "Runtime: transform publication failed\n";
+                    break;
+                }
+            }
+
+            const bool published = publisher_.publishAvailable(context_.products(),
                                                                [this](const CompletionHandle& completion) {
 
                         return context_.waitForHost(completion);

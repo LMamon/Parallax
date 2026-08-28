@@ -8,6 +8,7 @@
 #include <foxglove/websocket.hpp>
 
 
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <vector>
@@ -68,6 +69,14 @@ namespace parallax::visualization {
                 return initialized_;
             }
 
+
+            [[nodiscard]] bool takeCalibrationRequest() noexcept {
+                return calibration_requested_.exchange(false);
+            }
+
+            [[nodiscard]] bool takeTransformRequest() noexcept {
+                return transform_requested_.exchange(false);
+            }
             /**
              * Resolve a native Foxglove subscription identity into the graph
              * product represented by that channel.
@@ -122,6 +131,9 @@ namespace parallax::visualization {
             void onUnsubscribe(std::uint64_t channel_id, const foxglove::ClientMetadata& client);
 
             void releaseOutstandingDemand();
+
+            std::atomic_bool calibration_requested_{false};
+            std::atomic_bool transform_requested_{false};
 
             /**
              * Dedicated Foxglove context for Parallax.

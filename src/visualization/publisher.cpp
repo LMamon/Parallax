@@ -37,7 +37,6 @@ namespace parallax::visualization {
         
         foxglove::messages::FrameTransform makeFrameTransform(const parallax::core::RigidTransformConfig& config) {
                 foxglove::messages::FrameTransform message;
-                message.timestamp = nowTimestamp();
                 message.parent_frame_id = config.parent_frame;
                 message.child_frame_id = config.child_frame;
 
@@ -540,12 +539,12 @@ namespace parallax::visualization {
             cudaFreeHost(host_confidence_);
             host_confidence_ = nullptr;
         }
-
+        
         if (stream_ != nullptr) {
             cudaStreamDestroy(stream_);
             stream_ = nullptr;
         }
-
+        
         disparity_float_.clear();
         encoded_video_.clear();
 

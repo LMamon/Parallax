@@ -11,7 +11,6 @@
 namespace parallax::visualization {
 
     namespace {
-
         constexpr std::string_view kMarkerDepthSchema = R"json({
                                                             "$schema": "https://json-schema.org/draft/2020-12/schema",
                                                             "title": "parallax.MarkerDepth",
@@ -37,7 +36,6 @@ namespace parallax::visualization {
             schema.data_len = kMarkerDepthSchema.size();
             return schema;
         }
-
     }
 
     FoxgloveServer::~FoxgloveServer() { shutdown(); }
@@ -57,6 +55,16 @@ namespace parallax::visualization {
     }
 
     void FoxgloveServer::onSubscribe(std::uint64_t channel_id, const foxglove::ClientMetadata&) {
+        if (left_calibration_channel_ && channel_id == left_calibration_channel_->id()) {
+            calibration_requested_.store(true);
+            return;
+        }
+
+        if (transform_channel_ && channel_id == transform_channel_->id()) {
+            transform_requested_.store(true);
+            return;
+        }
+        
         std::optional<parallax::core::ProductId> product;
         bool acquire = false;
 
@@ -384,6 +392,11 @@ namespace parallax::visualization {
         if (lidar_scan_channel_) {
             lidar_scan_channel_->close();
             lidar_scan_channel_.reset();
+        }
+
+        if (transform_channel_) {
+            transform_channel_->close();
+            transform_channel_.reset();
         }
 
         if (server_) {

@@ -1,5 +1,6 @@
 add_library(parallax_application
     command_parser.cpp
+    request_controller.cpp
 )
 
 target_include_directories(parallax_application

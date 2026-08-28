@@ -3,6 +3,7 @@
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/vpi/image_wrapper.hpp>
 #include <parallax/core/fixed_payload_pool.hpp>
+#include <parallax/core/completion.hpp>
 
 #include <memory>
 #include <vpi/Stream.h>
@@ -10,7 +11,12 @@
 
 #include <vpi/algo/StereoDisparity.h>
 
+namespace parallax::core {
+    class ExecutionContext;
+}
+
 namespace parallax::stereo {
+
 
     class StereoMatcher {
         public:
@@ -27,19 +33,29 @@ namespace parallax::stereo {
                 parallax::isp::StereoMatchFrame output{};
 
                 /**
-                * Per-submission VPI views over the exact rectified input generation
-                * consumed by this slot.
-                *
-                * VPI may retain these wrapper containers until the submitted work has
-                * completed. Keeping the wrappers with the bounded output slot prevents a
-                * later submission from rebinding a container that is still locked by VPI.
-                *
-                * The wrappers do not own the underlying rectified CUDA allocations.
-                * StereoProducer keeps that input generation alive through the published
-                * product lifetime dependency.
-                */
+                 * Per-submission VPI views over the exact rectified input generation consumed
+                 * by this slot.
+                 *
+                 * VPI may retain these wrapper containers after C++ consumers have released
+                 * the corresponding product. The slot therefore carries its previous VPI
+                 * completion handle; acquireOutput() waits for that completion before these
+                 * wrappers may be rebound.
+                 *
+                 * The wrappers do not own the underlying rectified CUDA allocations.
+                 * StereoProducer keeps that input generation alive through the published
+                 * product lifetime dependency.
+                 */
                 parallax::vpi::ImageWrapper left_input;
                 parallax::vpi::ImageWrapper right_input;
+
+                /**
+                 * Completion fence for the most recent VPI submission that used this slot.
+                 *
+                 * C++ shared ownership prevents reuse while a published product still leases
+                 * the slot. This handle separately prevents rebinding the slot's VPI wrapper
+                 * containers while the accelerator may still have them locked.
+                 */
+                parallax::core::CompletionHandle completion{};
 
                 VPIImage left_block_linear = nullptr;
                 VPIImage right_block_linear = nullptr;
@@ -70,6 +86,13 @@ namespace parallax::stereo {
                 OutputSlot& operator=(const OutputSlot&) = delete;
             };
 
+            [[nodiscard]] std::shared_ptr<OutputSlot> acquireOutput(parallax::core::ExecutionContext& context);
+            /**
+            * Asynchronous graph acquisition path.
+            *
+            * Waits for the selected slot's previous accelerator submission before its
+            * VPI wrappers may be rebound.
+            */
             [[nodiscard]] std::shared_ptr<OutputSlot> acquireOutput() {
                 return output_pool_.acquire();
             }

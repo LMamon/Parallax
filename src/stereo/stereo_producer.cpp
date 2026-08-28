@@ -46,7 +46,7 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::Failed;
         }
 
-        auto output = matcher_.acquireOutput();
+        auto output = matcher_.acquireOutput(context);
         if (!output) {
             return parallax::core::SubmitResult::NoWork;
         }
@@ -59,6 +59,7 @@ namespace parallax::stereo {
         if (!completion.valid()) {
             return parallax::core::SubmitResult::Failed;
         }
+        output->completion = completion;
         /**
          * StereoMatcher computes disparity and confidence together into one
          * StereoMatchFrame. Both ProductIds intentionally reference that same

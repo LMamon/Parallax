@@ -1,4 +1,5 @@
 #include <parallax/stereo/matcher.hpp>
+#include <parallax/core/execution_context.hpp>
 
 #include <vpi/Status.h>
 #include <vpi/algo/StereoDisparity.h>
@@ -219,6 +220,30 @@ namespace parallax::stereo {
         return true;
     }
 
+
+    std::shared_ptr<StereoMatcher::OutputSlot> StereoMatcher::acquireOutput(parallax::core::ExecutionContext& context) {
+        auto output = output_pool_.acquire();
+
+        if (!output) return {};
+
+        /**
+         * shared_ptr availability only proves that no C++ consumer currently
+         * leases this slot. VPI may still retain the wrapper container from the
+         * slot's previous asynchronous submission.
+         *
+         * Before rebinding that wrapper for a new generation, wait for the
+         * previous submission associated with this exact slot to complete.
+         */
+        if (output->completion.valid()) {
+            if (!context.waitForHost(output->completion)) {
+                return {};
+            }
+
+            output->completion = {};
+        }
+
+        return output;
+    }
     void StereoMatcher::shutdown() {
         // Shared stream is NOT synchronized/destroyed here.
         // Caller owns its lifecycle.

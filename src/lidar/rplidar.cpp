@@ -26,16 +26,14 @@ namespace parallax::lidar {
          * Normalize units so they never leak into the rest of
          * Parallax.
          */
-        float angleRadians(
-            const sl_lidar_response_measurement_node_hq_t& node) {
+        float angleRadians(const sl_lidar_response_measurement_node_hq_t& node) {
             const float angle_degrees = static_cast<float>(node.angle_z_q14) * 90.0f / 16384.0f;
 
             return angle_degrees * kDegreesToRadians;
         }
 
-        float rangeMeters(
-            const sl_lidar_response_measurement_node_hq_t& node) {
-            const float range_mm = static_cast<float>(node.dist_mm_q2) / 4.0f;
+        float rangeMeters(const sl_lidar_response_measurement_node_hq_t& node) {
+                          const float range_mm = static_cast<float>(node.dist_mm_q2) / 4.0f;
 
             return range_mm / 1000.0f;
         }
@@ -44,7 +42,6 @@ namespace parallax::lidar {
     Rplidar::~Rplidar() { shutdown(); }
 
     bool Rplidar::initialize(const std::string& device, std::uint32_t baud_rate) {
-
         if (initialized_) return true;
 
         auto driver_result = sl::createLidarDriver();
@@ -106,7 +103,6 @@ namespace parallax::lidar {
          * default speed rather than embedding a model-specific RPM here.
          */
         const sl_result motor_result = driver_->setMotorSpeed();
-
         if (SL_IS_FAIL(motor_result)) {
             std::cerr << "Rplidar: failed to start scan motor\n";
             shutdown();
@@ -139,7 +135,6 @@ namespace parallax::lidar {
                   << " baud | firmware " << (device_info.firmware_version >> 8) << '.';
 
         const auto firmware_minor = device_info.firmware_version & 0xFF;
-
         if (firmware_minor < 10) {
             std::cout << '0';
         }
@@ -160,7 +155,6 @@ namespace parallax::lidar {
         std::size_t count = nodes.size();
 
         const sl_result grab_result = driver_->grabScanDataHq(nodes.data(), count);
-
         if (SL_IS_FAIL(grab_result)) {
             std::cerr << "Rplidar: failed to acquire scan, code 0x"
                       << std::hex << grab_result

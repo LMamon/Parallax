@@ -10,7 +10,6 @@
 #include <cmath>
 
 namespace parallax::visualization {
-
     namespace {
         constexpr const char* kFrameId = "camera_left_optical";
 
@@ -34,6 +33,29 @@ namespace parallax::visualization {
             timestamp.nsec = static_cast<std::uint32_t>(ns % 1'000'000'000LL);
 
             return timestamp;
+        }
+        
+        foxglove::messages::FrameTransform makeFrameTransform(const parallax::core::RigidTransformConfig& config) {
+                foxglove::messages::FrameTransform message;
+                message.timestamp = nowTimestamp();
+                message.parent_frame_id = config.parent_frame;
+                message.child_frame_id = config.child_frame;
+
+                foxglove::messages::Vector3 translation;
+                translation.x = config.translation_m[0];
+                translation.y = config.translation_m[1];
+                translation.z = config.translation_m[2];
+                message.translation = translation;
+                
+                foxglove::messages::Quaternion rotation;
+                rotation.x = config.rotation_xyzw[0];
+                rotation.y = config.rotation_xyzw[1];
+                rotation.z = config.rotation_xyzw[2];
+                rotation.w = config.rotation_xyzw[3];
+                
+                message.rotation = rotation;
+
+                return message;
         }
     }
 
@@ -140,6 +162,26 @@ namespace parallax::visualization {
         message.p = p1;
 
         return checkFoxglove(foxglove_->leftCalibrationChannel().log(message), "Failed to publish /camera/left/calibration");
+    }
+
+    bool Publisher::publishStaticTransforms(const parallax::core::SensorExtrinsics& extrinsics) {
+        if (!initialized_ || foxglove_ == nullptr) return false;
+
+        const auto left_camera = makeFrameTransform(extrinsics.left_camera);
+        if (!checkFoxglove(foxglove_->transformChannel().log(left_camera),
+                "Failed to publish stereo_body -> camera_left_optical transform")) {
+
+            return false;
+        }
+
+        const auto lidar = makeFrameTransform(extrinsics.lidar);
+
+        if (!checkFoxglove(foxglove_->transformChannel().log(lidar),
+                           "Failed to publish stereo_body -> lidar transform")) {
+
+            return false;
+        }
+        return true;
     }
 
     bool Publisher::publishAvailable(const parallax::core::ProductStore& store, const HostWait& wait_for_host) {

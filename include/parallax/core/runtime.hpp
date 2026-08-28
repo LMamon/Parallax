@@ -10,6 +10,7 @@
 #include <parallax/core/execution_gate.hpp>
 #include <parallax/core/pipeline.hpp>
 #include <parallax/core/sensor_frame.hpp>
+#include <parallax/core/sensor_extrinsics.hpp>
 #include <parallax/core/graph.hpp>
 
 #include <parallax/visualization/foxglove_server.hpp>
@@ -48,6 +49,7 @@ namespace parallax::core {
             Runtime& operator=(Runtime&&) = delete;
 
             bool initialize(const std::filesystem::path& camera_config_path,
+                            const std::filesystem::path& sensor_extrinsics_path,
                             const std::filesystem::path& calibration_directory);
             
             void run(const volatile std::sig_atomic_t& stop_requested);
@@ -68,7 +70,8 @@ namespace parallax::core {
             
             void runLidarSource();
             parallax::camera::CameraConfig config_{};
-            
+            SensorExtrinsics sensor_extrinsics_{};
+
             std::unique_ptr<parallax::camera::StereoCamera> camera_;
             std::atomic_bool running_{false};
             std::thread lidar_thread_;

@@ -12,6 +12,7 @@ namespace parallax::core {
     Runtime::~Runtime() { shutdown(); }
 
     bool Runtime::initialize(const std::filesystem::path& camera_config_path,
+                            const std::filesystem::path& sensor_extrinsics_path,
                              const std::filesystem::path& calibration_directory) {
 
         if (initialized_) return true;
@@ -25,6 +26,11 @@ namespace parallax::core {
         if (!config_.loadFromFile(camera_config_path)) {
             std::cerr << "Runtime: failed to load camera config\n";
             return false;
+        }
+
+        if (!sensor_extrinsics_.loadFromFile(sensor_extrinsics_path)) {
+            std::cerr << "Runtime: failed to load extrinsics config\n";
+            return false;   
         }
 
         camera_ = std::make_unique<parallax::camera::StereoCamera>(config_);
@@ -149,6 +155,12 @@ namespace parallax::core {
             return false;
         }
 
+        if (!publisher_.publishStaticTransforms(sensor_extrinsics_)) {
+            std::cerr << "Runtime: failed to publish static sensor transforms\n";
+            shutdown();
+            return false;
+        }
+        
         initialized_ = true;
         return true;
     }

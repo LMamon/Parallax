@@ -6,6 +6,8 @@
 #include <parallax/pose/charuco_pose.hpp>
 #include <parallax/visualization/foxglove_server.hpp>
 #include <parallax/core/product_store.hpp>
+#include <parallax/core/sensor_extrinsics.hpp>
+
 #include <parallax/core/completion.hpp>
 #include <parallax/lidar/frame_types.hpp>
 
@@ -40,6 +42,7 @@ namespace parallax::visualization {
             */
 
             bool publishLeftCalibration(const parallax::stereo::StereoCalibration& calibration);
+            bool publishStaticTransforms(const parallax::core::SensorExtrinsics& extrinsics);
             bool publishAvailable(const parallax::core::ProductStore& store, const HostWait& wait_for_host);
             void shutdown();
 

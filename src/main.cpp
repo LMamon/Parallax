@@ -14,9 +14,11 @@ int main() {
 
     parallax::core::Runtime runtime;
     const std::filesystem::path camera_config_path = "config/camera/stereo.yaml";
+    const std::filesystem::path sensor_extrinsics_path = "config/sensors/extrinsics.yaml";
+
     const std::filesystem::path calibration_directory = "config/camera/calibration/results/rectification";
 
-    if (!runtime.initialize(camera_config_path, calibration_directory)) {
+    if (!runtime.initialize(camera_config_path, sensor_extrinsics_path, calibration_directory)) {
         return EXIT_FAILURE;
     }
 

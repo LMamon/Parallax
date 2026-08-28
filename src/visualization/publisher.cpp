@@ -460,7 +460,6 @@ namespace parallax::visualization {
         return checkFoxglove(foxglove_->confidenceChannel().log(message), "Failed to publish /stereo/confidence");
     }
 
-
     bool Publisher::publishLidarScan(const parallax::lidar::LidarScan& scan) {
         if (!initialized_ || foxglove_ == nullptr || !scan.valid() || scan.points.empty()) {
             return false;
@@ -504,8 +503,8 @@ namespace parallax::visualization {
          * Keeping every slot in LidarScan therefore allows us to represent the
          * result honestly through Foxglove's equally-spaced LaserScan contract.
          */
-        message.start_angle = -static_cast<double>(scan.points.front().angle_rad);
-        message.end_angle = -static_cast<double>(scan.points.back().angle_rad);
+        message.start_angle = -static_cast<double>(scan.points.back().angle_rad);
+        message.end_angle = -static_cast<double>(scan.points.front().angle_rad);
         message.ranges.reserve(scan.points.size());
         message.intensities.reserve(scan.points.size());
 

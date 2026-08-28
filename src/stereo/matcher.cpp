@@ -164,15 +164,14 @@ namespace parallax::stereo {
          * wrappers to the exact RectifiedGray generation consumed by this
          * submission.
          */
-        if (!left_input_.rebind(input.left, VPI_IMAGE_FORMAT_Y8_ER) ||
-            !right_input_.rebind(input.right, VPI_IMAGE_FORMAT_Y8_ER)) {
-
+        if (!output.left_input.rebind(input.left, VPI_IMAGE_FORMAT_Y8_ER) ||
+            !output.right_input.rebind(input.right, VPI_IMAGE_FORMAT_Y8_ER)) {
             return false;
         }
 
         VPIStatus status = vpiSubmitConvertImageFormat(stream,
                                                        VPI_BACKEND_VIC,
-                                                       left_input_.handle(),
+                                                       output.left_input.handle(),
                                                        output.left_block_linear,
                                                        nullptr);
 
@@ -183,7 +182,7 @@ namespace parallax::stereo {
 
         status = vpiSubmitConvertImageFormat(stream,
                                              VPI_BACKEND_VIC,
-                                             right_input_.handle(),
+                                             output.right_input.handle(),
                                              output.right_block_linear,
                                              nullptr);
 
@@ -227,9 +226,7 @@ namespace parallax::stereo {
             vpiPayloadDestroy(stereo_);
             stereo_ = nullptr;
         }
-
-        left_input_.release();
-        right_input_.release();
+        
         output_pool_.reset();
 
         stream_ = nullptr;

@@ -26,6 +26,21 @@ namespace parallax::stereo {
             struct OutputSlot {
                 parallax::isp::StereoMatchFrame output{};
 
+                /**
+                * Per-submission VPI views over the exact rectified input generation
+                * consumed by this slot.
+                *
+                * VPI may retain these wrapper containers until the submitted work has
+                * completed. Keeping the wrappers with the bounded output slot prevents a
+                * later submission from rebinding a container that is still locked by VPI.
+                *
+                * The wrappers do not own the underlying rectified CUDA allocations.
+                * StereoProducer keeps that input generation alive through the published
+                * product lifetime dependency.
+                */
+                parallax::vpi::ImageWrapper left_input;
+                parallax::vpi::ImageWrapper right_input;
+
                 VPIImage left_block_linear = nullptr;
                 VPIImage right_block_linear = nullptr;
                 VPIImage disparity_block_linear = nullptr;
@@ -70,11 +85,6 @@ namespace parallax::stereo {
         
         private:
             parallax::core::FixedPayloadPool<OutputSlot, OutputSlotCount> output_pool_;
-            // Non-owning VPI views over rectifier-owned CUDA pitch-linear
-            // VPI_IMAGE_FORMAT_Y8_ER images. Wrapping does not copy or transfer
-            // ownership of the underlying CUDA allocations.
-            parallax::vpi::ImageWrapper left_input_;
-            parallax::vpi::ImageWrapper right_input_;
             VPIPayload stereo_ = nullptr;
             VPIStereoDisparityEstimatorParams submit_params_{};
             // Borrowed shared VPI stream. StereoMatcher does not own or destroy

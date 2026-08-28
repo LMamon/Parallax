@@ -8,6 +8,7 @@
 #include <cmath>
 #include <iostream>
 #include <thread>
+#include <limits>
 
 namespace parallax::lidar {
 
@@ -181,21 +182,23 @@ namespace parallax::lidar {
         for (std::size_t i = 0; i < count; ++i) {
             const auto& node = nodes[i];
             const float range_m = rangeMeters(node);
-
-            /**
-             * Zero distance is SLAMTEC's no-return/invalid measurement. Keep
-             * invalid samples out of the normalized Parallax representation.
-             */
-            if (!std::isfinite(range_m) || range_m <= 0.0f) {
-                continue;
-            }
-
             LidarPoint point;
             point.angle_rad = angleRadians(node);
-            point.range_m = range_m;
 
-            // HQ quality occupies the upper bits of the packed quality field.
-            point.quality = static_cast<std::uint8_t>(node.quality >> SL_LIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);
+            /**
+            * Preserve every angular slot returned by ascendScanData().
+            *
+            * SLAMTEC uses zero distance for no-return measurements, but
+            * ascendScanData() assigns those nodes an angle based on the scan's
+            * 360 / count increment before sorting the full revolution. Removing
+            * them here would destroy that regular angular representation and make
+            * the scan unsuitable for Foxglove LaserScan.
+            */
+
+            point.valid = std::isfinite(range_m) && range_m > 0.0f;
+            point.range_m = point.valid ? range_m : std::numeric_limits<float>::quiet_NaN();
+
+            point.quality = static_cast<std::uint8_t>(node.quality >>SL_LIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);
             scan.points.push_back(point);
         }
         return scan.valid();

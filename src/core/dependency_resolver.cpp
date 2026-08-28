@@ -1,5 +1,6 @@
 #include <parallax/core/dependency_resolver.hpp>
 
+#include <exception>
 #include <unordered_set>
 
 namespace parallax::core {
@@ -45,7 +46,8 @@ namespace parallax::core {
         auto& count = count_for(it->second, source);
         if (count != 0) --count;
 
-        if (it->second.application == 0 &&
+        if (it->second.runtime_baseline == 0 &&
+            it->second.application == 0 &&
             it->second.foxglove_subscriber == 0 &&
             it->second.internal_dependent == 0) {
                 
@@ -70,11 +72,14 @@ namespace parallax::core {
 
         const auto& counts = it->second;
 
-        return counts.application + counts.foxglove_subscriber + counts.internal_dependent;
+        return counts.runtime_baseline + counts.application + counts.foxglove_subscriber + counts.internal_dependent;
     }
 
     std::size_t& DependencyResolver::count_for(DemandCounts& counts, DemandSource source) noexcept{
         switch (source) {
+            case DemandSource::RuntimeBaseline:
+                return counts.runtime_baseline;
+
             case DemandSource::Application:
                 return counts.application;
             
@@ -83,28 +88,23 @@ namespace parallax::core {
             
             case DemandSource::InternalDependent:
                 return counts.internal_dependent;
-                
-            default:
-                break;
         }
-        return counts.application;
+        std::terminate();
     }
 
     const std::size_t& DependencyResolver::count_for(const DemandCounts& counts, DemandSource source) noexcept {
         switch (source) {
-        case DemandSource::Application:
-            return counts.application;
+            case DemandSource::RuntimeBaseline:
+                return counts.runtime_baseline;
+            case DemandSource::Application:
+                return counts.application;
 
-        case DemandSource::FoxgloveSubscriber:
-            return counts.foxglove_subscriber;
+            case DemandSource::FoxgloveSubscriber:
+                return counts.foxglove_subscriber;
 
-        case DemandSource::InternalDependent:
-            return counts.internal_dependent;
-
-        default:
-            break;
+            case DemandSource::InternalDependent:
+                return counts.internal_dependent;
         }
-
-        return counts.application;
+        std::terminate();
     }
 }

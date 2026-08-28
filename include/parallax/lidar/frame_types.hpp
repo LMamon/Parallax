@@ -1,20 +1,26 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
 namespace parallax::lidar {
 
     /**
-     * One valid polar measurement from a LiDAR scan.
+     * One polar sample from a completed LiDAR revolution.
      *
-     * The SLAMTEC fixed-point representation is normalized at the hardware
-     * boundary so downstream Parallax code does not depend on vendor units.
+     * Samples remain in angular order even when the sensor reports no return.
+     * This preserves the scan geometry established by SLAMTEC's
+     * ascendScanData(), which reconstructs missing-sample angles using the
+     * scan's 360 / sample-count increment.
+     *
+     * range_m is meaningful only when valid == true.
      */
     struct LidarPoint {
         float angle_rad{0.0f};
         float range_m{0.0f};
         std::uint8_t quality{0};
+        bool valid{false};
     };
 
     /**
@@ -27,7 +33,9 @@ namespace parallax::lidar {
         std::vector<LidarPoint> points;
 
         [[nodiscard]] bool valid() const noexcept {
-            return !points.empty();
+            return std::any_of(points.begin(), points.end(), [](const LidarPoint& point) {
+                    return point.valid;
+                });
         }
     };
 

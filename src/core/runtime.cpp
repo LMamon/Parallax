@@ -94,8 +94,26 @@ namespace parallax::core {
 
         configure_ordered_history(graph_, context_.products());
 
-        parallax::visualization::FoxgloveServer::DemandCallbacks foxglove_demand;
+        /**
+         * Persistent perception-service demand.
+         *
+         * These are deliberately root products rather than an exhaustive list of
+         * intermediates. DependencyResolver derives the required producer subgraph.
+         *
+         * RectifiedRgb keeps camera -> ISP -> rectification active.
+         * Confidence extends that path through stereo matching.
+         * MarkerDepth extends it through metric depth and marker pose/depth.
+         * LidarScan keeps the independent RPLIDAR source active.
+         *
+         * Foxglove observation is not required for any of these products to exist.
+         */
+        resolver_.acquire(ProductId::RectifiedRgb, DemandSource::RuntimeBaseline);
+        resolver_.acquire(ProductId::Confidence, DemandSource::RuntimeBaseline);
+        resolver_.acquire(ProductId::MarkerDepth, DemandSource::RuntimeBaseline);
+        resolver_.acquire(ProductId::LidarScan, DemandSource::RuntimeBaseline);
 
+
+        parallax::visualization::FoxgloveServer::DemandCallbacks foxglove_demand;
         foxglove_demand.acquire = [this](ProductId product) {
                 /**
                  * Subscription callbacks record external demand only.
@@ -141,18 +159,19 @@ namespace parallax::core {
         int failed_frames = 0;
 
         /**
-         * The normal runtime currently requests the products needed by the existing
-         * Foxglove/demo surface.
-         *
-         * MarkerDepth pulls the pose and stereo-depth branches together.
-         * Confidence is requested separately because MarkerDepth needs Disparity but
-         * does not semantically depend on Confidence.
-         *
-         * DependencyResolver deduplicates shared producers and returns them in
-         * dependency-first order.
-         */
-        const std::vector<ProductId> requested_products{ProductId::MarkerDepth, ProductId::Confidence};
-        const auto execution_plan = resolver_.resolve(requested_products);
+        * Camera-domain baseline execution.
+        *
+        * RuntimeBaseline defines what the persistent perception service maintains;
+        * Foxglove merely decides which of those products incur observation cost.
+        *
+        * LidarScan is intentionally excluded from this plan because its source has
+        * an independent worker/cadence below.
+        */
+
+        const std::vector<ProductId> baseline_camera_products{
+            ProductId::RectifiedRgb, ProductId::Confidence, ProductId::MarkerDepth
+        };
+        const auto execution_plan = resolver_.resolve(baseline_camera_products);
 
         /**
          * Populate the stats map before the LiDAR worker starts.
@@ -248,28 +267,16 @@ namespace parallax::core {
 
             failed_frames = 0;
 
-            const auto marker = context_.products().latest<parallax::pose::CharucoPoseResult>(ProductId::MarkerDepth);
-            const auto stereo = context_.products().latest<parallax::isp::StereoMatchFrame>(ProductId::Disparity);
-            const auto depth = context_.products().latest<parallax::isp::DepthFrame>(ProductId::Depth);
+            const bool published = publisher_.publishAvailable(context_.products(), 
+                                                               [this](const CompletionHandle& completion) {
 
-            if (!marker || !marker->valid() ||
-                !stereo || !stereo->valid() ||
-                !depth || !depth->valid()) {
+                        return context_.waitForHost(completion);
+                    });
 
-                std::cerr << "Runtime: graph completed without required products\n";
+            if (!published) {
+                std::cerr << "Runtime: visualization publication failed\n";
                 break;
             }
-
-            /**
-             * Rectified RGB is still the established visualization surface.
-             * StereoRectifier updates this buffer during the graph-driven
-             * RectificationProducer submission, so visualization can keep using the
-             * existing Publisher API without changing image semantics in this cutover.
-             */
-            publisher_.publishLeftImage(pipeline_.rgb(), *marker->payload, marker->metadata.timestamp);
-            publisher_.publishDisparity(*stereo->payload);
-            publisher_.publishConfidence(*stereo->payload);
-            publisher_.publishDepth(*depth->payload);
 
             // processCommands();
             // dispatch(products);

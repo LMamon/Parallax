@@ -111,6 +111,10 @@ namespace parallax::visualization {
                 return *lidar_scan_channel_;
             }
 
+            [[nodiscard]] foxglove::messages::FrameTransformChannel& transformChannel() noexcept {
+                return *transform_channel_;
+            }
+
         private:
             bool initializeChannels();
             void bindProduct(std::uint64_t channel_id, parallax::core::ProductId product);
@@ -171,8 +175,8 @@ namespace parallax::visualization {
              */
             mutable std::mutex subscription_mutex_;
 
-            std::unordered_map<std::uint64_t, std::size_t>
-                subscriber_count_by_channel_;
+            std::unordered_map<std::uint64_t, std::size_t> subscriber_count_by_channel_;
+            std::optional<foxglove::messages::FrameTransformChannel> transform_channel_;
 
             /**
              * Non-owning behavior supplied by Runtime.

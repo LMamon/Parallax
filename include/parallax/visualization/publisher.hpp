@@ -5,8 +5,11 @@
 #include <parallax/stereo/calibration.hpp>
 #include <parallax/pose/charuco_pose.hpp>
 #include <parallax/visualization/foxglove_server.hpp>
+#include <parallax/core/product_store.hpp>
+#include <parallax/core/completion.hpp>
+#include <parallax/lidar/frame_types.hpp>
 
-
+#include <functional>
 #include <foxglove/websocket.hpp>
 #include <cuda_runtime.h>
 
@@ -23,26 +26,35 @@ namespace parallax::visualization {
 
             Publisher(const Publisher&) = delete;
             Publisher& operator=(const Publisher&) = delete;
-
+            using HostWait = std::function<bool(const parallax::core::CompletionHandle&)>;
             bool initialize(FoxgloveServer& foxglove, std::uint32_t width, std::uint32_t height, std::uint32_t fps);
 
-            bool publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame, 
-                                  const parallax::pose::CharucoPoseResult& pose,
-                                  std::chrono::steady_clock::time_point timestamp);
-            
-            bool publishDepth(const parallax::isp::DepthFrame& frame);
-                                
-            bool publishLeftCalibration(const parallax::stereo::StereoCalibration& calibration);
-            bool publishDisparity(const parallax::isp::StereoMatchFrame& frame);
-            bool publishConfidence(const parallax::isp::StereoMatchFrame& frame);
+            /**
+            * Observe the newest graph products currently available in ProductStore.
+            *
+            * Publication is downstream-only:
+            * - no producer execution;
+            * - no graph resolution;
+            * - no demand acquisition;
+            * - no visualization-only accelerator wait when a channel has no sinks.
+            */
 
+            bool publishLeftCalibration(const parallax::stereo::StereoCalibration& calibration);
+            bool publishAvailable(const parallax::core::ProductStore& store, const HostWait& wait_for_host);
             void shutdown();
 
             [[nodiscard]] bool initialized() const noexcept { return initialized_; }
 
         private:
-            VideoEncoder video_encoder_;
+            bool publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame, 
+                                  const parallax::pose::CharucoPoseResult* pose);
+            
+            bool publishDepth(const parallax::isp::DepthFrame& frame);
+            bool publishDisparity(const parallax::isp::StereoMatchFrame& frame);
+            bool publishConfidence(const parallax::isp::StereoMatchFrame& frame);
+            bool publishLidarScan(const parallax::lidar::LidarScan& scan);
 
+            VideoEncoder video_encoder_;
             cudaStream_t stream_ = nullptr;
             
             // Reusable pinned host staging.
@@ -56,7 +68,6 @@ namespace parallax::visualization {
 
             // Reused H.264 output.
             std::vector<std::byte> encoded_video_;
-
             std::uint32_t width_ = 0;
             std::uint32_t height_ = 0;
             std::uint32_t fps_ = 0;
@@ -69,7 +80,6 @@ namespace parallax::visualization {
              * lifetime or subscription semantics.
              */
             FoxgloveServer* foxglove_ = nullptr;
-
             bool initialized_ = false;
     };
 }

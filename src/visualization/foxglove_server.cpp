@@ -173,6 +173,15 @@ namespace parallax::visualization {
          * producer. Subscription-driven demand is wired separately in Commit 2.
          */
 
+        auto transforms = foxglove::messages::FrameTransformChannel::create("/tf", context_);
+        if (!transforms.has_value()) {
+            std::cerr << "Failed to create /tf channel: "
+                      << foxglove::strerror(transforms.error()) << '\n';
+            return false;
+        }
+
+        transform_channel_.emplace(std::move(transforms.value()));
+
         auto left_image = foxglove::messages::CompressedVideoChannel::create( "/camera/left/image", context_);
         if (!left_image.has_value()) {
             std::cerr << "Failed to create /camera/left/image channel: "
@@ -312,7 +321,6 @@ namespace parallax::visualization {
             };
             
         auto result = foxglove::WebSocketServer::create(std::move(options));
-
         if (!result.has_value()) {
             std::cerr << "Failed to create Foxglove websocket server: "
                       << foxglove::strerror(result.error()) << '\n';

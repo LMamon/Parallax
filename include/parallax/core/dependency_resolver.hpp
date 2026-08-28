@@ -11,7 +11,7 @@
 namespace parallax::core {
     
     enum class DemandSource : std::uint8_t {
-        Application, FoxgloveSubscriber, InternalDependent
+        RuntimeBaseline, Application, FoxgloveSubscriber, InternalDependent
     };
 
     // resolves requested products into the minimum producer subgraph required
@@ -48,6 +48,7 @@ namespace parallax::core {
             };
 
             struct DemandCounts {
+                std::size_t runtime_baseline = 0;
                 std::size_t application = 0;
                 std::size_t foxglove_subscriber = 0;
                 std::size_t internal_dependent = 0;

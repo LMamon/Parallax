@@ -109,9 +109,7 @@ namespace parallax::visualization {
     }
 
     bool Publisher::publishLeftCalibration(const parallax::stereo::StereoCalibration& calibration) {
-        if (!initialized_ ||
-            foxglove_ == nullptr ||
-            !calibration.loaded()) {
+        if (!initialized_ || foxglove_ == nullptr || !calibration.loaded()) {
             return false;
         }
 
@@ -144,9 +142,112 @@ namespace parallax::visualization {
         return checkFoxglove(foxglove_->leftCalibrationChannel().log(message), "Failed to publish /camera/left/calibration");
     }
 
+    bool Publisher::publishAvailable(const parallax::core::ProductStore& store, const HostWait& wait_for_host) {
+
+        if (!initialized_ || foxglove_ == nullptr || !wait_for_host) {
+            return false;
+        }
+
+        /**
+         * RGB is selected independently from the overlay.
+         *
+         * Visualization must never manufacture marker-pose demand. If the newest
+         * marker result belongs to this exact camera observation, it may decorate
+         * the image. Otherwise the image is published without an overlay.
+         */
+        if (foxglove_->leftImageChannel().hasSinks()) {
+            const auto rgb = store.latest<parallax::isp::RectifiedStereoFrame>(
+                                                parallax::core::ProductId::RectifiedRgb);
+
+            if (rgb && rgb->valid()) {
+                const parallax::pose::CharucoPoseResult* overlay = nullptr;
+
+                const auto marker = store.latest<parallax::pose::CharucoPoseResult>(
+                                                parallax::core::ProductId::MarkerDepth);
+
+                if (marker && marker->valid() && parallax::core::same_source_observation(
+                                                                *marker,
+                                                                rgb->metadata.observation)) {
+
+                    overlay = marker->payload.get();
+                }
+
+                if (!rgb->completion.valid()) {
+                    return false;
+                }
+
+                if (rgb->completion.requires_wait() && !wait_for_host(rgb->completion)) {
+                    return false;
+                }
+
+                if (!publishLeftImage(*rgb->payload, overlay)) {
+                    return false;
+                }
+            }
+        }
+
+        /**
+         * Disparity and confidence are two views of the same StereoMatchFrame
+         * product. Only observe/download it if at least one corresponding
+         * Foxglove channel actually has a sink.
+         */
+        const bool disparity_requested = foxglove_->disparityChannel().hasSinks();
+        const bool confidence_requested = foxglove_->confidenceChannel().hasSinks();
+
+        if (disparity_requested || confidence_requested) {
+            const auto stereo = store.latest<parallax::isp::StereoMatchFrame>(parallax::core::ProductId::Disparity);
+
+            if (stereo && stereo->valid()) {
+                if (!stereo->completion.valid()) {
+                    return false;
+                }
+
+                if (stereo->completion.requires_wait() && !wait_for_host(stereo->completion)) {
+                    return false;
+                }
+
+                if (disparity_requested && !publishDisparity(*stereo->payload)) {
+                    return false;
+                }
+
+                if (confidence_requested && !publishConfidence(*stereo->payload)) {
+                    return false;
+                }
+            }
+        }
+
+        if (foxglove_->depthChannel().hasSinks()) {
+            const auto depth = store.latest<parallax::isp::DepthFrame>(parallax::core::ProductId::Depth);
+
+            if (depth && depth->valid()) {
+                if (!depth->completion.valid()) {
+                    return false;
+                }
+
+                if (depth->completion.requires_wait() &&
+                    !wait_for_host(depth->completion)) {
+
+                    return false;
+                }
+
+                if (!publishDepth(*depth->payload)) {
+                    return false;
+                }
+            }
+        }
+
+        if (foxglove_->lidarScanChannel().hasSinks()) {
+            const auto lidar = store.latest<parallax::lidar::LidarScan>(parallax::core::ProductId::LidarScan);
+
+            if (lidar && lidar->valid() && !publishLidarScan(*lidar->payload)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool Publisher::publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame,
-                                     const parallax::pose::CharucoPoseResult& pose,
-                                     std::chrono::steady_clock::time_point timestamp) {
+                                     const parallax::pose::CharucoPoseResult* pose) {
 
         if (!initialized_ || foxglove_ == nullptr || !frame.left.isAllocated()) {
             return false;
@@ -171,25 +272,21 @@ namespace parallax::visualization {
             return false;
         }
 
-        cv::Mat image(static_cast<int>(height_),
-                      static_cast<int>(width_),
-                      CV_8UC3,
-                      host_rgb_,
-                      host_pitch);
+        cv::Mat image(static_cast<int>(height_), static_cast<int>(width_), CV_8UC3, host_rgb_, host_pitch);
 
-        if (pose.pose_valid) {
+        if (pose != nullptr && pose->pose_valid) {
             std::vector<cv::Point> polygon;
             polygon.reserve(4);
 
-            for (const auto& p : pose.projected_plane) {
+            for (const auto& p : pose->projected_plane) {
                 polygon.emplace_back(static_cast<int>(std::lround(p.x)),
                                      static_cast<int>(std::lround(p.y)));
             }
             cv::polylines(image, polygon, true, cv::Scalar(0, 255, 0), 5, cv::LINE_AA);
 
-            cv:circle(image, 
-                      cv::Point(static_cast<int>(std::lround(pose.projected_center.x)),
-                            static_cast<int>(std::lround(pose.projected_center.y))),
+            cv::circle(image, 
+                      cv::Point(static_cast<int>(std::lround(pose->projected_center.x)),
+                                static_cast<int>(std::lround(pose->projected_center.y))),
                       8,
                       cv::Scalar(255, 0, 0),
                       -1);
@@ -320,6 +417,65 @@ namespace parallax::visualization {
 
         return checkFoxglove(foxglove_->confidenceChannel().log(message), "Failed to publish /stereo/confidence");
     }
+
+
+    bool Publisher::publishLidarScan(const parallax::lidar::LidarScan& scan) {
+        if (!initialized_ || foxglove_ == nullptr || !scan.valid() || scan.points.empty()) {
+            return false;
+        }
+
+        foxglove::messages::LaserScan message;
+
+        message.timestamp = nowTimestamp();
+        message.frame_id = "lidar";
+
+        /**
+         * Parallax currently treats the RPLIDAR scan frame as the message frame
+         * itself, so the scan origin is identity within that frame.
+         *
+         * Foxglove Pose fields are optional, but supplying an explicit identity
+         * pose keeps the native LaserScan geometry unambiguous.
+         */
+        foxglove::messages::Pose pose;
+
+        foxglove::messages::Vector3 position;
+        position.x = 0.0;
+        position.y = 0.0;
+        position.z = 0.0;
+
+        foxglove::messages::Quaternion orientation;
+        orientation.x = 0.0;
+        orientation.y = 0.0;
+        orientation.z = 0.0;
+        orientation.w = 1.0;
+
+        pose.position = position;
+        pose.orientation = orientation;
+        message.pose = pose;
+
+        /**
+         * SLAMTEC and Foxglove use opposite positive-angle conventions.
+         * ascendScanData() has already ordered the complete SLAMTEC scan and
+         * reconstructed angular positions for no-return slots using the scan's
+         * 360 / count increment.
+         *
+         * Keeping every slot in LidarScan therefore allows us to represent the
+         * result honestly through Foxglove's equally-spaced LaserScan contract.
+         */
+        message.start_angle = -static_cast<double>(scan.points.front().angle_rad);
+        message.end_angle = -static_cast<double>(scan.points.back().angle_rad);
+        message.ranges.reserve(scan.points.size());
+        message.intensities.reserve(scan.points.size());
+
+        for (auto it = scan.points.rbegin(); it != scan.points.rend(); ++it) {
+                const auto& point = *it;
+
+                message.ranges.push_back(point.valid ? static_cast<double>(point.range_m) : 0.0);
+                message.intensities.push_back(static_cast<double>(point.quality));
+            }
+        return checkFoxglove(foxglove_->lidarScanChannel().log(message), "Failed to publish /lidar/scan");
+    }
+
 
     void Publisher::shutdown() {
         video_encoder_.shutdown();

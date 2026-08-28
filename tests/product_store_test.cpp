@@ -295,5 +295,57 @@ namespace parallax::core {
             EXPECT_EQ(second.get(), address);
             EXPECT_EQ(*second, 42);
         }
+
+        TEST(ProductStoreTest, NextAfterReturnsOldestNewerRetainedObservation) {
+            ProductStore store;
+            const auto now = Clock::now();
+
+            store.set_history_capacity(ProductId::Depth, 4);
+
+            store.publish(make_test_product(ProductId::Depth, 10, now, 10));
+            store.publish(make_test_product(ProductId::Depth, 11, now, 11));
+            store.publish(make_test_product(ProductId::Depth, 12, now, 12));
+
+            const SourceObservation consumed{SourceId::StereoCamera, 10};
+
+            const auto next = store.next_after<TestPayload>(ProductId::Depth, consumed);
+
+            ASSERT_NE(next, nullptr);
+            EXPECT_EQ(next->metadata.observation.sequence, 11);
+            EXPECT_EQ(*next->payload, 11);
+        }
+
+
+        TEST(ProductStoreTest, NextAfterDoesNotCrossSourceDomains) {
+            ProductStore store;
+            const auto now = Clock::now();
+
+            store.set_history_capacity(ProductId::Depth, 4);
+
+            store.publish(make_test_product(ProductId::Depth, 10, now, 10, SourceId::StereoCamera));
+            store.publish(make_test_product(ProductId::Depth, 11, now, 11, SourceId::Rplidar));
+
+            const SourceObservation consumed{SourceId::StereoCamera, 10};
+
+            const auto next = store.next_after<TestPayload>(ProductId::Depth, consumed);
+            EXPECT_EQ(next, nullptr);
+        }
+
+
+        TEST(ProductStoreTest, NextAfterReturnsNullWhenNoNewerObservationIsRetained) {
+            ProductStore store;
+            const auto now = Clock::now();
+
+            store.set_history_capacity(ProductId::Depth, 2);
+
+            store.publish(make_test_product(ProductId::Depth, 10, now, 10));
+            store.publish(make_test_product(ProductId::Depth, 11, now, 11));
+
+            const SourceObservation consumed{SourceId::StereoCamera, 11};
+
+            const auto next = store.next_after<TestPayload>(ProductId::Depth, consumed);
+
+            EXPECT_EQ(next, nullptr);
+        }
     }
 } 

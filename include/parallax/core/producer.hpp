@@ -4,6 +4,7 @@
 #include <parallax/core/product.hpp>
 
 #include <string_view>
+#include <cstddef>
 #include <vector>
 
 namespace parallax::core {
@@ -13,6 +14,10 @@ namespace parallax::core {
         Submitted, NoWork, Failed
     };
 
+    struct OrderedInputRequirement {
+        ProductId product{};
+        std::size_t history_capacity = 0;
+    };
     /**
      * Contract for a computation that produces named products facing the graph.
      *
@@ -31,6 +36,17 @@ namespace parallax::core {
             [[nodiscard]] virtual const std::vector<ProductId>& inputs() const noexcept = 0;
             [[nodiscard]] virtual const std::vector<ProductId>& outputs() const noexcept = 0;
 
+            /**
+             * Inputs requiring bounded ordered history.
+             *
+             * Most realtime producers consume only the latest useful product and therefore
+             * return no ordered requirements. Ordered consumers opt in per input without
+             * changing the graph topology represented by inputs().
+             */
+            [[nodiscard]] virtual const std::vector<OrderedInputRequirement>&ordered_inputs() const noexcept {
+                static const std::vector<OrderedInputRequirement> none;
+                return none;
+            }
             // Execution characteristics are declared separately from graph dependencies.
             [[nodiscard]] virtual ExecutionPolicy execution_policy() const noexcept = 0;
 

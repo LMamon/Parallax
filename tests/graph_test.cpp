@@ -2,6 +2,8 @@
 #include <parallax/core/dependency_resolver.hpp>
 #include <parallax/core/execution_gate.hpp>
 #include <parallax/core/product_store.hpp>
+#include <parallax/core/history_configuration.hpp>
+
 
 #include <chrono>
 #include <memory>
@@ -18,10 +20,14 @@ namespace parallax::core {
         // declaration and registration semantics not execution
         class TestProducer final : public Producer {
             public: 
-                TestProducer(std::string_view name, std::vector<ProductId> inputs, std::vector<ProductId> outputs) :
-                                                                                name_(name),
-                                                                                inputs_(std::move(inputs)),
-                                                                                outputs_(std::move(outputs)) {}
+                TestProducer(std::string_view name,
+                             std::vector<ProductId> inputs,
+                             std::vector<ProductId> outputs,
+                             std::vector<OrderedInputRequirement> ordered_inputs = {}) :
+                                name_(name),
+                                inputs_(std::move(inputs)),
+                                outputs_(std::move(outputs)),
+                                ordered_inputs_(std::move(ordered_inputs)) {}
 
                 [[nodiscard]] std::string_view name() const noexcept override { return name_; }
                 [[nodiscard]] const std::vector<ProductId>& inputs() const noexcept override { return inputs_; }
@@ -34,6 +40,10 @@ namespace parallax::core {
                     return SubmitResult::NoWork;
                 }
 
+                [[nodiscard]] const std::vector<OrderedInputRequirement>& ordered_inputs() const noexcept override {
+                    return ordered_inputs_;
+                }
+
                 [[nodiscard]] int submit_count() const noexcept { return submit_count_; }
 
             private:
@@ -42,6 +52,7 @@ namespace parallax::core {
                 std::vector<ProductId> outputs_;
                 
                 int submit_count_ = 0;
+                std::vector<OrderedInputRequirement> ordered_inputs_;      
         };
 
         void publish_test_product(
@@ -314,11 +325,7 @@ namespace parallax::core {
             publish_test_product(store, ProductId::Pose, observation);
             publish_test_product(store, ProductId::Depth, observation);
 
-            TestProducer producer{
-                "marker-depth",
-                {ProductId::Pose, ProductId::Depth},
-                {ProductId::MarkerDepth}
-            };
+            TestProducer producer{"marker-depth", {ProductId::Pose, ProductId::Depth}, {ProductId::MarkerDepth}};
 
             const auto result = input_observation(producer, store);
 
@@ -330,15 +337,9 @@ namespace parallax::core {
             ProductStore store;
 
             publish_test_product(store, ProductId::Pose, {SourceId::StereoCamera, 42});
-
             publish_test_product(store, ProductId::Depth, {SourceId::StereoCamera, 43});
 
-            TestProducer producer{
-                "marker-depth",
-                {ProductId::Pose, ProductId::Depth},
-                {ProductId::MarkerDepth}
-            };
-
+            TestProducer producer{"marker-depth", {ProductId::Pose, ProductId::Depth}, {ProductId::MarkerDepth}};
             EXPECT_FALSE(input_observation(producer, store).has_value());
         }
 
@@ -352,11 +353,9 @@ namespace parallax::core {
             const auto now = std::chrono::steady_clock::now();
             state.last_submission = now;
 
-            InputObservation input{};
-            SourceObservation{SourceId::StereoCamera, 1};
-            input.timestamp = now;
+            InputObservation input{SourceObservation{SourceId::StereoCamera, 1}, now};
 
-            EXPECT_TRUE(should_submit(policy, state, input, now));
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::Submit);
         }
 
         TEST(ExecutionGateTest, TargetRateRejectsEarlyExecution) {
@@ -369,11 +368,9 @@ namespace parallax::core {
             const auto now = std::chrono::steady_clock::now();
             state.last_submission = now - std::chrono::milliseconds(50);
 
-            InputObservation input{};
-            SourceObservation{SourceId::StereoCamera, 1};
-            input.timestamp = now;
+            InputObservation input{SourceObservation{SourceId::StereoCamera, 1}, now};
 
-            EXPECT_FALSE(should_submit(policy, state, input, now));
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::RateLimited);
         }
 
         TEST(ExecutionGateTest, TargetRateAcceptsDueExecution) {
@@ -386,11 +383,9 @@ namespace parallax::core {
             const auto now = std::chrono::steady_clock::now();
             state.last_submission = now - std::chrono::milliseconds(100);
 
-            InputObservation input{};
-            SourceObservation{SourceId::StereoCamera, 1};
-            input.timestamp = now;
+            InputObservation input{SourceObservation{SourceId::StereoCamera, 1}, now};
 
-            EXPECT_TRUE(should_submit(policy, state, input, now));
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::Submit);
         }
 
         TEST(ExecutionGateTest, FreshnessDisabledAcceptsOldInput) {
@@ -402,10 +397,10 @@ namespace parallax::core {
             const auto now = std::chrono::steady_clock::now();
 
             InputObservation input{};
-            SourceObservation{SourceId::StereoCamera, 1};
+            input.observation = SourceObservation{SourceId::StereoCamera, 1};
             input.timestamp = now - std::chrono::seconds(10);
 
-            EXPECT_TRUE(should_submit(policy, state, input, now));
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::Submit);
         }
 
         TEST(ExecutionGateTest, FreshInputIsAccepted) {
@@ -417,10 +412,10 @@ namespace parallax::core {
             const auto now = std::chrono::steady_clock::now();
 
             InputObservation input{};
-            SourceObservation{SourceId::StereoCamera, 1};
+            input.observation = SourceObservation{SourceId::StereoCamera, 1};
             input.timestamp = now - std::chrono::milliseconds(50);
 
-            EXPECT_TRUE(should_submit(policy, state, input, now));
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::Submit);
         }
 
         TEST(ExecutionGateTest, StaleInputIsRejected) {
@@ -432,10 +427,10 @@ namespace parallax::core {
             const auto now = std::chrono::steady_clock::now();
 
             InputObservation input{};
-            SourceObservation{SourceId::StereoCamera, 1};
+            input.observation = SourceObservation{SourceId::StereoCamera, 1};
             input.timestamp = now - std::chrono::milliseconds(101);
 
-            EXPECT_FALSE(should_submit(policy, state, input, now));
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::StaleInput);
         }
 
         TEST(ExecutionGateTest, FutureTimestampIsRejected) {
@@ -447,10 +442,10 @@ namespace parallax::core {
             const auto now = std::chrono::steady_clock::now();
 
             InputObservation input{};
-            SourceObservation{SourceId::StereoCamera, 1};
+            input.observation = SourceObservation{SourceId::StereoCamera, 1};
             input.timestamp = now + std::chrono::milliseconds(1);
 
-            EXPECT_FALSE(should_submit(policy, state, input, now));
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::StaleInput);
         }
 
         TEST(ExecutionGateTest, SupersedeStillRejectsConsumedObservation) {
@@ -465,9 +460,9 @@ namespace parallax::core {
             SourceObservation{SourceId::StereoCamera, 42};
             input.timestamp = now;
 
-            ASSERT_TRUE(should_submit(policy, state, input, now));
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::Submit);
             record_submission(state, policy, input, now);
-            EXPECT_FALSE(should_submit(policy, state, input, now));
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::Superseded);
         }
 
         TEST(ExecutionGateTest, SubmissionDecisionReportsRateLimit) {
@@ -480,14 +475,9 @@ namespace parallax::core {
             state.has_last_submission = true;
             state.last_submission = now - std::chrono::milliseconds(20);
 
-            InputObservation input{
-                SourceObservation{SourceId::StereoCamera, 1},
-                now
-            };
+            InputObservation input{SourceObservation{SourceId::StereoCamera, 1}, now};
 
-            EXPECT_EQ(
-                submission_decision(policy, state, input, now),
-                SubmissionDecision::RateLimited);
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::RateLimited);
         }
 
         TEST(ExecutionGateTest, SubmissionDecisionReportsStaleInput) {
@@ -497,14 +487,9 @@ namespace parallax::core {
             ProducerExecutionState state{};
             const auto now = std::chrono::steady_clock::now();
 
-            InputObservation input{
-                SourceObservation{SourceId::StereoCamera, 1},
-                now - std::chrono::milliseconds(100)
-            };
+            InputObservation input{SourceObservation{SourceId::StereoCamera, 1}, now - std::chrono::milliseconds(100)};
 
-            EXPECT_EQ(
-                submission_decision(policy, state, input, now),
-                SubmissionDecision::StaleInput);
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::StaleInput);
         }
 
         TEST(ExecutionGateTest, SubmissionDecisionReportsSupersededInput) {
@@ -513,8 +498,7 @@ namespace parallax::core {
 
             ProducerExecutionState state{};
             state.has_last_observation = true;
-            state.last_observation =
-                SourceObservation{SourceId::StereoCamera, 7};
+            state.last_observation = SourceObservation{SourceId::StereoCamera, 7};
 
             const auto now = std::chrono::steady_clock::now();
 
@@ -523,9 +507,7 @@ namespace parallax::core {
                 now
             };
 
-            EXPECT_EQ(
-                submission_decision(policy, state, input, now),
-                SubmissionDecision::Superseded);
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::Superseded);
         }
 
         TEST(ExecutionGateTest, SubmissionDecisionAcceptsRunnableInput) {
@@ -542,9 +524,75 @@ namespace parallax::core {
                 now - std::chrono::milliseconds(5)
             };
 
-            EXPECT_EQ(
-                submission_decision(policy, state, input, now),
-                SubmissionDecision::Submit);
+            EXPECT_EQ(submission_decision(policy, state, input, now), SubmissionDecision::Submit);
+        }
+
+        TEST(GraphTest, OrderedInputMustBeDeclaredDependency) {
+            Graph graph;
+
+            TestProducer producer{"ordered", {ProductId::Depth}, {ProductId::Track3D}, {{ProductId::LidarScan, 4}}};
+
+            EXPECT_THROW(graph.register_producer(producer), std::logic_error);
+        }
+
+        TEST(GraphTest, OrderedRequirementsConfigureBoundedHistory) {
+            Graph graph;
+            ProductStore store;
+
+            TestProducer producer{"ordered", {ProductId::Depth}, {ProductId::Track3D}, {{ProductId::Depth, 4}}};
+
+            graph.register_producer(producer);
+            graph.finalize();
+
+            configure_ordered_history(graph, store);
+            EXPECT_EQ(store.history_capacity(ProductId::Depth), 4);
+        }
+
+        TEST(GraphTest, LargestOrderedHistoryRequirementWins) {
+            Graph graph;
+            ProductStore store;
+
+            TestProducer first{"first", {ProductId::Depth}, {ProductId::Track2D}, {{ProductId::Depth, 4}}};
+            TestProducer second{"second", {ProductId::Depth}, {ProductId::Track3D}, {{ProductId::Depth, 12}}};
+
+            graph.register_producer(first);
+            graph.register_producer(second);
+            graph.finalize();
+
+            configure_ordered_history(graph, store);
+
+            EXPECT_EQ(store.history_capacity(ProductId::Depth), 12);
+        }
+
+        TEST(GraphTest, OrderedConsumerCanAdvanceThroughRetainedObservations) {
+            Graph graph;
+            ProductStore store;
+
+            TestProducer source{"source", {}, {ProductId::Depth}};
+
+            TestProducer ordered_consumer{"ordered_consumer",
+                                        {ProductId::Depth},
+                                        {ProductId::Projection},
+                                        {OrderedInputRequirement{ProductId::Depth, 4}}};
+
+            graph.register_producer(source);
+            graph.register_producer(ordered_consumer);
+            graph.finalize();
+
+            configure_ordered_history(graph, store);
+
+            EXPECT_EQ(store.history_capacity(ProductId::Depth), 4);
+
+            publish_test_product(store, ProductId::Depth, SourceObservation{SourceId::StereoCamera, 10});
+            publish_test_product(store, ProductId::Depth, SourceObservation{SourceId::StereoCamera, 11});
+            publish_test_product(store, ProductId::Depth, SourceObservation{SourceId::StereoCamera, 12});
+
+            const SourceObservation consumed{SourceId::StereoCamera, 10};
+
+            const auto next =store.next_after<int>(ProductId::Depth, consumed);
+
+            ASSERT_NE(next, nullptr);
+            EXPECT_EQ(next->metadata.observation, (SourceObservation{SourceId::StereoCamera, 11}));
         }
     }
 }

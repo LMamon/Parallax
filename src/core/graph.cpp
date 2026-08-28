@@ -21,6 +21,24 @@ namespace parallax::core {
             }
         }
 
+        for (const auto& requirement : producer.ordered_inputs()) {
+            bool declared_input = false;
+
+            for (ProductId input : producer.inputs()) {
+                if (input == requirement.product) {
+                    declared_input = true;
+                    break;
+                }
+            }
+
+            if (!declared_input) {
+                throw std::logic_error("ordered input requirement is not a declared producer input");
+            }
+
+            if (requirement.history_capacity == 0) {
+                throw std::logic_error("ordered input requirement must have non-zero history capacity");
+            }
+        }
         producers_.push_back(&producer);
 
         for (ProductId output : producer.outputs()) {

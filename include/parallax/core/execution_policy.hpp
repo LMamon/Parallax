@@ -39,7 +39,6 @@ namespace parallax::core {
         // Relative scheduling importance. Higher values represent higher
         // importance; interpretation is left to the runtime.
         std::int32_t priority = 0;
-
         ResourceAffinity affinity = ResourceAffinity::Cpu;
 
         // Stateful producers may retain information across executions and require

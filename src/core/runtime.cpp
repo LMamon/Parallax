@@ -2,6 +2,8 @@
 #include <parallax/core/pipeline.hpp>
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/pose/charuco_pose.hpp>
+#include <parallax/core/history_configuration.hpp>
+
 
 #include <vector>
 #include <iostream>
@@ -89,6 +91,8 @@ namespace parallax::core {
         graph_.register_producer(*lidar_producer_);
 
         graph_.finalize();
+
+        configure_ordered_history(graph_, context_.products());
 
         if (!foxglove_.initialize()) {
             std::cerr << "Runtime: failed to initialize Foxglove server\n";

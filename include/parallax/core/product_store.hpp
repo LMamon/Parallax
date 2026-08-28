@@ -132,8 +132,34 @@ namespace parallax::core {
                 return result;
             }
 
+            template <typename T> [[nodiscard]] std::shared_ptr<const Product<T>> next_after(ProductId id,
+                                                                                             const SourceObservation& observation) const {
+
+                std::shared_lock lock(mutex_);
+
+                const auto it = histories_.find(id);
+                if (it == histories_.end()) return {};
+
+                for (const auto& entry : it->second.entries) {
+                    if (entry.type != std::type_index(typeid(T))) {
+                        return {};
+                    }
+
+                    const auto product = std::static_pointer_cast<const Product<T>>(entry.product);
+
+                    if (!product || product->metadata.observation.source != observation.source) {
+                        continue;
+                    }
+
+                    if (product->metadata.observation.sequence > observation.sequence) {
+                        return product;
+                    }
+                }
+                return {};
+            }            
+
             [[nodiscard]] bool contains(ProductId id) const noexcept;
-            [[nodiscard]] std::optional<ProductMetadata> metadata(ProductId id) const noexcept;
+            [[nodiscard]] std::optional<ProductMetadata> metadata(ProductId id) const noexcept;                                                                             
             void clear() noexcept;
 
         private:

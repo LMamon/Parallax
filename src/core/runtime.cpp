@@ -109,7 +109,7 @@ namespace parallax::core {
          * intermediates. DependencyResolver derives the required producer subgraph.
          *
          * RectifiedRgb keeps camera -> ISP -> rectification active.
-         * Confidence extends that path through stereo matching.
+         * Disparity extends that path through stereo matching.
          * MarkerDepth extends it through metric depth and marker pose/depth.
          * LidarScan keeps the independent RPLIDAR source active.
          *

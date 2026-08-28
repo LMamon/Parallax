@@ -67,6 +67,7 @@ set_target_properties(VPI::VPI PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${VPI_INCLUDE_DIR}"
 )
 
+add_subdirectory(src/application)
 add_subdirectory(src/camera)
 add_subdirectory(src/core)
 add_subdirectory(src/cuda)
@@ -94,6 +95,7 @@ target_include_directories(parallax
 )
 target_link_libraries(parallax
     PRIVATE
+        parallax_application
         parallax_camera
         parallax_core
         parallax_cuda

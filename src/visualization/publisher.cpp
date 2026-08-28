@@ -89,7 +89,6 @@ namespace parallax::visualization {
         const std::size_t rgb_bytes = pixels * 3 * sizeof(std::uint8_t);
 
         const std::size_t disparity_bytes = pixels * sizeof(std::int16_t);
-        const std::size_t confidence_bytes = pixels * sizeof(std::uint16_t);
         const std::size_t depth_bytes = pixels * sizeof(float);
 
 
@@ -101,12 +100,6 @@ namespace parallax::visualization {
 
         if (cudaMallocHost(reinterpret_cast<void**>(&host_disparity_), disparity_bytes) != cudaSuccess) {
             std::cerr << "Failed to allocate disparity staging buffer\n";
-            shutdown();
-            return false;
-        }
-
-        if (cudaMallocHost(reinterpret_cast<void**>(&host_confidence_), confidence_bytes) != cudaSuccess) {
-            std::cerr << "Failed to allocate confidence staging buffer\n";
             shutdown();
             return false;
         }
@@ -184,7 +177,6 @@ namespace parallax::visualization {
     }
 
     bool Publisher::publishAvailable(const parallax::core::ProductStore& store, const HostWait& wait_for_host) {
-
         if (!initialized_ || foxglove_ == nullptr || !wait_for_host) {
             return false;
         }
@@ -233,9 +225,8 @@ namespace parallax::visualization {
          * Foxglove channel actually has a sink.
          */
         const bool disparity_requested = foxglove_->disparityChannel().hasSinks();
-        const bool confidence_requested = foxglove_->confidenceChannel().hasSinks();
 
-        if (disparity_requested || confidence_requested) {
+        if (disparity_requested) {
             const auto stereo = store.latest<parallax::isp::StereoMatchFrame>(parallax::core::ProductId::Disparity);
 
             if (stereo && stereo->valid()) {
@@ -250,10 +241,6 @@ namespace parallax::visualization {
                 if (disparity_requested && !publishDisparity(*stereo->payload)) {
                     return false;
                 }
-
-                if (confidence_requested && !publishConfidence(*stereo->payload)) {
-                    return false;
-                }
             }
         }
 
@@ -265,9 +252,7 @@ namespace parallax::visualization {
                     return false;
                 }
 
-                if (depth->completion.requires_wait() &&
-                    !wait_for_host(depth->completion)) {
-
+                if (depth->completion.requires_wait() && !wait_for_host(depth->completion)) {
                     return false;
                 }
 
@@ -426,39 +411,6 @@ namespace parallax::visualization {
         return checkFoxglove(foxglove_->disparityChannel().log(message), "Failed to publish /stereo/disparity");
     }
 
-    bool Publisher::publishConfidence(const parallax::isp::StereoMatchFrame& frame) {
-        if (!initialized_ || foxglove_ == nullptr || !frame.confidence.isAllocated()) {
-            return false;
-        }
-
-        const std::size_t host_pitch = static_cast<std::size_t>(frame.width) * sizeof(std::uint16_t);
-
-        if (!frame.confidence.downloadAsync(host_confidence_, host_pitch, stream_)) {
-            std::cerr << "Failed to download confidence\n";
-            return false;
-        }
-
-        if (cudaStreamSynchronize(stream_) != cudaSuccess) { return false; }
-
-        const std::size_t bytes = static_cast<std::size_t>(frame.width) *
-                                    frame.height *
-                                    sizeof(std::uint16_t);
-
-        foxglove::messages::RawImage message;
-
-        message.frame_id = kFrameId;
-        message.width = frame.width;
-        message.height = frame.height;
-        message.encoding = "16UC1";
-        message.step = frame.width * sizeof(std::uint16_t);
-
-        message.data.resize(bytes);
-
-        std::memcpy(message.data.data(), host_confidence_, bytes);
-
-        return checkFoxglove(foxglove_->confidenceChannel().log(message), "Failed to publish /stereo/confidence");
-    }
-
     bool Publisher::publishLidarScan(const parallax::lidar::LidarScan& scan) {
         if (!initialized_ || foxglove_ == nullptr || !scan.valid() || scan.points.empty()) {
             return false;
@@ -533,11 +485,6 @@ namespace parallax::visualization {
         if (host_disparity_ != nullptr) {
             cudaFreeHost(host_disparity_);
             host_disparity_ = nullptr;
-        }
-
-        if (host_confidence_ != nullptr) {
-            cudaFreeHost(host_confidence_);
-            host_confidence_ = nullptr;
         }
         
         if (stream_ != nullptr) {

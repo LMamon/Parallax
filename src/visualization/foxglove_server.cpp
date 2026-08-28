@@ -224,16 +224,6 @@ namespace parallax::visualization {
         disparity_channel_.emplace(std::move(disparity.value()));
         bindProduct(disparity_channel_->id(), ProductId::Disparity);
 
-        auto confidence = foxglove::messages::RawImageChannel::create("/stereo/confidence", context_);
-        if (!confidence.has_value()) {
-            std::cerr << "Failed to create /stereo/confidence channel: "
-                      << foxglove::strerror(confidence.error()) << '\n';
-            return false;
-        }
-
-        confidence_channel_.emplace(std::move(confidence.value()));
-        bindProduct(confidence_channel_->id(), ProductId::Confidence);
-
         auto depth = foxglove::messages::RawImageChannel::create("/stereo/depth", context_);
         if (!depth.has_value()) {
             std::cerr
@@ -367,11 +357,6 @@ namespace parallax::visualization {
         if (disparity_channel_) {
             disparity_channel_->close();
             disparity_channel_.reset();
-        }
-
-        if (confidence_channel_) {
-            confidence_channel_->close();
-            confidence_channel_.reset();
         }
 
         if (depth_channel_) {

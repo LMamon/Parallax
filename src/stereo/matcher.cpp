@@ -13,6 +13,8 @@
 
 namespace parallax::stereo {
     namespace {
+        constexpr std::uint64_t kStereoBackend = VPI_BACKEND_OFA | VPI_BACKEND_PVA | VPI_BACKEND_VIC;
+
         void logVpiError(const char* message, VPIStatus status) {
             char buffer[VPI_MAX_STATUS_MESSAGE_LENGTH]{};
             vpiGetLastStatusMessage(buffer, sizeof(buffer));
@@ -63,15 +65,15 @@ namespace parallax::stereo {
                         return false;
                     }
 
-                    if (!slot.disparity_image.create(slot.output.disparity, VPI_IMAGE_FORMAT_S16)) {
+                    if (!slot.disparity_image.create(slot.output.disparity,VPI_IMAGE_FORMAT_S16)) {
                         return false;
                     }
 
                     status = vpiImageCreate(static_cast<int32_t>(input.width),
-                                                     static_cast<int32_t>(input.height),
-                                                     VPI_IMAGE_FORMAT_Y8_ER_BL,
-                                                     VPI_BACKEND_VIC | VPI_BACKEND_OFA,
-                                                     &slot.left_block_linear);
+                                            static_cast<int32_t>(input.height),
+                                            VPI_IMAGE_FORMAT_Y8_ER_BL,
+                                            VPI_BACKEND_VIC | VPI_BACKEND_OFA,
+                                            &slot.left_block_linear);
 
                     if (status != VPI_SUCCESS) {
                         logVpiError("Failed to create left block-linear image", status);
@@ -193,13 +195,13 @@ namespace parallax::stereo {
         }
 
         status = vpiSubmitStereoDisparityEstimator(stream,
-                                                  VPI_BACKEND_OFA,
-                                                  stereo_,
-                                                  output.left_block_linear,
-                                                  output.right_block_linear,
-                                                  output.disparity_block_linear,
-                                                  nullptr,
-                                                  &submit_params_);
+                                                   VPI_BACKEND_OFA,
+                                                   stereo_,
+                                                   output.left_block_linear,
+                                                   output.right_block_linear,
+                                                   output.disparity_block_linear,
+                                                   nullptr,
+                                                   &submit_params_);
 
         if (status != VPI_SUCCESS) {
             logVpiError("Failed to submit OFA stereo disparity estimator", status);

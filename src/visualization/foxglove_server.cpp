@@ -53,6 +53,37 @@ namespace parallax::visualization {
             return schema;
         }
 
+        constexpr std::string_view kCommandSchema = R"json({
+                                                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                                                        "title": "parallax.Command",
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "command": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "marker_depth",
+                                                                    "detect",
+                                                                    "track",
+                                                                    "stop_tracking"
+                                                                ]
+                                                            },
+                                                            "target": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": ["command", "target"],
+                                                        "additionalProperties": false
+                                                    })json";
+
+        foxglove::Schema commandSchema() {
+            foxglove::Schema schema;
+            schema.name = "parallax.Command";
+            schema.encoding = "jsonschema";
+            schema.data = reinterpret_cast<const std::byte*>(kCommandSchema.data());
+            schema.data_len = kCommandSchema.size();
+            return schema;
+        }
+
         constexpr std::string_view kCommandTopic = "/parallax/command";
     }
 
@@ -279,7 +310,6 @@ namespace parallax::visualization {
         }
 
         marker_depth_channel_.emplace(std::move(marker_depth.value()));
-
         bindProduct(marker_depth_channel_->id(), ProductId::MarkerDepth);
 
         auto lidar_scan = foxglove::messages::LaserScanChannel::create("/lidar/scan", context_);
@@ -305,6 +335,20 @@ namespace parallax::visualization {
         }
 
         runtime_telemetry_channel_.emplace(std::move(runtime_telemetry.value()));
+
+        auto command = foxglove::RawChannel::create("/parallax/command",
+                                                    "json",
+                                                    commandSchema(),
+                                                    context_);
+
+        if (!command.has_value()) {
+            std::cerr << "Failed to create /parallax/command channel: "
+                      << foxglove::strerror(command.error()) << '\n';
+
+            return false;
+        }
+
+        command_channel_.emplace(std::move(command.value()));
 
         return true;
     }
@@ -339,8 +383,7 @@ namespace parallax::visualization {
              */
             std::lock_guard<std::mutex> lock(command_mutex_);
 
-            const auto it = client_published_topics_.find(
-                ClientChannelKey{client_id, client_channel_id});
+            const auto it = client_published_topics_.find(ClientChannelKey{client_id, client_channel_id});
 
             command_channel = it != client_published_topics_.end() && it->second == kCommandTopic;
         }
@@ -350,7 +393,6 @@ namespace parallax::visualization {
         }
 
         const auto* chars = reinterpret_cast<const char*>(data);
-
         command_callbacks_.receive(std::string_view(chars, data_len));
     }
 
@@ -367,7 +409,7 @@ namespace parallax::visualization {
         }
 
         demand_callbacks_ = std::move(demand_callbacks);
-        command_callbacks_= std::move(command_callbacks_);
+        command_callbacks_= std::move(command_callbacks);
         foxglove::setLogLevel(foxglove::LogLevel::Info);
 
         /**
@@ -490,6 +532,10 @@ namespace parallax::visualization {
         if (runtime_telemetry_channel_) {
             runtime_telemetry_channel_->close();
             runtime_telemetry_channel_.reset();
+        }
+        if (command_channel_) {
+            command_channel_->close();
+            command_channel_.reset();
         }
 
         if (server_) {

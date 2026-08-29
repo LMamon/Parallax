@@ -170,6 +170,7 @@ namespace parallax::visualization {
             std::optional<foxglove::messages::RawImageChannel> disparity_channel_;
             std::optional<foxglove::messages::RawImageChannel> depth_channel_;
             std::optional<foxglove::messages::PoseInFrameChannel> marker_pose_channel_;
+            std::optional<foxglove::RawChannel> command_channel_;
 
             /**
              * Foxglove does not provide a well-known scalar depth message whose

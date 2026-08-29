@@ -4,7 +4,7 @@
 #include <parallax/pose/charuco_pose.hpp>
 #include <parallax/core/history_configuration.hpp>
 #include <parallax/core/runtime_metrics.hpp>
-#include <parallax/application/command_parser.hpp>
+#include <parallax/application/foxglove_command.hpp>
 
 #include <nlohmann/json.hpp>
 #include <string_view>
@@ -152,7 +152,7 @@ namespace parallax::core {
             * RequestController records demand/state only; it never submits producers.
             */
 
-            const auto parsed = parallax::application::parse_command(message);
+            const auto parsed = parallax::application::parse_foxglove_command(message);
             if (!parsed.ok()) {
                 std::cerr << "Command rejected: " << parsed.message << '\n';
                 return;
@@ -171,7 +171,6 @@ namespace parallax::core {
         }
 
         const auto& rgb = pipeline_.rgb();
-
         if (!publisher_.initialize(foxglove_, rgb.width, rgb.height, config_.frame_rate)) {
             std::cerr << "Runtime: failed to initialize visualization publisher\n";
 

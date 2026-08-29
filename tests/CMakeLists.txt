@@ -15,13 +15,24 @@ add_executable(parallax_rplidar_smoke
     rplidar_smoke.cpp
 )
 
+add_executable(parallax_runtime_metrics_test
+    runtime_metrics_test.cpp
+)
+
+add_executable(parallax_request_controller_test
+    request_controller_test.cpp
+)
+
+target_link_libraries(parallax_request_controller_test
+    PRIVATE
+        parallax_application
+        parallax_core
+        GTest::gtest_main
+)
+
 target_link_libraries(parallax_rplidar_smoke
     PRIVATE
         parallax_lidar
-)
-
-add_executable(parallax_runtime_metrics_test
-    runtime_metrics_test.cpp
 )
 
 target_link_libraries(parallax_runtime_metrics_test
@@ -55,3 +66,4 @@ gtest_discover_tests(parallax_tests)
 gtest_discover_tests(parallax_product_store_test)
 gtest_discover_tests(parallax_graph_test)
 gtest_discover_tests(parallax_runtime_metrics_test)
+gtest_discover_tests(parallax_request_controller_test)

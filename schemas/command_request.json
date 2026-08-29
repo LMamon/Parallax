@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "parallax.CommandRequest",
+  "type": "object",
+  "properties": {
+    "command": {
+      "type": "string",
+      "enum": [
+        "marker_depth",
+        "detect",
+        "track",
+        "stop_tracking"
+      ]
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "command",
+    "target"
+  ],
+  "additionalProperties": false
+}

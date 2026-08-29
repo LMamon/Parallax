@@ -1,90 +1,37 @@
 #include <parallax/visualization/foxglove_server.hpp>
 
 #include <foxglove/foxglove.hpp>
+#include <foxglove/service.hpp>
 #include <foxglove/schema.hpp>
 
-#include <string>
+#include <foxglove/service.hpp>
+
+#include <fstream>
+#include <iterator>
+#include <stdexcept>
 #include <cstddef>
 #include <iostream>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace parallax::visualization {
 
     namespace {
-        constexpr std::string_view kMarkerDepthSchema = R"json({
-                                                            "$schema": "https://json-schema.org/draft/2020-12/schema",
-                                                            "title": "parallax.MarkerDepth",
-                                                            "type": "object",
-                                                            "properties": {
-                                                                "depth_m": {
-                                                                    "type": "number"
-                                                                },
-                                                                "valid": {
-                                                                    "type": "boolean"
-                                                                }
-                                                            },
-                                                            "required": ["depth_m", "valid"],
-                                                            "additionalProperties": false
-                                                            }
-                                                            )json";
+        std::vector<std::byte> loadSchemaFile(const std::string& filename) {
+            const std::string path = std::string(PARALLAX_SCHEMA_DIR) + "/" + filename;
 
-        foxglove::Schema markerDepthSchema() {
-            foxglove::Schema schema;
-            schema.name = "parallax.MarkerDepth";
-            schema.encoding = "jsonschema";
-            schema.data = reinterpret_cast<const std::byte*>(kMarkerDepthSchema.data());
-            schema.data_len = kMarkerDepthSchema.size();
-            return schema;
+            std::ifstream file(path, std::ios::binary);
+
+            if (!file) {
+                throw std::runtime_error("Failed to open Foxglove schema: " + path);
+            }
+
+            const std::string contents{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+            const auto* begin = reinterpret_cast<const std::byte*>(contents.data());
+
+            return {begin, begin + contents.size()};
         }
-
-        constexpr std::string_view kRuntimeTelemetrySchema = R"json({
-                                                                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                                                                "title": "parallax.RuntimeTelemetry",
-                                                                "type": "object"
-                                                            })json";
-
-        foxglove::Schema runtimeTelemetrySchema() {
-            foxglove::Schema schema;
-            schema.name = "parallax.RuntimeTelemetry";
-            schema.encoding = "jsonschema";
-            schema.data = reinterpret_cast<const std::byte*>(kRuntimeTelemetrySchema.data());
-            schema.data_len = kRuntimeTelemetrySchema.size();
-            return schema;
-        }
-
-        constexpr std::string_view kCommandSchema = R"json({
-                                                        "$schema": "https://json-schema.org/draft/2020-12/schema",
-                                                        "title": "parallax.Command",
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "command": {
-                                                                "type": "string",
-                                                                "enum": [
-                                                                    "marker_depth",
-                                                                    "detect",
-                                                                    "track",
-                                                                    "stop_tracking"
-                                                                ]
-                                                            },
-                                                            "target": {
-                                                                "type": "string"
-                                                            }
-                                                        },
-                                                        "required": ["command", "target"],
-                                                        "additionalProperties": false
-                                                    })json";
-
-        foxglove::Schema commandSchema() {
-            foxglove::Schema schema;
-            schema.name = "parallax.Command";
-            schema.encoding = "jsonschema";
-            schema.data = reinterpret_cast<const std::byte*>(kCommandSchema.data());
-            schema.data_len = kCommandSchema.size();
-            return schema;
-        }
-
-        constexpr std::string_view kCommandTopic = "/parallax/command";
     }
 
     FoxgloveServer::~FoxgloveServer() { shutdown(); }
@@ -275,10 +222,8 @@ namespace parallax::visualization {
 
         auto depth = foxglove::messages::RawImageChannel::create("/stereo/depth", context_);
         if (!depth.has_value()) {
-            std::cerr
-                << "Failed to create /stereo/depth channel: "
-                << foxglove::strerror(depth.error())
-                << '\n';
+            std::cerr << "Failed to create /stereo/depth channel: "
+                      << foxglove::strerror(depth.error()) << '\n';
             return false;
         }
 
@@ -302,7 +247,14 @@ namespace parallax::visualization {
          * schema advertisement, channel identity, and subscription behavior inside
          * the SDK rather than creating a Parallax protocol.
          */
-        auto marker_depth = foxglove::RawChannel::create("/marker/depth", "json", markerDepthSchema(), context_);
+        auto marker_depth = foxglove::RawChannel::create("/marker/depth", 
+                                                         "json", 
+                                                         foxglove::Schema{"parallax.MarkerDepth",
+                                                         "jsonschema",
+                                                         marker_depth_schema_.data(),
+                                                         marker_depth_schema_.size()}, 
+                                                         context_);
+
         if (!marker_depth.has_value()) {
             std::cerr << "Failed to create /marker/depth channel: "
                       << foxglove::strerror(marker_depth.error()) << '\n';
@@ -324,7 +276,10 @@ namespace parallax::visualization {
 
         auto runtime_telemetry = foxglove::RawChannel::create("/parallax/runtime",
                                                               "json",
-                                                              runtimeTelemetrySchema(),
+                                                              foxglove::Schema{"parallax.RuntimeTelemetry",
+                                                              "jsonschema",
+                                                              runtime_telemetry_schema_.data(),
+                                                              runtime_telemetry_schema_.size()},
                                                               context_);
 
         if (!runtime_telemetry.has_value()) {
@@ -335,81 +290,16 @@ namespace parallax::visualization {
         }
 
         runtime_telemetry_channel_.emplace(std::move(runtime_telemetry.value()));
-
-        auto command = foxglove::RawChannel::create("/parallax/command",
-                                                    "json",
-                                                    commandSchema(),
-                                                    context_);
-
-        if (!command.has_value()) {
-            std::cerr << "Failed to create /parallax/command channel: "
-                      << foxglove::strerror(command.error()) << '\n';
-
-            return false;
-        }
-
-        command_channel_.emplace(std::move(command.value()));
-
         return true;
     }
 
-    void FoxgloveServer::onClientAdvertise(std::uint32_t client_id, const foxglove::ClientChannel& channel) {
-        /**
-         * Client-published channels are identified by the pair
-         * (client ID, client channel ID). Keep this transport bookkeeping
-         * separate from ProductId subscription demand.
-         */
-        std::lock_guard<std::mutex> lock(command_mutex_);
-
-        client_published_topics_[ClientChannelKey{client_id, channel.id}] = channel.topic;
-    }
-
-    void FoxgloveServer::onClientUnadvertise(std::uint32_t client_id, std::uint32_t client_channel_id) {
-        std::lock_guard<std::mutex> lock(command_mutex_);
-
-        client_published_topics_.erase(ClientChannelKey{client_id, client_channel_id});
-    }
-
-    void FoxgloveServer::onMessageData(std::uint32_t client_id, 
-                                       std::uint32_t client_channel_id, 
-                                       const std::byte* data, std::size_t data_len) {
-
-        bool command_channel = false;
-
-        {
-            /**
-             * Keep Foxglove transport bookkeeping under its own short-lived
-             * mutex. Never invoke application callbacks while holding it.
-             */
-            std::lock_guard<std::mutex> lock(command_mutex_);
-
-            const auto it = client_published_topics_.find(ClientChannelKey{client_id, client_channel_id});
-
-            command_channel = it != client_published_topics_.end() && it->second == kCommandTopic;
-        }
-
-        if (!command_channel || !command_callbacks_.receive) {
-            return;
-        }
-
-        const auto* chars = reinterpret_cast<const char*>(data);
-        command_callbacks_.receive(std::string_view(chars, data_len));
-    }
-
-    bool FoxgloveServer::initialize(DemandCallbacks demand_callbacks, CommandCallbacks command_callbacks) {
+    bool FoxgloveServer::initialize(DemandCallbacks demand_callbacks, CommandServiceHandler command_handler) {
         if (initialized_) return true;
         if (!demand_callbacks.valid()) {
             std::cerr << "Foxglove demand callbacks are not configured\n";
             return false;
         }
-
-        if (!command_callbacks.valid()) {
-            std::cerr << "Foxglove command callbacks are not configured\n";
-            return false;
-        }
-
         demand_callbacks_ = std::move(demand_callbacks);
-        command_callbacks_= std::move(command_callbacks);
         foxglove::setLogLevel(foxglove::LogLevel::Info);
 
         /**
@@ -419,6 +309,18 @@ namespace parallax::visualization {
          */
         context_ = foxglove::Context::create();
 
+        try {
+            marker_depth_schema_ = loadSchemaFile("marker_depth.json");
+            runtime_telemetry_schema_ = loadSchemaFile("runtime_telemetry.json");
+            command_request_schema_ = loadSchemaFile("command_request.json");
+            command_response_schema_ = loadSchemaFile("command_response.json");
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+
+            shutdown();
+            return false;
+        }
+
         foxglove::WebSocketServerOptions options{};
         options.context = context_;
         options.name = "Parallax";
@@ -427,7 +329,7 @@ namespace parallax::visualization {
         options.message_backlog_size = 32;
 
 
-        options.capabilities = foxglove::WebSocketServerCapabilities::ClientPublish;
+        options.capabilities = foxglove::WebSocketServerCapabilities::Services;
         options.supported_encodings = {"json"};
         /**
         * Foxglove owns client/channel subscription semantics. Parallax observes
@@ -446,32 +348,55 @@ namespace parallax::visualization {
         options.callbacks.onUnsubscribe = [this](std::uint64_t channel_id, const foxglove::ClientMetadata& client) {
                 onUnsubscribe(channel_id, client);
             };
-            
-        options.callbacks.onClientAdvertise = [this](std::uint32_t client_id, const foxglove::ClientChannel& channel) {
-                onClientAdvertise(client_id, channel);
-            };
-
-        options.callbacks.onClientUnadvertise = [this](std::uint32_t client_id, std::uint32_t client_channel_id) {
-                onClientUnadvertise(client_id, client_channel_id);
-            };
-
-        options.callbacks.onMessageData = [this](std::uint32_t client_id,
-                                                std::uint32_t client_channel_id, 
-                                                const std::byte* data, 
-                                                std::size_t data_len) {
-
-                onMessageData(client_id, client_channel_id,data, data_len);
-            };
-
 
         auto result = foxglove::WebSocketServer::create(std::move(options));
+
         if (!result.has_value()) {
             std::cerr << "Failed to create Foxglove websocket server: "
                       << foxglove::strerror(result.error()) << '\n';
+
             return false;
         }
 
         server_ = std::make_unique<foxglove::WebSocketServer>(std::move(result.value()));
+
+        /*
+        * Commands are request/response operations rather than streamed products.
+        *
+        * Register the command service directly with the WebSocket server. The
+        * service handler mutates application request/demand state only; producer
+        * execution remains owned by Runtime and the dependency resolver.
+        */
+        foxglove::ServiceMessageSchema request_schema{"json", foxglove::Schema{"parallax.CommandRequest",
+                                                                               "jsonschema",
+                                                                               command_request_schema_.data(),
+                                                                               command_request_schema_.size()}};
+
+        foxglove::ServiceMessageSchema response_schema{"json", foxglove::Schema{"parallax.CommandResponse",
+                                                                                "jsonschema",
+                                                                                command_response_schema_.data(),
+                                                                                command_response_schema_.size()}};
+
+        foxglove::ServiceSchema service_schema{"parallax.Command", request_schema, response_schema};
+
+        auto command_service = foxglove::Service::create("/parallax/command", service_schema, command_handler);
+        if (!command_service.has_value()) {
+            std::cerr << "Failed to create /parallax/command service: "
+                      << foxglove::strerror(command_service.error()) << '\n';
+
+            shutdown();
+            return false;
+        }
+
+        const auto service_error = server_->addService(std::move(command_service.value()));
+        if (service_error != foxglove::FoxgloveError::Ok) {
+            std::cerr << "Failed to register /parallax/command service: "
+                      << foxglove::strerror(service_error) << '\n';
+
+            shutdown();
+            return false;
+        }
+
         if (!initializeChannels()) {
             shutdown();
             return false;
@@ -533,29 +458,24 @@ namespace parallax::visualization {
             runtime_telemetry_channel_->close();
             runtime_telemetry_channel_.reset();
         }
-        if (command_channel_) {
-            command_channel_->close();
-            command_channel_.reset();
-        }
 
         if (server_) {
             server_->stop();
             server_.reset();
         }
 
+        marker_depth_schema_.clear();
+        runtime_telemetry_schema_.clear();
+        command_request_schema_.clear();
+        command_response_schema_.clear();
+
         releaseOutstandingDemand();
         {
             std::lock_guard<std::mutex> lock(subscription_mutex_);
             product_by_channel_id_.clear();
         }
-        demand_callbacks_ = {};
 
-        {
-            std::lock_guard<std::mutex> lock(command_mutex_);
-            client_published_topics_.clear();
-        }
-        command_callbacks_ = {};
-        
+        demand_callbacks_ = {};
         initialized_ = false;
     }
 }

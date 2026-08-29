@@ -89,6 +89,11 @@ add_executable(parallax
     src/main.cpp
 )
 
+target_compile_definitions(parallax_visualization
+    PRIVATE
+        PARALLAX_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/schemas"
+)
+
 target_include_directories(parallax
     PRIVATE
         ${OpenCV_INCLUDE_DIRS}

@@ -139,32 +139,42 @@ namespace parallax::core {
             };
 
 
-        parallax::visualization::FoxgloveServer::CommandCallbacks foxglove_commands;
+        foxglove::ServiceHandler command_handler {
+            [this](const foxglove::ServiceRequest& request, foxglove::ServiceResponder&& responder) {
+                /**
+                 * Foxglove owns request/response transport.
+                 *
+                 * Runtime remains the composition boundary between transport,
+                 * command decoding, and application request ownership.
+                 *
+                 * This callback performs bounded control-plane work only:
+                 * decode -> validate -> mutate request/demand state -> respond.
+                 * It never submits producers or waits for perception output.
+                 */
+                const auto parsed = parallax::application::parse_foxglove_command(request.payloadStr());
 
-        foxglove_commands.receive = [this](std::string_view message) {
+                if (!parsed.ok()) {
+                    std::move(responder).respondError(parsed.message);
+                    return;
+                }
 
-            /**
-            * Foxglove owns transport only. Runtime is the composition boundary
-            * between transport, deterministic parsing, and application request
-            * ownership.
-            *
-            * Invalid input stops here and therefore cannot mutate graph demand.
-            * RequestController records demand/state only; it never submits producers.
-            */
+                const auto result = request_controller_.apply(parsed.command);
 
-            const auto parsed = parallax::application::parse_foxglove_command(message);
-            if (!parsed.ok()) {
-                std::cerr << "Command rejected: " << parsed.message << '\n';
-                return;
-            }
+                nlohmann::json response{{"accepted", true}, {
+                                        "status",
+                                        result.applied() ? "applied" : "unavailable"},
+                    {"message", result.message}};
 
-            const auto result = request_controller_.apply(parsed.command);
-            if (!result.applied()) {
-                std::cerr << "Command not applied: " << result.message << '\n';
+                const std::string serialized = response.dump();
+
+                const auto* data = reinterpret_cast<const std::byte*>(serialized.data());
+
+                std::vector<std::byte> payload{data, data + serialized.size()};
+                std::move(responder).respondOk(payload);
             }
         };
 
-        if (!foxglove_.initialize(std::move(foxglove_demand), std::move(foxglove_commands))) {
+        if (!foxglove_.initialize(std::move(foxglove_demand), std::move(command_handler))) {
             std::cerr << "Runtime: failed to initialize Foxglove server\n";
             shutdown();
             return false;

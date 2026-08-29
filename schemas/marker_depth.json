@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "parallax.MarkerDepth",
+  "type": "object",
+  "properties": {
+    "depth_m": {
+      "type": "number"
+    },
+    "valid": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "depth_m",
+    "valid"
+  ],
+  "additionalProperties": false
+}

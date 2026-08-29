@@ -4,9 +4,9 @@
 
 #include <foxglove/channel.hpp>
 #include <foxglove/context.hpp>
+#include <foxglove/service.hpp>
 #include <foxglove/messages.hpp>
 #include <foxglove/websocket.hpp>
-
 
 #include <atomic>
 #include <functional>
@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <cstddef>
 
 namespace parallax::visualization {
 
@@ -58,15 +59,9 @@ namespace parallax::visualization {
                 }
             };
 
-            struct CommandCallbacks {
-                std::function<void(std::string_view)> receive;
-                [[nodiscard]] bool valid() const noexcept {
-                    return static_cast<bool>(receive);
-                }
-            };
+            using CommandServiceHandler = foxglove::ServiceHandler;
 
-
-            bool initialize(DemandCallbacks demand_callbacks, CommandCallbacks command_callbacks);
+            bool initialize(DemandCallbacks demand_callbacks, CommandServiceHandler command_handler);
             void shutdown();
 
             [[nodiscard]] foxglove::WebSocketServer& server() noexcept {
@@ -140,14 +135,6 @@ namespace parallax::visualization {
 
             void releaseOutstandingDemand();
 
-            void onClientAdvertise(std::uint32_t client_id, const foxglove::ClientChannel& channel);
-            void onClientUnadvertise(std::uint32_t client_id, std::uint32_t client_channel_id);
-
-            void onMessageData(std::uint32_t client_id,
-                               std::uint32_t client_channel_id, 
-                               const std::byte* data, 
-                               std::size_t data_len);
-
             std::atomic_bool calibration_requested_{false};
             std::atomic_bool transform_requested_{false};
 
@@ -170,8 +157,11 @@ namespace parallax::visualization {
             std::optional<foxglove::messages::RawImageChannel> disparity_channel_;
             std::optional<foxglove::messages::RawImageChannel> depth_channel_;
             std::optional<foxglove::messages::PoseInFrameChannel> marker_pose_channel_;
-            std::optional<foxglove::RawChannel> command_channel_;
 
+            std::vector<std::byte> marker_depth_schema_;
+            std::vector<std::byte> runtime_telemetry_schema_;
+            std::vector<std::byte> command_request_schema_;
+            std::vector<std::byte> command_response_schema_;
             /**
              * Foxglove does not provide a well-known scalar depth message whose
              * semantics match marker depth. Use Foxglove's native RawChannel +
@@ -213,30 +203,6 @@ namespace parallax::visualization {
              * resolver that implements these callbacks.
              */
             DemandCallbacks demand_callbacks_{};
-
-            struct ClientChannelKey {
-                std::uint32_t client_id;
-                std::uint32_t channel_id;
-
-                bool operator==(const ClientChannelKey& other) const noexcept {
-                    return client_id == other.client_id && channel_id == other.channel_id;
-                }
-            };
-
-            struct ClientChannelKeyHash {
-                std::size_t operator()(const ClientChannelKey& key) const noexcept {
-                    const auto client = static_cast<std::size_t>(key.client_id);
-                    const auto channel = static_cast<std::size_t>(key.channel_id);
-
-                    return (client << 32U) ^ channel;
-                }
-            };
-
-            std::mutex command_mutex_;
-
-            std::unordered_map<ClientChannelKey, std::string, ClientChannelKeyHash> client_published_topics_;
-
-            CommandCallbacks command_callbacks_{};
             bool initialized_ = false;
     };
 }

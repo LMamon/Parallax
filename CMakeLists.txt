@@ -95,9 +95,9 @@ target_include_directories(parallax
 )
 target_link_libraries(parallax
     PRIVATE
-        parallax_application
         parallax_camera
         parallax_core
+        parallax_application
         parallax_cuda
         parallax_pose
         parallax_isp

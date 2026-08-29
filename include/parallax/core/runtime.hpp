@@ -1,11 +1,12 @@
 #pragma once
 
-#include <parallax/core/dependency_resolver.hpp>
 
 #include <parallax/camera/camera_producer.hpp>
 #include <parallax/camera/camera_config.hpp>
 #include <parallax/camera/stereo_camera.hpp>
 
+#include <parallax/core/dependency_resolver.hpp>
+#include <parallax/application/request_controller.hpp>
 #include <parallax/core/execution_context.hpp>
 #include <parallax/core/execution_gate.hpp>
 #include <parallax/core/pipeline.hpp>
@@ -114,8 +115,10 @@ namespace parallax::core {
 
             Graph graph_;
             DependencyResolver resolver_{graph_};
-
+            
+            parallax::application::RequestController request_controller_{resolver_};
             Pipeline pipeline_;
+            
             bool initialized_ = false;
             
             parallax::visualization::FoxgloveServer foxglove_;

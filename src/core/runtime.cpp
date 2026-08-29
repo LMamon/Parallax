@@ -4,6 +4,7 @@
 #include <parallax/pose/charuco_pose.hpp>
 #include <parallax/core/history_configuration.hpp>
 #include <parallax/core/runtime_metrics.hpp>
+#include <parallax/application/command_parser.hpp>
 
 #include <nlohmann/json.hpp>
 #include <string_view>
@@ -140,8 +141,27 @@ namespace parallax::core {
 
         parallax::visualization::FoxgloveServer::CommandCallbacks foxglove_commands;
 
-        foxglove_commands.receive = [](std::string_view message) {
-            std::cout<< "[command] " << message << '\n';
+        foxglove_commands.receive = [this](std::string_view message) {
+
+            /**
+            * Foxglove owns transport only. Runtime is the composition boundary
+            * between transport, deterministic parsing, and application request
+            * ownership.
+            *
+            * Invalid input stops here and therefore cannot mutate graph demand.
+            * RequestController records demand/state only; it never submits producers.
+            */
+
+            const auto parsed = parallax::application::parse_command(message);
+            if (!parsed.ok()) {
+                std::cerr << "Command rejected: " << parsed.message << '\n';
+                return;
+            }
+
+            const auto result = request_controller_.apply(parsed.command);
+            if (!result.applied()) {
+                std::cerr << "Command not applied: " << result.message << '\n';
+            }
         };
 
         if (!foxglove_.initialize(std::move(foxglove_demand), std::move(foxglove_commands))) {
@@ -415,6 +435,7 @@ namespace parallax::core {
         publisher_.shutdown();
         foxglove_.shutdown();
 
+        request_controller_.reset();
         /**
          * Drop published handles before destroying the hardware and processing
          * resources they reference. Producers are destroyed before their backing

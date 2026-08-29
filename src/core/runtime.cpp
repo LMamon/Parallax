@@ -159,11 +159,44 @@ namespace parallax::core {
                 }
 
                 const auto result = request_controller_.apply(parsed.command);
+                if (result.applied() && foxglove_.requestStateChannel().hasSinks()) {
 
-                nlohmann::json response{{"accepted", true}, {
-                                        "status",
-                                        result.applied() ? "applied" : "unavailable"},
-                    {"message", result.message}};
+                    const auto& state = request_controller_.state();
+
+                    nlohmann::json request_state{{
+                                                    "marker_depth_requested",
+                                                    state.marker_depth_requested
+                                                 },
+                                                 {
+                                                    "detection_requested",
+                                                    state.detection_requested
+                                                 },
+                                                 {
+                                                    "detection_target",
+                                                    state.detection_target
+                                                 },
+                                                 {
+                                                    "tracking_requested",
+                                                    state.tracking_requested
+                                                 },
+                                                 {
+                                                    "tracking_target",
+                                                    state.tracking_target
+                                                 }};
+
+                    const std::string serialized_state = request_state.dump();
+                    const auto error = foxglove_.requestStateChannel().log(reinterpret_cast<const std::byte*>(
+                                                                           serialized_state.data()),
+                                                                           serialized_state.size());
+
+                    if (error != foxglove::FoxgloveError::Ok) {
+                        std::cerr << "Runtime: request-state publication failed: "
+                                  << foxglove::strerror(error) << '\n';
+                    }
+                }
+                nlohmann::json response{{"accepted", true}, {"status",
+                                                            result.applied() ? "applied" : "unavailable"},
+                                                            {"message", result.message}};
 
                 const std::string serialized = response.dump();
 

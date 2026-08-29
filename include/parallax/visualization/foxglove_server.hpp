@@ -127,6 +127,10 @@ namespace parallax::visualization {
                 return *transform_channel_;
             }
 
+            [[nodiscard]] foxglove::RawChannel& requestStateChannel() noexcept {
+                return *request_state_channel_;
+            }
+
         private:
             bool initializeChannels();
             void bindProduct(std::uint64_t channel_id, parallax::core::ProductId product);
@@ -152,6 +156,7 @@ namespace parallax::visualization {
 
             std::unique_ptr<foxglove::WebSocketServer> server_;
             std::optional<foxglove::RawChannel> runtime_telemetry_channel_;
+            std::optional<foxglove::RawChannel> request_state_channel_;
             std::optional<foxglove::messages::CompressedVideoChannel> left_image_channel_;
             std::optional<foxglove::messages::CameraCalibrationChannel> left_calibration_channel_;
             std::optional<foxglove::messages::RawImageChannel> disparity_channel_;
@@ -160,6 +165,7 @@ namespace parallax::visualization {
 
             std::vector<std::byte> marker_depth_schema_;
             std::vector<std::byte> runtime_telemetry_schema_;
+            std::vector<std::byte> request_state_schema_;
             std::vector<std::byte> command_request_schema_;
             std::vector<std::byte> command_response_schema_;
             /**

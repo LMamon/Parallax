@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "parallax.RequestState",
+  "type": "object",
+  "properties": {
+    "marker_depth_requested": {
+      "type": "boolean"
+    },
+    "detection_requested": {
+      "type": "boolean"
+    },
+    "detection_target": {
+      "type": "string"
+    },
+    "tracking_requested": {
+      "type": "boolean"
+    },
+    "tracking_target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "marker_depth_requested",
+    "detection_requested",
+    "detection_target",
+    "tracking_requested",
+    "tracking_target"
+  ],
+  "additionalProperties": false
+}

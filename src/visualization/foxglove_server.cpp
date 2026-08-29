@@ -288,8 +288,25 @@ namespace parallax::visualization {
 
             return false;
         }
-
         runtime_telemetry_channel_.emplace(std::move(runtime_telemetry.value()));
+
+        auto request_state = foxglove::RawChannel::create("/parallax/requests", 
+                                                          "json", 
+                                                          foxglove::Schema{"parallax.RequestState",
+                                                          "jsonschema",
+                                                          request_state_schema_.data(),
+                                                          request_state_schema_.size()},
+                                                          context_);
+
+        if (!request_state.has_value()) {
+            std::cerr << "Failed to create /parallax/requests channel: "
+                      << foxglove::strerror(request_state.error()) << '\n';
+
+            return false;
+        }
+
+        request_state_channel_.emplace(std::move(request_state.value()));
+
         return true;
     }
 
@@ -314,6 +331,7 @@ namespace parallax::visualization {
             runtime_telemetry_schema_ = loadSchemaFile("runtime_telemetry.json");
             command_request_schema_ = loadSchemaFile("command_request.json");
             command_response_schema_ = loadSchemaFile("command_response.json");
+            request_state_schema_ = loadSchemaFile("request_state.json");
         } catch (const std::exception& error) {
             std::cerr << error.what() << '\n';
 
@@ -459,6 +477,11 @@ namespace parallax::visualization {
             runtime_telemetry_channel_.reset();
         }
 
+        if (request_state_channel_) {
+            request_state_channel_->close();
+            request_state_channel_.reset();
+        }
+
         if (server_) {
             server_->stop();
             server_.reset();
@@ -468,6 +491,7 @@ namespace parallax::visualization {
         runtime_telemetry_schema_.clear();
         command_request_schema_.clear();
         command_response_schema_.clear();
+        request_state_schema_.clear();
 
         releaseOutstandingDemand();
         {

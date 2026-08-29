@@ -6,6 +6,7 @@
 #include <parallax/core/runtime_metrics.hpp>
 
 #include <nlohmann/json.hpp>
+#include <string_view>
 #include <chrono>
 #include <vector>
 #include <iostream>
@@ -136,7 +137,14 @@ namespace parallax::core {
                                     DemandSource::FoxgloveSubscriber);
             };
 
-        if (!foxglove_.initialize(std::move(foxglove_demand))) {
+
+        parallax::visualization::FoxgloveServer::CommandCallbacks foxglove_commands;
+
+        foxglove_commands.receive = [](std::string_view message) {
+            std::cout<< "[command] " << message << '\n';
+        };
+
+        if (!foxglove_.initialize(std::move(foxglove_demand), std::move(foxglove_commands))) {
             std::cerr << "Runtime: failed to initialize Foxglove server\n";
             shutdown();
             return false;

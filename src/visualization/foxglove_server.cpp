@@ -3,6 +3,7 @@
 #include <foxglove/foxglove.hpp>
 #include <foxglove/schema.hpp>
 
+#include <string>
 #include <cstddef>
 #include <iostream>
 #include <string_view>
@@ -51,6 +52,8 @@ namespace parallax::visualization {
             schema.data_len = kRuntimeTelemetrySchema.size();
             return schema;
         }
+
+        constexpr std::string_view kCommandTopic = "/parallax/command";
     }
 
     FoxgloveServer::~FoxgloveServer() { shutdown(); }
@@ -306,14 +309,65 @@ namespace parallax::visualization {
         return true;
     }
 
-    bool FoxgloveServer::initialize(DemandCallbacks demand_callbacks) {
+    void FoxgloveServer::onClientAdvertise(std::uint32_t client_id, const foxglove::ClientChannel& channel) {
+        /**
+         * Client-published channels are identified by the pair
+         * (client ID, client channel ID). Keep this transport bookkeeping
+         * separate from ProductId subscription demand.
+         */
+        std::lock_guard<std::mutex> lock(command_mutex_);
+
+        client_published_topics_[ClientChannelKey{client_id, channel.id}] = channel.topic;
+    }
+
+    void FoxgloveServer::onClientUnadvertise(std::uint32_t client_id, std::uint32_t client_channel_id) {
+        std::lock_guard<std::mutex> lock(command_mutex_);
+
+        client_published_topics_.erase(ClientChannelKey{client_id, client_channel_id});
+    }
+
+    void FoxgloveServer::onMessageData(std::uint32_t client_id, 
+                                       std::uint32_t client_channel_id, 
+                                       const std::byte* data, std::size_t data_len) {
+
+        bool command_channel = false;
+
+        {
+            /**
+             * Keep Foxglove transport bookkeeping under its own short-lived
+             * mutex. Never invoke application callbacks while holding it.
+             */
+            std::lock_guard<std::mutex> lock(command_mutex_);
+
+            const auto it = client_published_topics_.find(
+                ClientChannelKey{client_id, client_channel_id});
+
+            command_channel = it != client_published_topics_.end() && it->second == kCommandTopic;
+        }
+
+        if (!command_channel || !command_callbacks_.receive) {
+            return;
+        }
+
+        const auto* chars = reinterpret_cast<const char*>(data);
+
+        command_callbacks_.receive(std::string_view(chars, data_len));
+    }
+
+    bool FoxgloveServer::initialize(DemandCallbacks demand_callbacks, CommandCallbacks command_callbacks) {
         if (initialized_) return true;
         if (!demand_callbacks.valid()) {
             std::cerr << "Foxglove demand callbacks are not configured\n";
             return false;
         }
 
+        if (!command_callbacks.valid()) {
+            std::cerr << "Foxglove command callbacks are not configured\n";
+            return false;
+        }
+
         demand_callbacks_ = std::move(demand_callbacks);
+        command_callbacks_= std::move(command_callbacks_);
         foxglove::setLogLevel(foxglove::LogLevel::Info);
 
         /**
@@ -330,6 +384,9 @@ namespace parallax::visualization {
         options.port = 8765;
         options.message_backlog_size = 32;
 
+
+        options.capabilities = foxglove::WebSocketServerCapabilities::ClientPublish;
+        options.supported_encodings = {"json"};
         /**
         * Foxglove owns client/channel subscription semantics. Parallax observes
         * those native transitions rather than polling hasSinks() or maintaining
@@ -348,6 +405,23 @@ namespace parallax::visualization {
                 onUnsubscribe(channel_id, client);
             };
             
+        options.callbacks.onClientAdvertise = [this](std::uint32_t client_id, const foxglove::ClientChannel& channel) {
+                onClientAdvertise(client_id, channel);
+            };
+
+        options.callbacks.onClientUnadvertise = [this](std::uint32_t client_id, std::uint32_t client_channel_id) {
+                onClientUnadvertise(client_id, client_channel_id);
+            };
+
+        options.callbacks.onMessageData = [this](std::uint32_t client_id,
+                                                std::uint32_t client_channel_id, 
+                                                const std::byte* data, 
+                                                std::size_t data_len) {
+
+                onMessageData(client_id, client_channel_id,data, data_len);
+            };
+
+
         auto result = foxglove::WebSocketServer::create(std::move(options));
         if (!result.has_value()) {
             std::cerr << "Failed to create Foxglove websocket server: "
@@ -356,7 +430,6 @@ namespace parallax::visualization {
         }
 
         server_ = std::make_unique<foxglove::WebSocketServer>(std::move(result.value()));
-
         if (!initializeChannels()) {
             shutdown();
             return false;
@@ -429,8 +502,14 @@ namespace parallax::visualization {
             std::lock_guard<std::mutex> lock(subscription_mutex_);
             product_by_channel_id_.clear();
         }
-
         demand_callbacks_ = {};
+
+        {
+            std::lock_guard<std::mutex> lock(command_mutex_);
+            client_published_topics_.clear();
+        }
+        command_callbacks_ = {};
+        
         initialized_ = false;
     }
 }

@@ -58,7 +58,15 @@ namespace parallax::visualization {
                 }
             };
 
-            bool initialize(DemandCallbacks demand_callbacks);
+            struct CommandCallbacks {
+                std::function<void(std::string_view)> receive;
+                [[nodiscard]] bool valid() const noexcept {
+                    return static_cast<bool>(receive);
+                }
+            };
+
+
+            bool initialize(DemandCallbacks demand_callbacks, CommandCallbacks command_callbacks);
             void shutdown();
 
             [[nodiscard]] foxglove::WebSocketServer& server() noexcept {
@@ -132,6 +140,14 @@ namespace parallax::visualization {
 
             void releaseOutstandingDemand();
 
+            void onClientAdvertise(std::uint32_t client_id, const foxglove::ClientChannel& channel);
+            void onClientUnadvertise(std::uint32_t client_id, std::uint32_t client_channel_id);
+
+            void onMessageData(std::uint32_t client_id,
+                               std::uint32_t client_channel_id, 
+                               const std::byte* data, 
+                               std::size_t data_len);
+
             std::atomic_bool calibration_requested_{false};
             std::atomic_bool transform_requested_{false};
 
@@ -176,7 +192,6 @@ namespace parallax::visualization {
              * graph-level Foxglove demand reference per observable product channel.
              *
              * Therefore:
-             *
              *   first client:  0 -> 1  acquire graph demand
              *   more clients:  1 -> N  no additional graph reference
              *   intermediate:  N -> 1  keep graph demand
@@ -198,6 +213,29 @@ namespace parallax::visualization {
              */
             DemandCallbacks demand_callbacks_{};
 
+            struct ClientChannelKey {
+                std::uint32_t client_id;
+                std::uint32_t channel_id;
+
+                bool operator==(const ClientChannelKey& other) const noexcept {
+                    return client_id == other.client_id && channel_id == other.channel_id;
+                }
+            };
+
+            struct ClientChannelKeyHash {
+                std::size_t operator()(const ClientChannelKey& key) const noexcept {
+                    const auto client = static_cast<std::size_t>(key.client_id);
+                    const auto channel = static_cast<std::size_t>(key.channel_id);
+
+                    return (client << 32U) ^ channel;
+                }
+            };
+
+            std::mutex command_mutex_;
+
+            std::unordered_map<ClientChannelKey, std::string, ClientChannelKeyHash> client_published_topics_;
+
+            CommandCallbacks command_callbacks_{};
             bool initialized_ = false;
     };
 }

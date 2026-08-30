@@ -5,6 +5,7 @@
 #include <parallax/core/product_id.hpp>
 
 #include <string>
+#include <cstdint>
 
 namespace parallax::application {
 
@@ -31,6 +32,7 @@ namespace parallax::application {
 
         bool detection_requested = false;
         std::string detection_target;
+        std::uint64_t detection_query_revision = 0;
 
         bool tracking_requested = false;
         std::string tracking_target;
@@ -61,9 +63,10 @@ namespace parallax::application {
         void acquire_once(core::ProductId product, bool& owned);
         void release_if_owned(core::ProductId product, bool& owned);
 
+        
         core::DependencyResolver& resolver_;
         RequestState state_;
-
+        
         // These flags represent demand references owned specifically by this
         // controller. They prevent repeated commands from leaking resolver
         // reference counts and allow cancellation to release only Application
@@ -71,5 +74,6 @@ namespace parallax::application {
         bool marker_depth_demand_owned_ = false;
         bool detection_demand_owned_ = false;
         bool tracking_demand_owned_ = false;
+        std::uint64_t next_detection_query_revision_ = 1;
     };
 }

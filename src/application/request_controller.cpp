@@ -39,6 +39,7 @@ namespace parallax::application {
                 // remain separate concerns.
                 state_.detection_requested = true;
                 state_.detection_target = command.target;
+                state_.detection_query_revision = next_detection_query_revision_++;
 
                 acquire_once(core::ProductId::Detection, detection_demand_owned_);
                 return {RequestStatus::Unavailable, "detection requested; producer is not available until Phase 12"};

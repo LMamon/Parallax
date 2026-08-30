@@ -68,6 +68,7 @@ namespace {
 
         EXPECT_TRUE(controller_.state().detection_target.empty());
         EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 0U);
+        EXPECT_EQ(controller_.state().detection_query_revision, 0U);
     }
 
     TEST_F(RequestControllerTest, DetectionIntentPersistsWhileProducerIsUnavailable) {
@@ -79,15 +80,19 @@ namespace {
         EXPECT_TRUE(controller_.state().detection_requested);
         EXPECT_EQ(controller_.state().detection_target, "person");
         EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 1U);
+        EXPECT_EQ(controller_.state().detection_query_revision, 1U);
     }
 
-    TEST_F(RequestControllerTest, ReissuingDetectionReplacesTargetWithoutLeakingDemand) {
+    TEST_F(RequestControllerTest, ReissuingDetectionReplacesTargetAndAdvancesRevisionWithoutLeakingDemand) {
         (void)controller_.apply(Command{CommandVerb::Detect, CommandBehavior::Persistent, "person"});
+        const auto first_revision = controller_.state().detection_query_revision;
+
         (void)controller_.apply(Command{CommandVerb::Detect, CommandBehavior::Persistent, "vehicle"});
+        const auto second_revision = controller_.state().detection_query_revision;
 
         EXPECT_TRUE(controller_.state().detection_requested);
-
         EXPECT_EQ(controller_.state().detection_target, "vehicle");
+        EXPECT_GT(second_revision, first_revision);
         EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 1U);
     }
 
@@ -158,5 +163,17 @@ namespace {
         EXPECT_TRUE(state.detection_target.empty());
         EXPECT_FALSE(state.tracking_requested);
         EXPECT_TRUE(state.tracking_target.empty());
+    }
+
+    TEST_F(RequestControllerTest, ResetDoesNotReuseDetectionQueryRevision) {
+        (void)controller_.apply(Command{CommandVerb::Detect, CommandBehavior::Persistent, "person"});
+
+        const auto first_revision = controller_.state().detection_query_revision;
+
+        controller_.reset();
+        EXPECT_EQ(controller_.state().detection_query_revision, 0U);
+
+        (void)controller_.apply(Command{CommandVerb::Detect, CommandBehavior::Persistent, "vehicle"});
+        EXPECT_GT(controller_.state().detection_query_revision, first_revision);
     }
 }

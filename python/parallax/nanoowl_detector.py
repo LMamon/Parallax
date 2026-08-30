@@ -78,7 +78,7 @@ class NanoOwlDetector:
 
         # Keep one bounded cached encoding for the active query.
         if query != self._query:
-            self._text_encoding = self._predictor.encode_text([query])
+            self._text_encoding = (self._predictor.encode_text([query]))
             self._query_encoding_count += 1
 
         self._query = query
@@ -86,10 +86,8 @@ class NanoOwlDetector:
 
     @torch.inference_mode()
     def predict(self, image: torch.Tensor, threshold: float = 0.1) -> NanoOwlResult:
-        self._require_open()
-
-        if self._text_encoding is None:
-            raise RuntimeError("query is not set")
+        """Predict from an already-preprocessed NCHW model tensor."""
+        self._require_ready()
 
         if not image.is_cuda:
             raise ValueError("image must be CUDA-resident")
@@ -105,11 +103,57 @@ class NanoOwlDetector:
 
         height, width = self.image_size
 
-        if image.shape[2] != height or image.shape[3] != width:
+        if (image.shape[2] != height or image.shape[3] != width):
             raise ValueError(f"image must be {width}x{height}")
 
-        # Caller owns the active Torch/CUDA stream.
         image_output = self._predictor.encode_image(image)
+
+        output = self._predictor.decode(image_output, self._text_encoding, threshold)
+
+        return NanoOwlResult(query=self._query, query_revision=self._query_revision, output=output)
+
+    @torch.inference_mode()
+    def predict_rgb8(self, image: torch.Tensor, threshold: float = 0.1) -> NanoOwlResult:
+        """
+        Predict directly from source RGB8 HWC CUDA storage.
+
+        The tensor may be pitched/strided. PyTorch handles the
+        source strides while upstream NanoOWL/TorchVision owns
+        preprocessing and ROI-to-source coordinate mapping.
+        """
+        self._require_ready()
+
+        if not image.is_cuda:
+            raise ValueError("image must be CUDA-resident")
+
+        if image.dtype != torch.uint8:
+            raise ValueError("image must be uint8")
+
+        if image.ndim != 3:
+            raise ValueError("image must be HWC")
+
+        if image.shape[2] != 3:
+            raise ValueError("image must have 3 RGB channels")
+
+        height = image.shape[0]
+        width = image.shape[1]
+
+        # Keep source pixels on the GPU.
+        image_tensor = (image.permute(2, 0, 1).unsqueeze(0).to(dtype=self._predictor
+                                                              .image_preprocessor
+                                                              .mean
+                                                              .dtype))
+
+        # Use NanoOWL's own normalization contract.
+        image_tensor = (self._predictor.image_preprocessor(image_tensor, inplace=True))
+
+        rois = torch.tensor([[0, 0, width, height]],
+                              dtype=image_tensor.dtype,
+                              device=image_tensor.device)
+
+        # Use NanoOWL/TorchVision for square padding,
+        # resize and box mapping.
+        image_output = self._predictor.encode_rois(image_tensor, rois, pad_square=True)
         output = self._predictor.decode(image_output, self._text_encoding, threshold)
 
         return NanoOwlResult(query=self._query, query_revision=self._query_revision, output=output)
@@ -118,7 +162,6 @@ class NanoOwlDetector:
         if self._closed:
             return
 
-        # Drop backend references without a device-wide synchronize.
         self._text_encoding = None
         self._predictor = None
         self._closed = True
@@ -126,3 +169,9 @@ class NanoOwlDetector:
     def _require_open(self) -> None:
         if self._closed:
             raise RuntimeError("NanoOWL detector is closed")
+
+    def _require_ready(self) -> None:
+        self._require_open()
+
+        if self._text_encoding is None:
+            raise RuntimeError("query is not set")

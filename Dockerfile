@@ -75,8 +75,8 @@ COPY --from=nanoowl \
 
 COPY --from=nanoowl /usr/src/tensorrt /opt/tensorrt-10.4
 
-ENV PYTHONPATH=/opt/nanoowl:/opt/torch2trt
 ENV CUDA_HOME=/usr/local/cuda
 ENV LD_LIBRARY_PATH=/opt/tensorrt-10.4/lib:${LD_LIBRARY_PATH}
+ENV PYTHONPATH=/workspace/Parallax/python:/opt/nanoowl:/opt/torch2trt
 
 RUN ldconfig

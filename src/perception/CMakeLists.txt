@@ -25,6 +25,7 @@ find_library(
 
 add_library(parallax_perception
     nanoowl_bridge.cpp
+    detection_producer.cpp
 )
 
 target_include_directories(parallax_perception
@@ -45,6 +46,8 @@ target_link_libraries(parallax_perception
         ${TORCH_LIBRARIES}
         ${TORCH_PYTHON_LIBRARY}
         Python3::Python
+        pybind11::embed
+        Torch::Torch
 )
 
 target_compile_features(parallax_perception

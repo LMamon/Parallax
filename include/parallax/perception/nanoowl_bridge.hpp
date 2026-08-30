@@ -1,6 +1,7 @@
 #pragma once
 
 #include <parallax/isp/frame_types.hpp>
+#include <parallax/perception/detection.hpp>
 
 #include <cuda_runtime.h>
 
@@ -17,21 +18,22 @@ namespace parallax::perception {
             ~NanoOwlBridge();
 
             NanoOwlBridge(const NanoOwlBridge&) = delete;
-
             NanoOwlBridge& operator=(const NanoOwlBridge&) = delete;
 
             bool initialize(const std::filesystem::path& engine_path);
             bool setQuery(const std::string& query, std::uint64_t revision);
 
             /**
-             * Exercise the zero-copy CUDA RGB boundary.
+             * Run NanoOWL against one exact CUDA-resident RGB generation.
              *
-             * The source allocation remains owned by the
-             * StereoRgbFrame/Product generation.
+             * The input allocation remains owned by the source Product generation.
+             * PyTorch receives a non-owning strided view over that allocation.
              *
-             * PyTorch receives a non-owning strided view.
+             * Only compact CPU detection metadata crosses back into Parallax.
              */
-            bool predict(const parallax::isp::StereoRgbFrame& frame, cudaStream_t stream);
+            bool predict(const parallax::isp::StereoRgbFrame& frame,
+                         cudaStream_t stream,
+                         DetectionSet& detections);
 
             void shutdown() noexcept;
 

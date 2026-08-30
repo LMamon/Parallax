@@ -7,8 +7,11 @@
 #include <parallax/application/foxglove_command.hpp>
 
 #include <nlohmann/json.hpp>
-#include <string_view>
+#include <algorithm>
 #include <chrono>
+#include <cstdint>
+#include <string_view>
+#include <limits>
 #include <vector>
 #include <iostream>
 
@@ -16,7 +19,7 @@ namespace parallax::core {
     Runtime::~Runtime() { shutdown(); }
 
     bool Runtime::initialize(const std::filesystem::path& camera_config_path,
-                            const std::filesystem::path& sensor_extrinsics_path,
+                             const std::filesystem::path& sensor_extrinsics_path,
                              const std::filesystem::path& calibration_directory) {
 
         if (initialized_) return true;
@@ -232,40 +235,43 @@ namespace parallax::core {
         last_telemetry_publish_ = std::chrono::steady_clock::now();
 
         /**
-        * Camera-domain baseline execution.
-        *
-        * RuntimeBaseline defines what the persistent perception service maintains;
-        * Foxglove merely decides which of those products incur observation cost.
-        *
-        * LidarScan is intentionally excluded from this plan because its source has
-        * an independent worker/cadence below.
-        */
-
-        const std::vector<ProductId> baseline_camera_products{
-            ProductId::RectifiedRgb, ProductId::Disparity, ProductId::MarkerDepth
-        };
-        const auto execution_plan = resolver_.resolve(baseline_camera_products);
-
-        /**
-         * Populate the stats map before the LiDAR worker starts.
+         * The camera-domain plan follows active demand.
          *
-         * The camera thread and LiDAR thread then mutate only their own already-created
-         * ProducerExecutionStats entries. Neither thread inserts into the unordered_map
-         * while the other is running.
+         * LiDAR stays on its independent worker below. Everything else is resolved
+         * from the same demand accounting used by Application and Foxglove.
          */
-        for (Producer* producer : execution_plan) {
+        std::uint64_t execution_plan_revision = std::numeric_limits<std::uint64_t>::max();
+        std::vector<Producer*> execution_plan;
+
+        const auto refresh_execution_plan = [&]() {
+            auto snapshot = resolver_.active_demand();
+
+            if (snapshot.revision == execution_plan_revision) {
+                return;
+            }
+
+            snapshot.products.erase(std::remove(snapshot.products.begin(),
+                                                snapshot.products.end(),
+                                                ProductId::LidarScan),
+                                                snapshot.products.end());
+
+            execution_plan = resolver_.resolve(snapshot.products);
+            execution_plan_revision = snapshot.revision;
+        };
+
+        refresh_execution_plan();
+        // Pre-create every stats entry before LiDAR starts. The camera thread can
+        // change plans later without mutating the unordered_map concurrently.
+        for (Producer* producer : graph_.producers()) {
             if (producer != nullptr) {
                 producer_execution_stats_.try_emplace(producer);
             }
         }
 
-        if (lidar_producer_) {
-            producer_execution_stats_.try_emplace(lidar_producer_.get());
-        }
-
         lidar_thread_ = std::thread(&Runtime::runLidarSource, this);
 
         while (running_.load() && !stop_requested) {
+            refresh_execution_plan();
             bool frame_failed = false;
 
             for (Producer* producer : execution_plan) {

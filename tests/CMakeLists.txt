@@ -23,6 +23,17 @@ add_executable(parallax_request_controller_test
     request_controller_test.cpp
 )
 
+add_executable(parallax_detection_test
+    detection_test.cpp
+)
+
+target_link_libraries(parallax_detection_test
+    PRIVATE
+        parallax_core
+        parallax_perception
+        GTest::gtest_main
+)
+
 target_link_libraries(parallax_request_controller_test
     PRIVATE
         parallax_application
@@ -67,3 +78,4 @@ gtest_discover_tests(parallax_product_store_test)
 gtest_discover_tests(parallax_graph_test)
 gtest_discover_tests(parallax_runtime_metrics_test)
 gtest_discover_tests(parallax_request_controller_test)
+gtest_discover_tests(parallax_detection_test)

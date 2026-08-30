@@ -9,29 +9,33 @@
 #include <vector>
 
 namespace parallax::core {
-    
+
     enum class DemandSource : std::uint8_t {
         RuntimeBaseline, Application, FoxgloveSubscriber, InternalDependent
     };
 
-    // resolves requested products into the minimum producer subgraph required
+    struct DemandSnapshot {
+        std::uint64_t revision = 0;
+        std::vector<ProductId> products;
+    };
 
-    // Demand accounting is separate from execution. Acquiring demand does not
-    // submit producers; it only records that a product is required.
+    // Resolves requested products into the minimum producer subgraph required.
+    //
+    // Demand accounting is separate from execution. Acquiring demand records
+    // intent only; Runtime decides when producers are considered.
     class DependencyResolver {
         public:
             using ProducerList = std::vector<Producer*>;
 
             explicit DependencyResolver(const Graph& graph) noexcept : graph_(graph) {}
+
             [[nodiscard]] ProducerList resolve(ProductId product) const;
 
-            // Resolves union of dependencies required by several producs.
-            // shared producers appear only once
+            // Resolve the union of dependencies required by several products.
+            // Shared producers appear only once.
             [[nodiscard]] ProducerList resolve(const std::vector<ProductId>& products) const;
 
-            // +1 reference from a demand source
             void acquire(ProductId product, DemandSource source);
-            // -1 reference from a demand source
             void release(ProductId product, DemandSource source);
 
             [[nodiscard]] std::size_t demand(ProductId product, DemandSource source) const noexcept;
@@ -39,6 +43,15 @@ namespace parallax::core {
             [[nodiscard]] bool demanded(ProductId product) const noexcept {
                 return total_demand(product) != 0;
             }
+
+            /**
+             * Snapshot active root demand for Runtime.
+             *
+             * revision changes only when a product enters or leaves the active
+             * root set. Reference-count changes that leave the root active do
+             * not require rebuilding the execution plan.
+             */
+            [[nodiscard]] DemandSnapshot active_demand() const;
 
         private:
             struct ProductIdHash {
@@ -56,21 +69,15 @@ namespace parallax::core {
 
             [[nodiscard]] static std::size_t& count_for(DemandCounts& counts, DemandSource source) noexcept;
             [[nodiscard]] static const std::size_t& count_for(const DemandCounts& counts, DemandSource source) noexcept;
+            [[nodiscard]] static std::size_t total(const DemandCounts& counts) noexcept;
 
             const Graph& graph_;
 
-            /**
-            * Demand has multiple independent owners.
-            *
-            * Foxglove subscription callbacks may execute concurrently with Runtime
-            * application requests, so reference-count mutations and observations must
-            * share one synchronization boundary.
-            *
-            * This mutex protects only the small demand-accounting map. Graph traversal,
-            * producer execution, ProductStore access, and accelerator work are deliberately
-            * outside this critical section.
-            */
+            // Demand callbacks can arrive from Foxglove while Runtime reads
+            // active roots. Keep only the accounting snapshot under this lock.
             mutable std::mutex demand_mutex_;
             std::unordered_map<ProductId, DemandCounts, ProductIdHash> demand_;
+
+            std::uint64_t active_revision_ = 0;
     };
 }

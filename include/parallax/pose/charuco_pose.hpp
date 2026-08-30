@@ -3,7 +3,9 @@
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/stereo/calibration.hpp>
 
-#include <opencv2/aruco.hpp>
+#include <opencv2/objdetect/aruco_dictionary.hpp>
+#include <opencv2/objdetect/aruco_detector.hpp>
+#include <opencv2/objdetect/aruco_board.hpp>
 #include <opencv2/objdetect/charuco_detector.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/calib3d.hpp>

@@ -17,6 +17,7 @@ services:
 
     volumes:
       - .:/workspace/Parallax
+      - /home/rr-vzn/rplidar_sdk:/root/rplidar_sdk:ro
 
     working_dir: /workspace/Parallax
 

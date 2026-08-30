@@ -45,6 +45,11 @@ find_package(
     CONFIG REQUIRED
     HINTS "${foxglove_sdk_SOURCE_DIR}"
 )
+find_package(Threads REQUIRED)
+find_package(yaml-cpp REQUIRED)
+find_package(CUDAToolkit REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 foxglove_sdk_add_cpp_library(foxglove_cpp TYPE STATIC)
 
@@ -77,6 +82,7 @@ add_subdirectory(src/stereo)
 add_subdirectory(src/pose)
 add_subdirectory(src/visualization)
 add_subdirectory(src/vpi)
+add_subdirectory(src/perception)
 
 # Add these when their CMakeLists.txt files exist.
 # add_subdirectory(src/bindings)

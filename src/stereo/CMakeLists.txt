@@ -16,6 +16,9 @@ target_link_libraries(parallax_stereo
     PUBLIC
         parallax_cuda
         parallax_vpi
+
+    PRIVATE
+        nlohmann_json::nlohmann_json
 )
 
 target_compile_features(parallax_stereo

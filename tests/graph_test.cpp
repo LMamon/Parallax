@@ -648,5 +648,100 @@ namespace parallax::core {
             EXPECT_EQ(resolver.total_demand(ProductId::Depth), 0);
             EXPECT_FALSE(resolver.demanded(ProductId::Depth));
         }
+
+        TEST(DependencyResolverTest, ActiveDemandSnapshotTracksRootSet) {
+            Graph graph;
+            DependencyResolver resolver{graph};
+
+            const auto initial = resolver.active_demand();
+
+            EXPECT_TRUE(initial.products.empty());
+
+            resolver.acquire(ProductId::MarkerDepth, DemandSource::RuntimeBaseline);
+
+            const auto baseline = resolver.active_demand();
+
+            EXPECT_GT(baseline.revision, initial.revision);
+            ASSERT_EQ(baseline.products.size(), 1);
+            EXPECT_EQ(baseline.products[0], ProductId::MarkerDepth);
+
+            resolver.acquire(ProductId::Detection, DemandSource::Application);
+
+            const auto detection = resolver.active_demand();
+
+            EXPECT_GT(detection.revision, baseline.revision);
+            ASSERT_EQ(detection.products.size(), 2);
+            EXPECT_EQ(detection.products[0], ProductId::MarkerDepth);
+            EXPECT_EQ(detection.products[1], ProductId::Detection);
+        }
+
+        TEST(DependencyResolverTest, ReferenceCountDoesNotRebuildActiveRootSet) {
+            Graph graph;
+            DependencyResolver resolver{graph};
+
+            resolver.acquire(ProductId::Detection, DemandSource::Application);
+
+            const auto first = resolver.active_demand();
+
+            resolver.acquire(ProductId::Detection, DemandSource::FoxgloveSubscriber);
+
+            const auto second = resolver.active_demand();
+
+            EXPECT_EQ(second.revision, first.revision);
+            ASSERT_EQ(second.products.size(), 1);
+            EXPECT_EQ(second.products[0], ProductId::Detection);
+
+            resolver.release(ProductId::Detection, DemandSource::Application);
+
+            const auto third = resolver.active_demand();
+
+            EXPECT_EQ(third.revision, first.revision);
+            ASSERT_EQ(third.products.size(), 1);
+
+            resolver.release(ProductId::Detection, DemandSource::FoxgloveSubscriber);
+
+            const auto released = resolver.active_demand();
+
+            EXPECT_GT(released.revision, third.revision);
+            EXPECT_TRUE(released.products.empty());
+        }
+
+        TEST(DependencyResolverTest, NewDetectionDemandExpandsExistingPlan) {
+            TestProducer camera{"camera", {}, {ProductId::RgbLeft}};
+            TestProducer rectifier{"rectifier", {ProductId::RgbLeft}, {ProductId::RectifiedGray}};
+            TestProducer stereo{"stereo", {ProductId::RectifiedGray}, {ProductId::Disparity}};
+            TestProducer detector{"detector", {ProductId::RgbLeft}, {ProductId::Detection}};
+
+            Graph graph;
+
+            graph.register_producer(camera);
+            graph.register_producer(rectifier);
+            graph.register_producer(stereo);
+            graph.register_producer(detector);
+            graph.finalize();
+
+            DependencyResolver resolver{graph};
+
+            resolver.acquire(ProductId::Disparity, DemandSource::RuntimeBaseline);
+
+            auto snapshot = resolver.active_demand();
+            auto plan = resolver.resolve(snapshot.products);
+
+            ASSERT_EQ(plan.size(), 3);
+            EXPECT_EQ(plan[0], &camera);
+            EXPECT_EQ(plan[1], &rectifier);
+            EXPECT_EQ(plan[2], &stereo);
+
+            resolver.acquire(ProductId::Detection, DemandSource::Application);
+
+            snapshot = resolver.active_demand();
+            plan = resolver.resolve(snapshot.products);
+
+            ASSERT_EQ(plan.size(), 4);
+            EXPECT_EQ(plan[0], &camera);
+            EXPECT_EQ(plan[1], &rectifier);
+            EXPECT_EQ(plan[2], &stereo);
+            EXPECT_EQ(plan[3], &detector);
+        }
     }
 }

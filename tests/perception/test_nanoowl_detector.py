@@ -1,3 +1,4 @@
+import os
 import unittest
 
 import PIL.Image
@@ -9,7 +10,10 @@ from nanoowl.image_preprocessor import ImagePreprocessor
 from parallax.nanoowl_detector import NanoOwlDetector
 
 
-ENGINE_PATH = "/opt/nanoowl/data/owl_image_encoder_patch32.engine"
+ENGINE_PATH = os.environ.get("PARALLAX_NANOOWL_ENGINE",
+                             "/workspace/Parallax/models/"
+                             "owl_image_encoder_patch32_fp16.engine")
+
 IMAGE_PATH = "/opt/nanoowl/assets/owl_glove_small.jpg"
 
 
@@ -26,8 +30,11 @@ class NanoOwlDetectorTest(unittest.TestCase):
         width, height = image.size
 
         rois = torch.tensor([[0, 0, width, height]], dtype=image_tensor.dtype, device=image_tensor.device)
-
         cls.image = roi_align(image_tensor, [rois], output_size=cls.detector.image_size)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.detector.close()
 
     def test_reference_detection(self):
         self.detector.set_query("an owl", 1)
@@ -35,7 +42,10 @@ class NanoOwlDetectorTest(unittest.TestCase):
         stream = torch.cuda.Stream()
 
         with torch.cuda.stream(stream):
-            result = self.detector.predict(self.image, threshold=0.1)
+            result = self.detector.predict(
+                self.image,
+                threshold=0.1,
+            )
 
         stream.synchronize()
 
@@ -45,10 +55,14 @@ class NanoOwlDetectorTest(unittest.TestCase):
 
         labels = result.output.labels.cpu()
         scores = result.output.scores.cpu()
+        boxes = result.output.boxes.cpu()
 
         self.assertEqual(labels.ndim, 1)
         self.assertEqual(scores.ndim, 1)
+        self.assertEqual(boxes.ndim, 2)
+
         self.assertEqual(len(labels), len(scores))
+        self.assertEqual(len(scores), len(boxes))
 
     def test_query_encoding_is_cached(self):
         before = self.detector.query_encoding_count
@@ -63,6 +77,20 @@ class NanoOwlDetectorTest(unittest.TestCase):
         self.assertEqual(after_second, after_first)
         self.assertEqual(self.detector.query_revision, 3)
 
+    def test_query_replacement_reencodes(self):
+        self.detector.set_query("person", 4)
+        before = self.detector.query_encoding_count
+
+        self.detector.set_query("cup", 5)
+        after = self.detector.query_encoding_count
+
+        self.assertEqual(after, before + 1)
+        self.assertEqual(self.detector.query, "cup")
+        self.assertEqual(self.detector.query_revision, 5)
+
+    def test_missing_engine_is_rejected(self):
+        with self.assertRaises(FileNotFoundError):
+            NanoOwlDetector("/tmp/parallax-engine-does-not-exist.engine")
 
 if __name__ == "__main__":
     unittest.main()

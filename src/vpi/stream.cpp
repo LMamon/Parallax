@@ -14,19 +14,20 @@ namespace {
         char buffer[VPI_MAX_STATUS_MESSAGE_LENGTH]{};
         vpiGetLastStatusMessage(buffer, sizeof(buffer));
 
-        std::cerr << message << ": "
-                << vpiStatusGetName(status) << " - "
-                << buffer << '\n';
+        std::cerr << message << ": " << vpiStatusGetName(status) << " - " << buffer << '\n';
     }
 }
 
     Stream::~Stream() { shutdown(); }
-    Stream::Stream(Stream&& other) noexcept : stream_(std::exchange(other.stream_, nullptr)) {}
+    Stream::Stream(Stream&& other) noexcept : stream_(std::exchange(other.stream_, nullptr)),
+                                                      cuda_stream_(std::exchange(other.cuda_stream_, nullptr)) {}
 
     Stream& Stream::operator=(Stream&& other) noexcept {
         if (this != &other) {
             shutdown();
+
             stream_ = std::exchange(other.stream_, nullptr);
+            cuda_stream_ = std::exchange(other.cuda_stream_, nullptr);
         }
         return *this;
     }

@@ -34,15 +34,24 @@ namespace parallax::application {
                     return {RequestStatus::Invalid, "detection target is empty"};
                 }
 
-                // Phase 11 records valid neural application intent even though the
-                // NanoOWL producer is introduced in Phase 12. Demand and execution
-                // remain separate concerns.
+                /**
+                 * Detection commands establish persistent application intent and
+                 * Detection demand.
+                 *
+                 * Query identity advances independently from camera generations so a
+                 * late result from a replaced target cannot be published as though it
+                 * belongs to the current request.
+                 *
+                 * Runtime observes this state at the execution boundary and applies
+                 * the query to DetectionProducer. RequestController never calls the
+                 * detector directly.
+                 */
                 state_.detection_requested = true;
                 state_.detection_target = command.target;
                 state_.detection_query_revision = next_detection_query_revision_++;
 
                 acquire_once(core::ProductId::Detection, detection_demand_owned_);
-                return {RequestStatus::Unavailable, "detection requested; producer is not available until Phase 12"};
+                return {RequestStatus::Applied, "detection requested"};
             }
 
             case CommandVerb::Track: {

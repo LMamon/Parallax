@@ -24,6 +24,9 @@
 #include <parallax/stereo/stereo_producer.hpp>
 #include <parallax/stereo/depth_producer.hpp>
 
+#include <parallax/perception/nanoowl_bridge.hpp>
+#include <parallax/perception/detection_producer.hpp>
+
 #include <parallax/pose/charuco_pose_producer.hpp>
 #include <parallax/pose/marker_depth_producer.hpp>
 
@@ -52,7 +55,8 @@ namespace parallax::core {
 
             bool initialize(const std::filesystem::path& camera_config_path,
                             const std::filesystem::path& sensor_extrinsics_path,
-                            const std::filesystem::path& calibration_directory);
+                            const std::filesystem::path& calibration_directory,
+                            const std::filesystem::path& nanoowl_engine_path);
             
             void run(const volatile std::sig_atomic_t& stop_requested);
             void stop() noexcept;
@@ -104,7 +108,8 @@ namespace parallax::core {
 
             std::unique_ptr<parallax::pose::CharucoPoseProducer>charuco_pose_producer_;
             std::unique_ptr<parallax::pose::MarkerDepthPoducer>marker_depth_producer_;
-
+            std::unique_ptr<parallax::perception::NanoOwlBridge> nanoowl_;
+            std::unique_ptr<parallax::perception::DetectionProducer> detection_producer_;
             /**
             * LiDAR is Runtime-owned because its connection and scan lifecycle span the
             * full application runtime. Its producer is graph-visible but does not belong

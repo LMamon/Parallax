@@ -71,12 +71,12 @@ namespace {
         EXPECT_EQ(controller_.state().detection_query_revision, 0U);
     }
 
-    TEST_F(RequestControllerTest, DetectionIntentPersistsWhileProducerIsUnavailable) {
+    TEST_F(RequestControllerTest, DetectionIntentPersistsAndAcquiresDemand) {
         const Command command{CommandVerb::Detect, CommandBehavior::Persistent, "person"};
 
         const auto result = controller_.apply(command);
 
-        EXPECT_EQ(result.status, RequestStatus::Unavailable);
+        EXPECT_EQ(result.status, RequestStatus::Applied);
         EXPECT_TRUE(controller_.state().detection_requested);
         EXPECT_EQ(controller_.state().detection_target, "person");
         EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 1U);

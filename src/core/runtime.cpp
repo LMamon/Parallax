@@ -20,7 +20,8 @@ namespace parallax::core {
 
     bool Runtime::initialize(const std::filesystem::path& camera_config_path,
                              const std::filesystem::path& sensor_extrinsics_path,
-                             const std::filesystem::path& calibration_directory) {
+                             const std::filesystem::path& calibration_directory,
+                             const std::filesystem::path& nanoowl_engine_path) {
 
         if (initialized_) return true;
 
@@ -64,6 +65,13 @@ namespace parallax::core {
             return false;
         }
 
+        nanoowl_ = std::make_unique<parallax::perception::NanoOwlBridge>();
+        if (!nanoowl_->initialize(nanoowl_engine_path)) {
+            std::cerr << "Runtime: failed to initialize NanoOWL\n";
+            shutdown();
+            return false;
+        }
+
         /**
          * Construct the complete producer set before registering or finalizing the
          * graph. Graph stores non-owning Producer pointers, so Runtime owns every
@@ -89,6 +97,7 @@ namespace parallax::core {
                                                   context_.products());
 
         marker_depth_producer_ = std::make_unique<parallax::pose::MarkerDepthPoducer>(context_.products());
+        detection_producer_ = std::make_unique<parallax::perception::DetectionProducer>(*nanoowl_, context_.products());
 
         /**
          * Registration describes the complete concrete dependency graph.
@@ -101,6 +110,7 @@ namespace parallax::core {
         graph_.register_producer(*depth_producer_);
         graph_.register_producer(*charuco_pose_producer_);
         graph_.register_producer(*marker_depth_producer_);
+        graph_.register_producer(*detection_producer_);
         graph_.register_producer(*lidar_producer_);
 
         graph_.finalize();
@@ -166,26 +176,12 @@ namespace parallax::core {
 
                     const auto& state = request_controller_.state();
 
-                    nlohmann::json request_state{{
-                                                    "marker_depth_requested",
-                                                    state.marker_depth_requested
-                                                 },
-                                                 {
-                                                    "detection_requested",
-                                                    state.detection_requested
-                                                 },
-                                                 {
-                                                    "detection_target",
-                                                    state.detection_target
-                                                 },
-                                                 {
-                                                    "tracking_requested",
-                                                    state.tracking_requested
-                                                 },
-                                                 {
-                                                    "tracking_target",
-                                                    state.tracking_target
-                                                 }};
+                    nlohmann::json request_state{{"marker_depth_requested", state.marker_depth_requested},
+                                                 {"detection_requested", state.detection_requested},
+                                                 {"detection_target", state.detection_target},
+                                                 {"detection_query_revision", state.detection_query_revision},
+                                                 {"tracking_requested", state.tracking_requested},
+                                                 {"tracking_target", state.tracking_target}};
 
                     const std::string serialized_state = request_state.dump();
                     const auto error = foxglove_.requestStateChannel().log(reinterpret_cast<const std::byte*>(
@@ -273,6 +269,19 @@ namespace parallax::core {
         while (running_.load() && !stop_requested) {
             refresh_execution_plan();
             bool frame_failed = false;
+
+            // RequestController owns the persistent requested target/revision.
+            // DetectionProducer owns the graph-facing detector query state.
+            // The foxglove service handler remains control-plane only:
+            // it records intent/demand and never calls NanoOWL directly.
+            const auto& request_state = request_controller_.state();
+            if (request_state.detection_requested && detection_producer_ && !detection_producer_->setQuery(
+                                                                            request_state.detection_target,
+                                                                            request_state.detection_query_revision)) {
+
+                std::cerr << "Runtime: failed to apply NanoOWL detection query\n";
+                break;
+            }
 
             for (Producer* producer : execution_plan) {
                 if (producer == nullptr) {

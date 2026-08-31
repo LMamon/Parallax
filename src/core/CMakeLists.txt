@@ -18,6 +18,7 @@ target_link_libraries(parallax_core
         parallax_camera
         parallax_isp
         parallax_lidar
+        parallax_perception
         parallax_pose
         parallax_stereo
         parallax_vpi

@@ -45,11 +45,32 @@ find_package(
     CONFIG REQUIRED
     HINTS "${foxglove_sdk_SOURCE_DIR}"
 )
-find_package(Threads REQUIRED)
-find_package(yaml-cpp REQUIRED)
-find_package(CUDAToolkit REQUIRED)
-find_package(OpenCV REQUIRED)
 find_package(nlohmann_json REQUIRED)
+
+find_package(
+    Python3
+    REQUIRED
+    COMPONENTS
+        Interpreter
+        Development
+)
+
+find_package(
+    Torch
+    REQUIRED
+    PATHS
+        /usr/local/lib/python3.10/dist-packages/torch/share/cmake
+    NO_DEFAULT_PATH
+)
+
+find_library(
+    TORCH_PYTHON_LIBRARY
+    NAMES torch_python
+    PATHS
+        /usr/local/lib/python3.10/dist-packages/torch/lib
+    REQUIRED
+    NO_DEFAULT_PATH
+)
 
 foxglove_sdk_add_cpp_library(foxglove_cpp TYPE STATIC)
 

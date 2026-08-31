@@ -24,16 +24,16 @@ namespace parallax::perception {
             bool setQuery(const std::string& query, std::uint64_t revision);
 
             /**
-             * Run NanoOWL against one exact CUDA-resident RGB generation.
+             * Run NanoOWL against one CUDA-resident RGB generation.
              *
-             * The input allocation remains owned by the source Product generation.
-             * PyTorch receives a non-owning strided view over that allocation.
+             * The source allocation remains owned by the Product generation.
+             * PyTorch receives a non-owning strided CUDA tensor view.
              *
-             * Only compact CPU detection metadata crosses back into Parallax.
+             * Only compact detection metadata crosses back to host memory.
              */
             bool predict(const parallax::isp::StereoRgbFrame& frame,
-                         cudaStream_t stream,
-                         DetectionSet& detections);
+                        cudaStream_t stream,
+                        DetectionSet& detections);
 
             void shutdown() noexcept;
 

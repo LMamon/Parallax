@@ -3,9 +3,11 @@
 #include <parallax/core/execution_context.hpp>
 #include <parallax/core/product.hpp>
 #include <parallax/isp/frame_types.hpp>
+#include <parallax/perception/detection.hpp>
 
 #include <chrono>
 #include <memory>
+#include <utility>
 
 namespace parallax::perception {
 
@@ -15,7 +17,7 @@ namespace parallax::perception {
                                          products_(products) {}
 
     std::string_view DetectionProducer::name() const noexcept {
-        return "DetectionProducer";
+        return "detection";
     }
 
     const std::vector<parallax::core::ProductId>& DetectionProducer::inputs() const noexcept {
@@ -46,7 +48,6 @@ namespace parallax::perception {
     }
 
     bool DetectionProducer::setQuery(const std::string& query, std::uint64_t revision) {
-
         if (query.empty() || revision == 0) {
             return false;
         }
@@ -66,19 +67,19 @@ namespace parallax::perception {
     }
 
     parallax::core::SubmitResult DetectionProducer::submit(parallax::core::ExecutionContext& context) {
-
         if (query_.empty() || query_revision_ == 0) {
             return parallax::core::SubmitResult::NoWork;
         }
 
         auto input = products_.latest<parallax::isp::StereoRgbFrame>(parallax::core::ProductId::RgbLeft);
-
         if (!input || !input->valid()) {
             return parallax::core::SubmitResult::NoWork;
         }
 
-        auto stream = context.neuralCudaLane();
-
+        const cudaStream_t stream = context.neuralCudaLane();
+        if (stream == nullptr) {
+            return parallax::core::SubmitResult::Failed;
+        }
         /*
          * Depend on the exact RGB generation being inferred.
          *
@@ -90,7 +91,6 @@ namespace parallax::perception {
         }
 
         auto detections = std::make_shared<DetectionSet>();
-
         if (!detector_.predict(*input->payload, stream, *detections)) {
             return parallax::core::SubmitResult::Failed;
         }
@@ -101,7 +101,6 @@ namespace parallax::perception {
          * from RequestController.
          */
         if (detections->query_revision != query_revision_ || detections->query != query_) {
-
             return parallax::core::SubmitResult::NoWork;
         }
 
@@ -113,12 +112,11 @@ namespace parallax::perception {
          * observation remains the RGB generation actually inferred, regardless
          * of how many newer camera observations now exist in ProductStore.
          */
-        products_.publish(parallax::core::make_product(parallax::core::ProductId::Detection,
+        products_.publish(parallax::core::make_product<DetectionSet>(parallax::core::ProductId::Detection,
                                                        metadata,
                                                        std::move(detections),
                                                        parallax::core::CompletionHandle::cpu_ready()));
 
         return parallax::core::SubmitResult::Submitted;
     }
-
 }

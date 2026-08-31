@@ -8,6 +8,8 @@
 #include <parallax/core/product_store.hpp>
 #include <parallax/core/sensor_extrinsics.hpp>
 
+#include <parallax/perception/detection.hpp>
+
 #include <parallax/core/completion.hpp>
 #include <parallax/lidar/frame_types.hpp>
 
@@ -57,6 +59,7 @@ namespace parallax::visualization {
             bool publishDepth(const parallax::isp::DepthFrame& frame);
             bool publishDisparity(const parallax::isp::StereoMatchFrame& frame);
             bool publishLidarScan(const parallax::lidar::LidarScan& scan);
+            bool publishDetections(const parallax::core::Product<parallax::perception::DetectionSet>& product);
 
             VideoEncoder video_encoder_;
             cudaStream_t stream_ = nullptr;
@@ -75,6 +78,11 @@ namespace parallax::visualization {
             std::uint32_t height_ = 0;
             std::uint32_t fps_ = 0;
 
+
+            parallax::core::SourceObservation last_detection_observation_{};
+            std::uint64_t last_detection_query_revision_ = 0;
+            bool has_published_detection_ = false;
+            
             /**
              * Non-owning access to the native Foxglove capability surface.
              *

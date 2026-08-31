@@ -306,6 +306,20 @@ namespace parallax::visualization {
         }
 
         request_state_channel_.emplace(std::move(request_state.value()));
+        auto detections = foxglove::RawChannel::create("/perception/detections",
+                                                       "json",
+                                                        foxglove::Schema{"parallax.DetectionSet",
+                                                        "jsonschema",
+                                                        detection_schema_.data(),
+                                                        detection_schema_.size()},
+                                                        context_);
+
+        if (!detections.has_value()) {
+            std::cerr << "Failed to create /perception/detections channel: "
+                      << foxglove::strerror(detections.error()) << '\n';
+            return false;
+        }
+        detection_channel_.emplace(std::move(detections.value()));
 
         return true;
     }
@@ -332,6 +346,7 @@ namespace parallax::visualization {
             command_request_schema_ = loadSchemaFile("command_request.json");
             command_response_schema_ = loadSchemaFile("command_response.json");
             request_state_schema_ = loadSchemaFile("request_state.json");
+            detection_schema_ = loadSchemaFile("detections.json");
         } catch (const std::exception& error) {
             std::cerr << error.what() << '\n';
 

@@ -131,6 +131,10 @@ namespace parallax::visualization {
                 return *request_state_channel_;
             }
 
+            [[nodiscard]] foxglove::RawChannel& detectionChannel() noexcept {
+                return *detection_channel_;
+            }
+
         private:
             bool initializeChannels();
             void bindProduct(std::uint64_t channel_id, parallax::core::ProductId product);
@@ -162,12 +166,14 @@ namespace parallax::visualization {
             std::optional<foxglove::messages::RawImageChannel> disparity_channel_;
             std::optional<foxglove::messages::RawImageChannel> depth_channel_;
             std::optional<foxglove::messages::PoseInFrameChannel> marker_pose_channel_;
+            std::optional<foxglove::RawChannel> detection_channel_;
 
             std::vector<std::byte> marker_depth_schema_;
             std::vector<std::byte> runtime_telemetry_schema_;
             std::vector<std::byte> request_state_schema_;
             std::vector<std::byte> command_request_schema_;
             std::vector<std::byte> command_response_schema_;
+            std::vector<std::byte> detection_schema_;
             /**
              * Foxglove does not provide a well-known scalar depth message whose
              * semantics match marker depth. Use Foxglove's native RawChannel +

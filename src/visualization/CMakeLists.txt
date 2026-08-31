@@ -27,6 +27,7 @@ target_link_libraries(parallax_visualization
 
     PRIVATE
         PkgConfig::GSTREAMER
+        nlohmann_json::nlohmann_json
 )
 
 target_compile_features(parallax_visualization

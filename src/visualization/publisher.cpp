@@ -1,8 +1,10 @@
 #include <parallax/visualization/publisher.hpp>
 #include <parallax/pose/charuco_pose.hpp>
 #include <opencv4/opencv2/imgproc.hpp>
+#include <parallax/perception/detection.hpp>
 
 #include <cstring>
+#include <nlohmann/json.hpp>
 #include <iostream>
 #include <chrono>
 #include <array>
@@ -55,6 +57,20 @@ namespace parallax::visualization {
                 message.rotation = rotation;
 
                 return message;
+        }
+        
+        const char* sourceIdName(parallax::core::SourceId source) noexcept {
+            switch (source) {
+                case parallax::core::SourceId::StereoCamera:
+                    return "stereo_camera";
+
+                case parallax::core::SourceId::Rplidar:
+                    return "rplidar";
+
+                case parallax::core::SourceId::Unknown:
+                default:
+                    return "unknown";
+            }
         }
     }
 
@@ -205,17 +221,13 @@ namespace parallax::visualization {
                     overlay = marker->payload.get();
                 }
 
-                if (!rgb->completion.valid()) {
-                    return false;
-                }
+                if (!rgb->completion.valid()) return false;
 
                 if (rgb->completion.requires_wait() && !wait_for_host(rgb->completion)) {
                     return false;
                 }
 
-                if (!publishLeftImage(*rgb->payload, overlay)) {
-                    return false;
-                }
+                if (!publishLeftImage(*rgb->payload, overlay)) return false;
             }
         }
 
@@ -229,9 +241,7 @@ namespace parallax::visualization {
             const auto stereo = store.latest<parallax::isp::StereoMatchFrame>(parallax::core::ProductId::Disparity);
 
             if (stereo && stereo->valid()) {
-                if (!stereo->completion.valid()) {
-                    return false;
-                }
+                if (!stereo->completion.valid()) return false;
 
                 if (stereo->completion.requires_wait() && !wait_for_host(stereo->completion)) {
                     return false;
@@ -247,17 +257,13 @@ namespace parallax::visualization {
             const auto depth = store.latest<parallax::isp::DepthFrame>(parallax::core::ProductId::Depth);
 
             if (depth && depth->valid()) {
-                if (!depth->completion.valid()) {
-                    return false;
-                }
+                if (!depth->completion.valid()) return false;
 
                 if (depth->completion.requires_wait() && !wait_for_host(depth->completion)) {
                     return false;
                 }
 
-                if (!publishDepth(*depth->payload)) {
-                    return false;
-                }
+                if (!publishDepth(*depth->payload)) return false;
             }
         }
 
@@ -268,8 +274,26 @@ namespace parallax::visualization {
                 return false;
             }
         }
+
+        if (foxglove_->detectionChannel().hasSinks()) {
+            const auto detections = store.latest<parallax::perception::DetectionSet>(parallax::core::ProductId::Detection);
+            
+            if (detections && detections->valid()) {
+                const bool new_observation = !has_published_detection_ ||
+                                              detections->metadata.observation != last_detection_observation_ ||
+                                              detections->payload->query_revision != last_detection_query_revision_;
+                if (new_observation) {
+                    if (!publishDetections(*detections)) return false;
+
+                    last_detection_observation_ = detections->metadata.observation;
+                    last_detection_query_revision_ = detections->payload->query_revision;
+                    has_published_detection_ = true;
+                }
+            }
+        }
         return true;
     }
+
 
     bool Publisher::publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame,
                                      const parallax::pose::CharucoPoseResult* pose) {
@@ -478,6 +502,44 @@ namespace parallax::visualization {
         return checkFoxglove(foxglove_->lidarScanChannel().log(message), "Failed to publish /lidar/scan");
     }
 
+
+    bool Publisher::publishDetections(const parallax::core::Product<parallax::perception::DetectionSet>& product) {
+        if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload->valid()) {
+            return false;
+        }
+
+        const auto& result = *product.payload;
+
+        nlohmann::json message;
+
+        message["query"] = result.query;
+        message["query_revision"] = result.query_revision;
+        message["detected"] = !result.empty();
+        message["count"] = result.size();
+
+        message["source"] = {{"id", sourceIdName(product.metadata.observation.source)},
+                            {"sequence", product.metadata.observation.sequence}};
+
+        message["detections"] = nlohmann::json::array();
+
+        for (std::size_t i = 0; i < result.size(); ++i) {
+            const auto& box = result.boxes[i];
+
+            message["detections"].push_back({{"label", result.labels[i]},
+                                             {"score", result.scores[i]},
+                                             {"x", box.x},
+                                             {"y", box.y},
+                                             {"width", box.width},
+                                             {"height", box.height}});
+        }
+
+        const std::string serialized = message.dump();
+
+        return checkFoxglove(foxglove_->detectionChannel().log(
+                            reinterpret_cast<const std::byte*>(serialized.data()),
+                            serialized.size()), 
+                            "Failed to publish /perception/detections");
+    }
 
     void Publisher::shutdown() {
         video_encoder_.shutdown();

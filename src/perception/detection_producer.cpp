@@ -38,7 +38,7 @@ namespace parallax::perception {
          * ProductStore remains latest-value storage, so skipped camera
          * generations do not accumulate into a detector queue.
          */
-        policy.target_hz = 5.0;
+        policy.target_hz = 10.0;
         policy.max_input_age_ms = 250.0;
         policy.drop_policy = parallax::core::DropPolicy::Supersede;
         policy.priority = 0;
@@ -72,8 +72,6 @@ namespace parallax::perception {
     }
 
     parallax::core::SubmitResult DetectionProducer::submit(parallax::core::ExecutionContext& context) {
-
-
         std::cerr << "[Detection] submit called query=\"" << query_
                   << "\" revision=" << query_revision_ << '\n';
 

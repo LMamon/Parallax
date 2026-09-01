@@ -6,6 +6,7 @@
 
 #include <string>
 #include <cstdint>
+#include <mutex>
 
 namespace parallax::application {
 
@@ -55,9 +56,7 @@ namespace parallax::application {
         // and shutdown once it owns the controller lifecycle.
         void reset();
 
-        [[nodiscard]] const RequestState& state() const noexcept {
-            return state_;
-        }
+        [[nodiscard]] RequestState state() const;
 
     private:
         void acquire_once(core::ProductId product, bool& owned);
@@ -65,6 +64,7 @@ namespace parallax::application {
 
         
         core::DependencyResolver& resolver_;
+        mutable std::mutex state_mutex_;
         RequestState state_;
         
         // These flags represent demand references owned specifically by this

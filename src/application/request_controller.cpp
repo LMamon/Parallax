@@ -21,6 +21,7 @@ namespace parallax::application {
     }
 
     RequestResult RequestController::apply(const Command& command) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         switch (command.verb) {
             case CommandVerb::MarkerDepth: {
                 acquire_once(core::ProductId::MarkerDepth, marker_depth_demand_owned_);
@@ -81,10 +82,16 @@ namespace parallax::application {
     }
 
     void RequestController::reset() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         release_if_owned(core::ProductId::MarkerDepth, marker_depth_demand_owned_);
         release_if_owned(core::ProductId::Detection, detection_demand_owned_);
         release_if_owned(core::ProductId::Track2D, tracking_demand_owned_);
 
         state_ = {};
+    }
+
+    RequestState RequestController::state() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return state_;
     }
 }

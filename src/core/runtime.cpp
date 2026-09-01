@@ -174,7 +174,7 @@ namespace parallax::core {
                 const auto result = request_controller_.apply(parsed.command);
                 if (result.applied() && foxglove_.requestStateChannel().hasSinks()) {
 
-                    const auto& state = request_controller_.state();
+                    const auto state = request_controller_.state();
 
                     nlohmann::json request_state{{"marker_depth_requested", state.marker_depth_requested},
                                                  {"detection_requested", state.detection_requested},
@@ -274,7 +274,7 @@ namespace parallax::core {
             // DetectionProducer owns the graph-facing detector query state.
             // The foxglove service handler remains control-plane only:
             // it records intent/demand and never calls NanoOWL directly.
-            const auto& request_state = request_controller_.state();
+            const auto request_state = request_controller_.state();
             if (request_state.detection_requested && detection_producer_ && !detection_producer_->setQuery(
                                                                             request_state.detection_target,
                                                                             request_state.detection_query_revision)) {
@@ -383,8 +383,7 @@ namespace parallax::core {
             const auto telemetry_now = std::chrono::steady_clock::now();
 
             if (foxglove_.runtimeTelemetryChannel().hasSinks() &&
-                telemetry_now - last_telemetry_publish_ >=
-                std::chrono::seconds(1)) {
+                telemetry_now - last_telemetry_publish_ >= std::chrono::seconds(1)) {
 
                 nlohmann::json message;
 

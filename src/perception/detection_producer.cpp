@@ -49,9 +49,7 @@ namespace parallax::perception {
     }
 
     bool DetectionProducer::setQuery(const std::string& query, std::uint64_t revision) {
-        if (query.empty() || revision == 0) {
-            return false;
-        }
+        if (query.empty() || revision == 0) return false;
 
         if (query == query_ && revision == query_revision_) return true;
 

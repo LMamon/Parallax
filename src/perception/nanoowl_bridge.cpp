@@ -8,6 +8,7 @@
 #include <pybind11/embed.h>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <iostream>
@@ -24,6 +25,10 @@ namespace parallax::perception {
 
             py::scoped_interpreter interpreter;
             py::object detector;
+
+            std::uint64_t query_revision = 0;
+            std::uint64_t query_encoding_count = 0;
+            double last_predict_ms = 0.0;
     };
 
     NanoOwlBridge::NanoOwlBridge() = default;
@@ -60,13 +65,14 @@ namespace parallax::perception {
     }
 
     bool NanoOwlBridge::setQuery(const std::string& query, std::uint64_t revision) {
-        if (!initialized_ || !impl_) {
-            return false;
-        }
+        if (!initialized_ || !impl_) return false;
 
         try {
             py::gil_scoped_acquire gil;
             impl_->detector.attr("set_query")(query, revision);
+
+            impl_->query_revision = revision;
+            impl_->query_encoding_count = impl_->detector.attr("query_encoding_count").cast<std::uint64_t>();
 
             return true;
         } catch (
@@ -106,7 +112,11 @@ namespace parallax::perception {
                                         {row_stride, pixel_stride, channel_stride},
                                         options);
 
+            const auto predict_start = std::chrono::steady_clock::now();
             py::object result = impl_->detector.attr("predict_rgb8")(rgb, 0.1F);
+
+            const auto predict_end = std::chrono::steady_clock::now();
+            impl_->last_predict_ms = std::chrono::duration<double, std::milli>(predict_end - predict_start).count();
 
             detections = {};
             detections.query = result.attr("query").cast<std::string>();
@@ -171,6 +181,17 @@ namespace parallax::perception {
 
             return false;
         }
+    }
+
+    NanoOwlMetrics NanoOwlBridge::metrics() const noexcept {
+        if (!impl_) return {};
+
+        NanoOwlMetrics metrics;
+        metrics.query_revision = impl_->query_revision;
+        metrics.query_encoding_count = impl_->query_encoding_count;
+        metrics.last_predict_ms = impl_->last_predict_ms;
+
+        return metrics;
     }
 
     void NanoOwlBridge::shutdown() noexcept {

@@ -12,6 +12,13 @@
 
 namespace parallax::perception {
 
+    struct NanoOwlMetrics {
+        std::uint64_t query_revision = 0;
+        std::uint64_t query_encoding_count = 0;
+        double last_predict_ms = 0.0;
+
+    };
+
     class NanoOwlBridge {
         public:
             NanoOwlBridge();
@@ -32,14 +39,16 @@ namespace parallax::perception {
              * Only compact detection metadata crosses back to host memory.
              */
             bool predict(const parallax::isp::StereoRgbFrame& frame,
-                        cudaStream_t stream,
-                        DetectionSet& detections);
+                         cudaStream_t stream,
+                         DetectionSet& detections);
 
             void shutdown() noexcept;
 
             [[nodiscard]] bool initialized() const noexcept {
                 return initialized_;
             }
+
+            [[nodiscard]] NanoOwlMetrics metrics() const noexcept;
 
         private:
             class Impl;

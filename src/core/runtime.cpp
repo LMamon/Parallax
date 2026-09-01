@@ -344,7 +344,6 @@ namespace parallax::core {
                 }
             }
 
-
             if (frame_failed) {
                 if (++failed_frames >= 10) {
                     std::cerr << "Runtime: graph failed to produce a valid frame\n";
@@ -405,6 +404,13 @@ namespace parallax::core {
                 }
 
                 const auto& metrics = runtime_metrics();
+
+                if (nanoowl_) {
+                    const auto detector_metrics = nanoowl_->metrics();
+                    message["detection"] = {{"query_revision", detector_metrics.query_revision},
+                                            {"query_encoding_count", detector_metrics.query_encoding_count},
+                                            {"last_predict_ms", detector_metrics.last_predict_ms}};
+                }
 
                 message["resources"] = {{"cuda_allocations", metrics.cuda_allocations.load()},
                                         {"cuda_allocated_bytes", metrics.cuda_allocated_bytes.load()},

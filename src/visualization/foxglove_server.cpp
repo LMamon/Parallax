@@ -320,7 +320,9 @@ namespace parallax::visualization {
             return false;
         }
         detection_channel_.emplace(std::move(detections.value()));
-
+        // every graph backed channel gets bindProduct(...)
+        
+        bindProduct(detection_channel_->id(), ProductId::Detection);
         return true;
     }
 

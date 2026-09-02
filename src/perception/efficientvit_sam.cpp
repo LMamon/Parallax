@@ -1,7 +1,10 @@
 #include <parallax/perception/efficientvit_sam.hpp>
 
 #include <NvInfer.h>
+#include <cuda_runtime.h>
 
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -22,6 +25,43 @@ namespace parallax::perception {
         };
 
         TensorRtLogger g_logger;
+        class DeviceBuffer {
+            public:
+                DeviceBuffer() = default;
+                ~DeviceBuffer() { release(); }
+
+                DeviceBuffer(const DeviceBuffer&) = delete;
+                DeviceBuffer& operator=(const DeviceBuffer&) = delete;
+
+                bool allocate(std::size_t bytes) {
+                    release();
+
+                    if (bytes == 0) return false;
+
+                    if (cudaMalloc(&data_, bytes) != cudaSuccess) {
+                        data_ = nullptr;
+                        bytes_ = 0;
+                        return false;
+                    }
+
+                    bytes_ = bytes;
+                    return true;
+                }
+
+                void release() noexcept {
+                    if (data_) cudaFree(data_);
+
+                    data_ = nullptr;
+                    bytes_ = 0;
+                }
+
+                [[nodiscard]] void* data() noexcept { return data_; }
+                [[nodiscard]] std::size_t bytes() const noexcept { return bytes_; }
+
+            private:
+                void* data_ = nullptr;
+                std::size_t bytes_ = 0;
+        };
 
         std::vector<char> read_file(const std::filesystem::path& path) {
             std::ifstream file(path, std::ios::binary | std::ios::ate);
@@ -158,6 +198,39 @@ namespace parallax::perception {
                            {1, 1});
         }
 
+        EfficientVitSamGeometry make_geometry(std::uint32_t width, std::uint32_t height) {
+            const auto longest = static_cast<float>(std::max(width, height));
+
+            const float encoder_scale = 512.0F / longest;
+            const float prompt_scale = 1024.0F / longest;
+
+            EfficientVitSamGeometry geometry{};
+
+            geometry.original_width = static_cast<int>(width);
+            geometry.original_height = static_cast<int>(height);
+
+            geometry.encoder_width = static_cast<int>(static_cast<float>(width) * encoder_scale + 0.5F);
+            geometry.encoder_height = static_cast<int>(static_cast<float>(height) * encoder_scale + 0.5F);
+
+            geometry.prompt_width = static_cast<int>(static_cast<float>(width) * prompt_scale + 0.5F);
+            geometry.prompt_height = static_cast<int>(static_cast<float>(height) * prompt_scale + 0.5F);
+
+            return geometry;
+        }
+
+        constexpr std::size_t float_bytes(std::size_t count) {
+            return count * sizeof(float);
+        }
+
+        bool bind_tensor(nvinfer1::IExecutionContext& context, const char* name, void* address) {
+            if (!address) return false;
+
+            if (!context.setTensorAddress(name, address)) {
+                std::cerr << "failed to bind TensorRT tensor: " << name << '\n';
+                return false;
+            }
+            return true;
+        }
     }
 
 
@@ -192,6 +265,9 @@ namespace parallax::perception {
                         throw std::runtime_error("failed to create TensorRT execution contexts");
                     }
 
+                    if (!allocate_buffers()) throw std::runtime_error("failed to allocate EfficientViT-SAM device buffers");
+                    if (!bind_buffers()) throw std::runtime_error("failed to bind EfficientViT-SAM device buffers");
+
                     return true;
                 }
                 catch (const std::exception& error) {
@@ -213,6 +289,27 @@ namespace parallax::perception {
                 metrics_ = {};
             }
 
+            bool allocate_buffers() {
+                return encoder_input_.allocate(float_bytes(3ULL * 512ULL * 512ULL)) &&
+                       image_embeddings_.allocate(float_bytes(256ULL * 64ULL * 64ULL)) &&
+                       point_coords_.allocate(float_bytes(4)) &&
+                       point_labels_.allocate(float_bytes(2)) &&
+                       low_res_mask_.allocate(float_bytes(256ULL * 256ULL)) &&
+                       iou_prediction_.allocate(float_bytes(1));
+            }
+
+            bool bind_buffers() {
+                return bind_tensor(*encoder_context_, "input_image", encoder_input_.data()) &&
+                       bind_tensor(*encoder_context_, "image_embeddings", image_embeddings_.data()) &&
+                       bind_tensor(*decoder_context_, "image_embeddings", image_embeddings_.data()) &&
+                       bind_tensor(*decoder_context_, "point_coords", point_coords_.data()) &&
+                       bind_tensor(*decoder_context_, "point_labels", point_labels_.data()) &&
+                       bind_tensor(*decoder_context_, "masks", low_res_mask_.data()) &&
+                       bind_tensor(*decoder_context_, "iou_predictions", iou_prediction_.data());
+            }
+
+
+
             EfficientVitSamMetrics metrics() const noexcept { return metrics_; }
 
         private:
@@ -225,6 +322,15 @@ namespace parallax::perception {
             std::unique_ptr<nvinfer1::IExecutionContext> decoder_context_;
 
             EfficientVitSamMetrics metrics_{};
+
+            DeviceBuffer encoder_input_;
+            DeviceBuffer image_embeddings_;
+
+            DeviceBuffer point_coords_;
+            DeviceBuffer point_labels_;
+
+            DeviceBuffer low_res_mask_;
+            DeviceBuffer iou_prediction_;
     };
 
 
@@ -240,10 +346,28 @@ namespace parallax::perception {
         return initialized_;
     }
 
+    bool EfficientVitSam::segment(const parallax::isp::StereoRgbFrame& frame, 
+                                  const cv::Rect2f& box, cudaStream_t stream,
+                                  EfficientVitSamResult&) {
 
-    bool EfficientVitSam::segment(const parallax::isp::StereoRgbFrame&, const cv::Rect2f&, cudaStream_t, EfficientVitSamResult&) {
-        // Inference is added after engine lifecycle and tensor
-        // contracts have been validated independently.
+        if (!initialized_ || !impl_ || stream == nullptr || !frame.left.isAllocated()) {
+            return false;
+        }
+
+        if (frame.width == 0 || frame.height == 0 || frame.left.channels() != 3 || frame.left.elementSize() != 1) {
+            return false;
+        }
+
+        if (box.width <= 0.0F || box.height <= 0.0F) {
+            return false;
+        }
+
+        const auto geometry = make_geometry(frame.width, frame.height);
+
+        if (geometry.encoder_width <= 0 || geometry.encoder_height <= 0 || geometry.prompt_width <= 0 || geometry.prompt_height <= 0) {
+            return false;
+        }
+
         return false;
     }
 

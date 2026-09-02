@@ -9,6 +9,7 @@ CMakeFiles
 
 *.md
 *.png
+*.jpg
 *.npy
 
 *.engine

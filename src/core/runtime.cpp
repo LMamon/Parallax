@@ -115,7 +115,7 @@ namespace parallax::core {
 
         graph_.finalize();
 
-        configure_ordered_history(graph_, context_.products());
+        configure_product_history(graph_, context_.products());
 
         /**
          * Persistent perception-service demand.

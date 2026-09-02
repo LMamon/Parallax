@@ -334,9 +334,7 @@ namespace parallax::perception {
             DeviceBuffer iou_prediction_;
     };
 
-
     EfficientVitSam::EfficientVitSam() : impl_(std::make_unique<Impl>()) {}
-
 
     EfficientVitSam::~EfficientVitSam() { shutdown(); }
     bool EfficientVitSam::initialize(const std::filesystem::path& encoder_engine, const std::filesystem::path& decoder_engine) {

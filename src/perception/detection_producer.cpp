@@ -95,10 +95,6 @@ namespace parallax::perception {
             return parallax::core::SubmitResult::Failed;
         }
 
-        if (!detector_.predict(*input->payload, stream, *detections)) {
-            return parallax::core::SubmitResult::Failed;
-        }
-
         // NanoOWL boxes address the ISP-left RGB pixels consumed for inference.
         detections->image_space = ImageSpace::RgbLeft;
 

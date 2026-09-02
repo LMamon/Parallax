@@ -18,6 +18,11 @@ namespace parallax::core {
         ProductId product{};
         std::size_t history_capacity = 0;
     };
+
+    struct CompatibleInputRequirement {
+        ProductId product{};
+        std::size_t history_capacity = 0;
+    };
     /**
      * Contract for a computation that produces named products facing the graph.
      *
@@ -45,6 +50,12 @@ namespace parallax::core {
              */
             [[nodiscard]] virtual const std::vector<OrderedInputRequirement>&ordered_inputs() const noexcept {
                 static const std::vector<OrderedInputRequirement> none;
+                return none;
+            }
+
+            [[nodiscard]] virtual const std::vector<CompatibleInputRequirement>&
+            compatible_inputs() const noexcept {
+                static const std::vector<CompatibleInputRequirement> none;
                 return none;
             }
             // Execution characteristics are declared separately from graph dependencies.

@@ -34,8 +34,7 @@ namespace parallax::perception {
     NanoOwlBridge::NanoOwlBridge() = default;
     NanoOwlBridge::~NanoOwlBridge() { shutdown(); }
 
-    bool NanoOwlBridge::initialize(
-        const std::filesystem::path& engine_path) {
+    bool NanoOwlBridge::initialize(const std::filesystem::path& engine_path) {
         if (initialized_) return true;
 
         if (!std::filesystem::is_regular_file(engine_path)) return false;

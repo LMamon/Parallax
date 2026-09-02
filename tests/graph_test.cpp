@@ -542,7 +542,7 @@ namespace parallax::core {
             graph.register_producer(producer);
             graph.finalize();
 
-            configure_ordered_history(graph, store);
+            configure_product_history(graph, store);
             EXPECT_EQ(store.history_capacity(ProductId::Depth), 4);
         }
 
@@ -557,7 +557,7 @@ namespace parallax::core {
             graph.register_producer(second);
             graph.finalize();
 
-            configure_ordered_history(graph, store);
+            configure_product_history(graph, store);
 
             EXPECT_EQ(store.history_capacity(ProductId::Depth), 12);
         }
@@ -577,7 +577,7 @@ namespace parallax::core {
             graph.register_producer(ordered_consumer);
             graph.finalize();
 
-            configure_ordered_history(graph, store);
+            configure_product_history(graph, store);
 
             EXPECT_EQ(store.history_capacity(ProductId::Depth), 4);
 

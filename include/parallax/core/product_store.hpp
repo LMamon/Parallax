@@ -15,14 +15,9 @@
 #include <vector>
 
 namespace parallax::core {
-    /**
-     * Freshness answers only one question:
-     *
-     *     Is this product recent enough to still be useful?
-     *
-     * Source identity and frame association are compatibility concerns and
-     * intentionally do not belong here.
-     */
+    
+    // Source identity and frame association are compatibility concerns and
+    // intentionally do not belong here.
     struct FreshnessConstraint {
         std::optional<std::chrono::steady_clock::duration> max_age{};
     };
@@ -110,7 +105,7 @@ namespace parallax::core {
 
             // a capacity of 0 disables history for the ProductId.
             void set_history_capacity(ProductId, std::size_t capacity);
-            
+        
             [[nodiscard]] std::size_t history_capacity(ProductId id) const noexcept;
 
             template <typename T>[[nodiscard]] std::vector<std::shared_ptr<const Product<T>>> history(ProductId id) const {
@@ -130,6 +125,31 @@ namespace parallax::core {
                     result.push_back(std::static_pointer_cast<const Product<T>>(entry.product));
                 }
                 return result;
+            }
+
+            template <typename T> [[nodiscard]] std::shared_ptr<const Product<T>> find_observation(
+                                                                                  ProductId id,
+                                                                                  const SourceObservation& observation) const {
+
+                std::shared_lock lock(mutex_);
+
+                // Latest-value storage may already hold the requested observation.
+                const auto latest_product = latest_unlocked<T>(id);
+                if (latest_product && latest_product->metadata.observation == observation) {
+                    return latest_product;
+                }
+
+                const auto it = histories_.find(id);
+                if (it == histories_.end()) return {};
+
+                for (const auto& entry : it->second.entries) {
+                    if (entry.type != std::type_index(typeid(T))) return {};
+
+                    const auto product = std::static_pointer_cast<const Product<T>>(entry.product);
+
+                    if (product && product->metadata.observation == observation) return product;
+                }
+                return {};
             }
 
             template <typename T> [[nodiscard]] std::shared_ptr<const Product<T>> next_after(ProductId id,

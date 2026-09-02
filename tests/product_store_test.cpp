@@ -14,6 +14,12 @@ namespace parallax::core {
         using Clock = std::chrono::steady_clock;
         using TestPayload = int;
 
+        using parallax::core::ProductId;
+        using parallax::core::ProductMetadata;
+        using parallax::core::ProductStore;
+        using parallax::core::SourceId;
+        using parallax::core::SourceObservation;
+
         /**
          * Simple CPU payload for testing ProductStore semantics.
          *
@@ -331,7 +337,6 @@ namespace parallax::core {
             EXPECT_EQ(next, nullptr);
         }
 
-
         TEST(ProductStoreTest, NextAfterReturnsNullWhenNoNewerObservationIsRetained) {
             ProductStore store;
             const auto now = Clock::now();
@@ -346,6 +351,85 @@ namespace parallax::core {
             const auto next = store.next_after<TestPayload>(ProductId::Depth, consumed);
 
             EXPECT_EQ(next, nullptr);
+        }
+
+        TEST(ProductStoreTest, FindObservationReturnsExactRetainedGeneration) {
+            ProductStore store;
+            store.set_history_capacity(ProductId::RgbLeft, 3);
+
+            for (std::uint64_t sequence = 40; sequence <= 42; ++sequence) {
+                ProductMetadata metadata{};
+                metadata.observation = SourceObservation{SourceId::StereoCamera, sequence};
+                metadata.valid = true;
+
+                std::shared_ptr<const int> payload = std::make_shared<int>(static_cast<int>(sequence));
+
+                store.publish(parallax::core::make_product<int>(ProductId::RgbLeft,
+                                                           metadata,
+                                                           std::move(payload)));
+            }
+
+            const auto found = store.find_observation<int>(ProductId::RgbLeft, SourceObservation{SourceId::StereoCamera, 41});
+
+            ASSERT_NE(found, nullptr);
+            EXPECT_EQ(found->metadata.observation.source, SourceId::StereoCamera);
+            EXPECT_EQ(found->metadata.observation.sequence, 41U);
+            ASSERT_NE(found->payload, nullptr);
+            EXPECT_EQ(*found->payload, 41);
+        }
+
+        TEST(ProductStoreTest, FindObservationCanReturnCurrentGenerationWithoutHistory) {
+            ProductStore store;
+
+            ProductMetadata metadata{};
+            metadata.observation = SourceObservation{SourceId::StereoCamera, 52};
+            metadata.valid = true;
+
+            store.publish(parallax::core::make_product<int>(ProductId::RgbLeft,
+                                                       metadata,
+                                                       std::make_shared<int>(52)));
+
+            const auto found = store.find_observation<int>(ProductId::RgbLeft,
+                                                           SourceObservation{SourceId::StereoCamera, 52});
+
+            ASSERT_NE(found, nullptr);
+            EXPECT_EQ(found->metadata.observation.sequence, 52U);
+            EXPECT_EQ(*found->payload, 52);
+        }
+
+        TEST(ProductStoreTest, FindObservationRejectsDifferentSource) {
+            ProductStore store;
+            store.set_history_capacity(ProductId::RgbLeft, 2);
+
+            ProductMetadata metadata{};
+            metadata.observation = SourceObservation{SourceId::StereoCamera, 60};
+            metadata.valid = true;
+
+            store.publish(parallax::core::make_product<int>(ProductId::RgbLeft,
+                                                       metadata,
+                                                       std::make_shared<int>(60)));
+
+            const auto found = store.find_observation<int>(ProductId::RgbLeft, SourceObservation{SourceId::Rplidar, 60});
+
+            EXPECT_EQ(found, nullptr);
+        }
+
+        TEST(ProductStoreTest, FindObservationFailsAfterGenerationLeavesBoundedHistory) {
+            ProductStore store;
+            store.set_history_capacity(ProductId::RgbLeft, 2);
+
+            for (std::uint64_t sequence = 70; sequence <= 72; ++sequence) {
+                ProductMetadata metadata{};
+                metadata.observation = SourceObservation{SourceId::StereoCamera, sequence};
+                metadata.valid = true;
+
+                store.publish(parallax::core::make_product<int>(ProductId::RgbLeft,
+                                                           metadata,
+                                                           std::make_shared<int>(static_cast<int>(sequence))));
+            }
+
+            const auto found = store.find_observation<int>(ProductId::RgbLeft, SourceObservation{SourceId::StereoCamera, 70});
+            EXPECT_EQ(found, nullptr);
         }
     }
 } 

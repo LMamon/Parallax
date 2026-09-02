@@ -39,44 +39,16 @@ RUN chsh -s /usr/bin/zsh root
 # NanoOWL detector stack.
 COPY --from=nanoowl /opt/nanoowl /opt/nanoowl
 COPY --from=nanoowl /opt/torch2trt /opt/torch2trt
-
 COPY --from=nanoowl \
     /usr/local/lib/python3.10/dist-packages \
     /usr/local/lib/python3.10/dist-packages
 
-# TensorRT 10.4 userspace used by the detector.
-COPY --from=nanoowl \
-    /usr/lib/aarch64-linux-gnu/libnvinfer.so.10 \
-    /usr/lib/aarch64-linux-gnu/libnvinfer.so.10
-
-COPY --from=nanoowl \
-    /usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.10 \
-    /usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.10
-
-COPY --from=nanoowl \
-    /usr/lib/aarch64-linux-gnu/libnvinfer_lean.so.10 \
-    /usr/lib/aarch64-linux-gnu/libnvinfer_lean.so.10
-
-COPY --from=nanoowl \
-    /usr/lib/aarch64-linux-gnu/libnvinfer_dispatch.so.10 \
-    /usr/lib/aarch64-linux-gnu/libnvinfer_dispatch.so.10
-
-COPY --from=nanoowl \
-    /usr/lib/aarch64-linux-gnu/libnvinfer_vc_plugin.so.10 \
-    /usr/lib/aarch64-linux-gnu/libnvinfer_vc_plugin.so.10
-
-COPY --from=nanoowl \
-    /usr/lib/aarch64-linux-gnu/do_not_link_against_nvinfer_builder_resource \
-    /usr/lib/aarch64-linux-gnu/do_not_link_against_nvinfer_builder_resource
-
-COPY --from=nanoowl \
-    /usr/include/aarch64-linux-gnu/NvInfer.h \
-    /usr/include/aarch64-linux-gnu/NvInfer.h
-
+# TensorRT 10.4 SDK used by perception backends.
 COPY --from=nanoowl /usr/src/tensorrt /opt/tensorrt-10.4
 
-ENV CUDA_HOME=/usr/local/cuda
-ENV LD_LIBRARY_PATH=/opt/tensorrt-10.4/lib:${LD_LIBRARY_PATH}
-ENV PYTHONPATH=/workspace/Parallax/python:/opt/nanoowl:/opt/torch2trt
+ENV TENSORRT_ROOT=/opt/tensorrt-10.4 \
+    CUDA_HOME=/usr/local/cuda \
+    LD_LIBRARY_PATH=/opt/tensorrt-10.4/targets/aarch64-linux-gnu/lib:/usr/local/cuda/lib64:${LD_LIBRARY_PATH} \
+    PYTHONPATH=/workspace/Parallax/python:/opt/nanoowl:/opt/torch2trt
 
 RUN ldconfig

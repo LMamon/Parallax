@@ -27,6 +27,17 @@ add_executable(parallax_detection_test
     detection_test.cpp
 )
 
+add_executable(parallax_segmentation_test
+    segmentation_test.cpp
+)
+
+target_link_libraries(parallax_segmentation_test
+    PRIVATE
+        parallax_core
+        parallax_perception
+        GTest::gtest_main
+)
+
 target_link_libraries(parallax_detection_test
     PRIVATE
         parallax_core
@@ -79,3 +90,4 @@ gtest_discover_tests(parallax_graph_test)
 gtest_discover_tests(parallax_runtime_metrics_test)
 gtest_discover_tests(parallax_request_controller_test)
 gtest_discover_tests(parallax_detection_test)
+gtest_discover_tests(parallax_segmentation_test)

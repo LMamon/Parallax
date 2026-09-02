@@ -27,6 +27,7 @@ namespace parallax::core {
         Projection,
         MarkerDepth,
         Detection,
+        Segmentation,
         Track2D,
         Track3D,
         LidarScan

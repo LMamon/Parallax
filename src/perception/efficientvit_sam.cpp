@@ -1,5 +1,5 @@
 #include <parallax/perception/efficientvit_sam.hpp>
-
+#include <parallax/perception/efficientvit_sam_cuda.hpp>
 #include <NvInfer.h>
 #include <cuda_runtime.h>
 
@@ -233,7 +233,6 @@ namespace parallax::perception {
         }
     }
 
-
     class EfficientVitSam::Impl {
         public:
             ~Impl() { shutdown(); }
@@ -308,9 +307,11 @@ namespace parallax::perception {
                        bind_tensor(*decoder_context_, "iou_predictions", iou_prediction_.data());
             }
 
-
-
             EfficientVitSamMetrics metrics() const noexcept { return metrics_; }
+
+            void* encoder_input() noexcept { return encoder_input_.data(); }
+            void* point_coords() noexcept { return point_coords_.data(); }
+            void* point_labels() noexcept { return point_labels_.data(); }
 
         private:
             std::unique_ptr<nvinfer1::IRuntime> runtime_;
@@ -368,19 +369,43 @@ namespace parallax::perception {
             return false;
         }
 
+        if (!preprocess_efficientvit_sam(static_cast<const std::uint8_t*>(frame.left.data()),
+                                         frame.left.pitch(),
+                                         geometry.original_width,
+                                         geometry.original_height,
+                                         static_cast<float*>(impl_->encoder_input()),
+                                         geometry.encoder_width,
+                                         geometry.encoder_height,
+                                         stream)) {
+
+            return false;
+        }
+
+        if (!prepare_efficientvit_sam_box(box.x,
+                                          box.y,
+                                          box.x + box.width,
+                                          box.y + box.height,
+                                          geometry.original_width,
+                                          geometry.original_height,
+                                          geometry.prompt_width,
+                                          geometry.prompt_height,
+                                          static_cast<float*>(impl_->point_coords()),
+                                          static_cast<float*>(impl_->point_labels()),
+                                          stream)) {
+
+            return false;
+        }
         return false;
     }
-
 
     void EfficientVitSam::shutdown() noexcept {
         if (impl_) impl_->shutdown();
         initialized_ = false;
     }
 
-
     EfficientVitSamMetrics EfficientVitSam::metrics() const noexcept {
         if (!impl_) return {};
-
         return impl_->metrics();
     }
+
 }

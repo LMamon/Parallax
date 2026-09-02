@@ -4,6 +4,7 @@
 #include <parallax/core/product.hpp>
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/perception/detection.hpp>
+#include <parallax/perception/image_space.hpp>
 
 #include <chrono>
 #include <memory>
@@ -94,6 +95,13 @@ namespace parallax::perception {
             return parallax::core::SubmitResult::Failed;
         }
 
+        if (!detector_.predict(*input->payload, stream, *detections)) {
+            return parallax::core::SubmitResult::Failed;
+        }
+
+        // NanoOWL boxes address the ISP-left RGB pixels consumed for inference.
+        detections->image_space = ImageSpace::RgbLeft;
+
         /*
          * Reject a result whose query identity no longer matches the producer's
          * active query. This becomes important once query replacement is wired
@@ -118,4 +126,5 @@ namespace parallax::perception {
 
         return parallax::core::SubmitResult::Submitted;
     }
+
 }

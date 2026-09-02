@@ -1,5 +1,6 @@
 #pragma once
 
+#include <parallax/perception/image_space.hpp>
 #include <opencv2/core/types.hpp>
 
 #include <cstdint>
@@ -13,6 +14,7 @@ namespace parallax::perception {
     struct DetectionSet {
         std::string query;
         std::uint64_t query_revision = 0;
+        ImageSpace image_space = ImageSpace::Unknown;
 
         std::vector<cv::Rect2f> boxes;
         std::vector<float> scores;
@@ -21,6 +23,7 @@ namespace parallax::perception {
         [[nodiscard]] bool valid() const noexcept {
             return !query.empty() &&
                    query_revision != 0 &&
+                   image_space != ImageSpace::Unknown &&
                    boxes.size() == scores.size() &&
                    scores.size() == labels.size();
         }

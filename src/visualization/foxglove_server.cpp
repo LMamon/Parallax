@@ -186,7 +186,7 @@ namespace parallax::visualization {
 
         transform_channel_.emplace(std::move(transforms.value()));
 
-        auto left_image = foxglove::messages::CompressedVideoChannel::create( "/camera/left/image", context_);
+        auto left_image = foxglove::messages::CompressedVideoChannel::create("/camera/left/image", context_);
         if (!left_image.has_value()) {
             std::cerr << "Failed to create /camera/left/image channel: "
                       << foxglove::strerror(left_image.error()) << '\n';
@@ -209,7 +209,6 @@ namespace parallax::visualization {
          * Calibration is startup/static configuration rather than a graph product,
          * so it intentionally has no ProductId association.
          */
-
         auto disparity = foxglove::messages::RawImageChannel::create("/stereo/disparity", context_);
         if (!disparity.has_value()) {
             std::cerr << "Failed to create /stereo/disparity channel: "
@@ -320,9 +319,37 @@ namespace parallax::visualization {
             return false;
         }
         detection_channel_.emplace(std::move(detections.value()));
+        bindProduct(detection_channel_->id(), ProductId::Detection);
+
+        /**
+         * Detection visualization uses Foxglove's native ImageAnnotations schema
+         * rather than rasterizing rectangles into another full-frame image.
+         *
+         * Both detection channels observe the same compact ProductId::Detection.
+         * Subscribing to either channel may therefore contribute normal
+         * FoxgloveSubscriber demand without introducing a detector-specific
+         * execution trigger.
+         *
+         * Coordinate-space note:
+         * NanoOWL currently consumes RgbLeft while /camera/left/image is RectifiedRgb.
+         * These annotations therefore describe the detector's source-image pixels.
+         * Do not claim geometric alignment with the rectified image until a matching
+         * image-space consumer or explicit coordinate transform is introduced.
+         */
+        auto detection_annotations = foxglove::messages::ImageAnnotationsChannel::create(
+                                                                                "/perception/annotations",
+                                                                                context_);
+
+        if (!detection_annotations.has_value()) {
+            std::cerr << "Failed to create /perception/annotations channel: "
+                      << foxglove::strerror(detection_annotations.error()) << '\n';
+
+            return false;
+        }
+        detection_annotations_channel_.emplace(std::move(detection_annotations.value()));
+        bindProduct(detection_annotations_channel_->id(), ProductId::Detection);
         // every graph backed channel gets bindProduct(...)
         
-        bindProduct(detection_channel_->id(), ProductId::Detection);
         return true;
     }
 
@@ -499,6 +526,16 @@ namespace parallax::visualization {
             request_state_channel_.reset();
         }
 
+        if (detection_annotations_channel_) {
+            detection_annotations_channel_->close();
+            detection_annotations_channel_.reset();
+        }
+
+        if (detection_channel_) {
+            detection_channel_->close();
+            detection_channel_.reset();
+        }
+
         if (server_) {
             server_->stop();
             server_.reset();
@@ -509,7 +546,8 @@ namespace parallax::visualization {
         command_request_schema_.clear();
         command_response_schema_.clear();
         request_state_schema_.clear();
-
+        detection_schema_.clear();
+        
         releaseOutstandingDemand();
         {
             std::lock_guard<std::mutex> lock(subscription_mutex_);

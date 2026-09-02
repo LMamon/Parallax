@@ -60,6 +60,7 @@ namespace parallax::visualization {
             bool publishDisparity(const parallax::isp::StereoMatchFrame& frame);
             bool publishLidarScan(const parallax::lidar::LidarScan& scan);
             bool publishDetections(const parallax::core::Product<parallax::perception::DetectionSet>& product);
+            bool publishDetectionAnnotations(const parallax::core::Product<parallax::perception::DetectionSet>& product);
 
             VideoEncoder video_encoder_;
             cudaStream_t stream_ = nullptr;
@@ -78,7 +79,11 @@ namespace parallax::visualization {
             std::uint32_t height_ = 0;
             std::uint32_t fps_ = 0;
 
+            parallax::core::SourceObservation last_detection_annotation_observation_{};
+            std::uint64_t last_detection_annotation_query_revision_ = 0;
+            bool has_published_detection_annotation_ = false;
 
+            // detections and annotations are different
             parallax::core::SourceObservation last_detection_observation_{};
             std::uint64_t last_detection_query_revision_ = 0;
             bool has_published_detection_ = false;

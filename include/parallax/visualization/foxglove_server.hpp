@@ -87,9 +87,7 @@ namespace parallax::visualization {
              * Calibration and any other non-graph configuration channels are
              * intentionally absent from this association.
              */
-            [[nodiscard]]
-            std::optional<parallax::core::ProductId>
-            productForChannel(std::uint64_t channel_id) const noexcept;
+            [[nodiscard]] std::optional<parallax::core::ProductId> productForChannel(std::uint64_t channel_id) const noexcept;
 
             [[nodiscard]] foxglove::messages::CompressedVideoChannel& leftImageChannel() noexcept {
                 return *left_image_channel_;
@@ -135,6 +133,10 @@ namespace parallax::visualization {
                 return *detection_channel_;
             }
 
+            [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& detectionAnnotationsChannel() noexcept {
+                return *detection_annotations_channel_;
+            }
+
         private:
             bool initializeChannels();
             void bindProduct(std::uint64_t channel_id, parallax::core::ProductId product);
@@ -167,6 +169,7 @@ namespace parallax::visualization {
             std::optional<foxglove::messages::RawImageChannel> depth_channel_;
             std::optional<foxglove::messages::PoseInFrameChannel> marker_pose_channel_;
             std::optional<foxglove::RawChannel> detection_channel_;
+            std::optional<foxglove::messages::ImageAnnotationsChannel> detection_annotations_channel_;
 
             std::vector<std::byte> marker_depth_schema_;
             std::vector<std::byte> runtime_telemetry_schema_;

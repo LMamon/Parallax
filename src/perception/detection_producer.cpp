@@ -39,7 +39,7 @@ namespace parallax::perception {
          * generations do not accumulate into a detector queue.
          */
         policy.target_hz = 10.0;
-        policy.max_input_age_ms = 250.0;
+        policy.max_input_age_ms = 0.0;
         policy.drop_policy = parallax::core::DropPolicy::Supersede;
         policy.priority = 0;
         policy.affinity = parallax::core::ResourceAffinity::Gpu;

@@ -333,8 +333,9 @@ namespace parallax::core {
 
                 if (result == SubmitResult::NoWork) {
                     ++stats.no_work;
-                    frame_failed = true;
-                    break;
+                    // frame_failed = true;
+                    // break;
+                    continue;
                 }
 
                 ++stats.submitted;

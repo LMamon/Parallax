@@ -3,9 +3,11 @@
 #include <opencv4/opencv2/imgproc.hpp>
 #include <parallax/perception/detection.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <nlohmann/json.hpp>
 #include <iostream>
+#include <sstream>
 #include <chrono>
 #include <array>
 #include <iomanip>
@@ -291,6 +293,25 @@ namespace parallax::visualization {
                 }
             }
         }
+
+        if (foxglove_->detectionAnnotationsChannel().hasSinks()) {
+            const auto detections = store.latest<parallax::perception::DetectionSet>(parallax::core::ProductId::Detection);
+
+            if (detections && detections->valid()) {
+                const bool new_annotation = !has_published_detection_annotation_ ||
+                                            detections->metadata.observation != last_detection_annotation_observation_ ||
+                                            detections->payload->query_revision != last_detection_annotation_query_revision_;
+
+                if (new_annotation) {
+                    if (!publishDetectionAnnotations(*detections)) return false;
+                    
+                    last_detection_annotation_observation_ = detections->metadata.observation;
+                    last_detection_annotation_query_revision_ = detections->payload->query_revision;
+                    has_published_detection_annotation_ = true;
+                }
+            }
+        }
+
         return true;
     }
 
@@ -539,6 +560,145 @@ namespace parallax::visualization {
                             reinterpret_cast<const std::byte*>(serialized.data()),
                             serialized.size()), 
                             "Failed to publish /perception/detections");
+    }
+
+    bool Publisher::publishDetectionAnnotations(const parallax::core::Product<parallax::perception::DetectionSet>& product) {
+        if (!initialized_ || foxglove_ == nullptr
+            || !product.valid() || !product.payload->valid()) {
+
+            return false;
+        }
+
+        const auto& detections = *product.payload;
+        foxglove::messages::ImageAnnotations message;
+
+        /*
+        * ProductMetadata uses the application's steady-clock observation domain,
+        * not Unix epoch time, so it cannot be copied into Foxglove Timestamp.
+        *
+        * Use publication time here rather than manufacturing a false conversion.
+        * SourceObservation remains available in the machine-readable DetectionSet
+        * channel for exact graph provenance.
+        */
+        message.timestamp = nowTimestamp();
+
+        /*
+        * Top-level metadata keeps the visualization's coordinate/provenance
+        * contract inspectable without creating another Parallax message schema.
+        */
+        foxglove::messages::KeyValuePair image_space;
+        image_space.key = "image_space";
+        image_space.value = "rgb_left_isp";
+        message.metadata.push_back(std::move(image_space));
+
+        foxglove::messages::KeyValuePair source_sequence;
+        source_sequence.key = "source_sequence";
+        source_sequence.value = std::to_string(product.metadata.observation.sequence);
+        message.metadata.push_back(std::move(source_sequence));
+
+        foxglove::messages::KeyValuePair query_revision;
+        query_revision.key = "query_revision";
+        query_revision.value = std::to_string(detections.query_revision);
+        message.metadata.push_back(std::move(query_revision));
+
+        message.points.reserve(detections.size());
+        message.texts.reserve(detections.size());
+
+        for (std::size_t i = 0; i < detections.size(); ++i) {
+            const auto& box = detections.boxes[i];
+
+            if (!std::isfinite(box.x) || !std::isfinite(box.y)
+                || !std::isfinite(box.width) || !std::isfinite(box.height)
+                || box.width <= 0.0F || box.height <= 0.0F) {
+
+                continue;
+            }
+
+            const double x0 = static_cast<double>(box.x);
+            const double y0 = static_cast<double>(box.y);
+            const double x1 = static_cast<double>(box.x + box.width);
+            const double y1 = static_cast<double>(box.y + box.height);
+
+            foxglove::messages::PointsAnnotation rectangle;
+
+            rectangle.type = foxglove::messages::PointsAnnotation::PointsAnnotationType::LINE_LOOP;
+
+            rectangle.thickness = 3.0;
+            rectangle.points.reserve(4);
+
+            foxglove::messages::Point2 top_left;
+            top_left.x = x0;
+            top_left.y = y0;
+
+            foxglove::messages::Point2 top_right;
+            top_right.x = x1;
+            top_right.y = y0;
+
+            foxglove::messages::Point2 bottom_right;
+            bottom_right.x = x1;
+            bottom_right.y = y1;
+
+            foxglove::messages::Point2 bottom_left;
+            bottom_left.x = x0;
+            bottom_left.y = y1;
+
+            rectangle.points.push_back(top_left);
+            rectangle.points.push_back(top_right);
+            rectangle.points.push_back(bottom_right);
+            rectangle.points.push_back(bottom_left);
+
+            foxglove::messages::Color outline;
+            outline.r = 0.0;
+            outline.g = 1.0;
+            outline.b = 0.0;
+            outline.a = 1.0;
+
+            rectangle.outline_color = outline;
+
+            message.points.push_back(std::move(rectangle));
+
+            foxglove::messages::TextAnnotation label;
+
+            /*
+            * Foxglove defines TextAnnotation::position as the bottom-left text
+            * origin in image coordinates.
+            *
+            * Put the label immediately above the detector box where possible.
+            */
+            foxglove::messages::Point2 text_position;
+            text_position.x = x0;
+            text_position.y = std::max(18.0, y0 - 4.0);
+
+            label.position = text_position;
+            label.font_size = 18.0;
+
+            std::ostringstream text;
+            text << detections.query << ' '
+                 << std::fixed << std::setprecision(2)
+                 << detections.scores[i];
+
+            label.text = text.str();
+
+            foxglove::messages::Color text_color;
+            text_color.r = 1.0;
+            text_color.g = 1.0;
+            text_color.b = 1.0;
+            text_color.a = 1.0;
+
+            label.text_color = text_color;
+
+            foxglove::messages::Color background;
+            background.r = 0.0;
+            background.g = 0.0;
+            background.b = 0.0;
+            background.a = 0.65;
+
+            label.background_color = background;
+
+            message.texts.push_back(std::move(label));
+        }
+
+        return checkFoxglove(foxglove_->detectionAnnotationsChannel().log(message), "Failed to publish /perception/annotations");
     }
 
     void Publisher::shutdown() {

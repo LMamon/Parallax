@@ -36,6 +36,16 @@ add_executable(
     efficientvit_sam_smoke.cpp
 )
 
+add_executable(parallax_tracking_test
+    tracking_test.cpp
+)
+
+target_link_libraries(parallax_tracking_test
+    PRIVATE
+        parallax_core
+        GTest::gtest_main
+)
+
 target_link_libraries(
     parallax_efficientvit_sam_smoke
     PRIVATE
@@ -102,3 +112,4 @@ gtest_discover_tests(parallax_runtime_metrics_test)
 gtest_discover_tests(parallax_request_controller_test)
 gtest_discover_tests(parallax_detection_test)
 gtest_discover_tests(parallax_segmentation_test)
+gtest_discover_tests(parallax_tracking_test)

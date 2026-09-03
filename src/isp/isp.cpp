@@ -58,7 +58,6 @@ namespace parallax::isp {
 
                         return false;
                     }
-
                     return true;
                 })) {
 
@@ -89,9 +88,7 @@ namespace parallax::isp {
     }
 
     bool ISP::upload(const parallax::camera::RawFrame& input) {
-        return gpu_input_.buffer.uploadAsync(input.data,
-                                            input.width * sizeof(std::uint16_t),
-                                            stream_);
+        return gpu_input_.buffer.uploadAsync(input.data, input.width * sizeof(std::uint16_t), stream_);
     }
 
     void ISP::shutdown() {
@@ -108,7 +105,6 @@ namespace parallax::isp {
 
     bool ISP::synchronize() {
         if (!initialized_ || stream_ == nullptr) return false;
-
         return cudaStreamSynchronize(stream_) == cudaSuccess;
     }
 }

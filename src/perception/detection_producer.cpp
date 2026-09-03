@@ -96,7 +96,7 @@ namespace parallax::perception {
         }
 
         // NanoOWL boxes address the ISP-left RGB pixels consumed for inference.
-        detections->image_space = ImageSpace::RgbLeft;
+        // detections->image_space = ImageSpace::RgbLeft;
 
         /*
          * Reject a result whose query identity no longer matches the producer's

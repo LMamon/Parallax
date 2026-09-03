@@ -21,9 +21,6 @@ namespace parallax::perception {
 
     class NanoOwlBridge::Impl {
         public:
-            Impl() : interpreter{} {}
-
-            py::scoped_interpreter interpreter;
             py::object detector;
 
             std::uint64_t query_revision = 0;
@@ -38,8 +35,12 @@ namespace parallax::perception {
         if (initialized_) return true;
 
         if (!std::filesystem::is_regular_file(engine_path)) return false;
-
+        
+        // Python stays process-scoped because Torch/CUDA extension state is not
+        // safe to finalize through pybind11 during Parallax shutdown.
         try {
+            if (!Py_IsInitialized()) py::initialize_interpreter();
+
             impl_ = std::make_unique<Impl>();
             py::module_ module = py::module_::import("parallax.nanoowl_detector");
             py::object detector_type = module.attr("NanoOwlDetector");
@@ -120,6 +121,7 @@ namespace parallax::perception {
             detections = {};
             detections.query = result.attr("query").cast<std::string>();
             detections.query_revision = result.attr("query_revision").cast<std::uint64_t>();
+            detections.image_space = ImageSpace::RgbLeft;
 
             py::object output = result.attr("output");
             torch::Tensor boxes = output.attr("boxes").cast<torch::Tensor>()
@@ -205,8 +207,9 @@ namespace parallax::perception {
             if (!impl_->detector.is_none() && impl_->detector) {
                 impl_->detector.attr("close")();
             }
+            impl_->detector = py::none();
         } catch (...) {
-            // Shutdown must remain noexcept.
+            // shutdown remains noexcept
         }
 
         impl_.reset();

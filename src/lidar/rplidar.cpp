@@ -215,7 +215,7 @@ namespace parallax::lidar {
          */
         delete driver_;
         delete channel_;
-
+        
         driver_ = nullptr;
         channel_ = nullptr;
 

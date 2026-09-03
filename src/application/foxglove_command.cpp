@@ -45,6 +45,15 @@ namespace parallax::application {
                             CommandParseError::None, {}};
         }
 
+        if (verb == "segment") {
+            if (target.empty()) {
+                return {{}, CommandParseError::MissingTarget, "segment requires a target"};
+            }
+
+            return {Command{CommandVerb::Segment, CommandBehavior::OneShot, target}, 
+                            CommandParseError::None, {}};
+        }
+
         if (verb == "track") {
             if (target.empty()) {
                 return {{}, CommandParseError::MissingTarget, "track requires a target"};

@@ -46,12 +46,11 @@ namespace parallax::camera {
          * and returns the V4L2 buffer to the camera.
          */
         auto payload = std::shared_ptr<const parallax::camera::RawFrame>(
-            new parallax::camera::RawFrame(frame),
-                [this](const parallax::camera::RawFrame* stored) {
-                    camera_.release(*stored);
-                    delete stored;
-                }
-        );
+                        new parallax::camera::RawFrame(frame),
+                        [this](const parallax::camera::RawFrame* stored) {
+                            camera_.release(*stored);
+                            delete stored;
+                        });
 
         parallax::core::ProductMetadata metadata{};
         metadata.observation.source = parallax::core::SourceId::StereoCamera;

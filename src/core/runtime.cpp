@@ -120,7 +120,6 @@ namespace parallax::core {
         graph_.register_producer(*marker_depth_producer_);
         graph_.register_producer(*detection_producer_);
         graph_.register_producer(*lidar_producer_);
-        graph_.register_producer(*detection_producer_);
         graph_.register_producer(*segmentation_producer_);
 
         graph_.finalize();
@@ -493,22 +492,27 @@ namespace parallax::core {
     void Runtime::shutdown() {
         stop();
 
-        if (lidar_thread_.joinable()) lidar_thread_.join();
+        if (lidar_thread_.joinable()) {
+            lidar_thread_.join();
+        }
+
+        // Stop physical hardware as soon as its worker can no longer access it.
+        if (lidar_) {
+            lidar_->shutdown();
+        }
 
         if (!context_.drain()) {
             std::cerr << "Runtime: failed to drain execution context during shutdown\n";
         }
+
         publisher_.shutdown();
         foxglove_.shutdown();
 
         request_controller_.reset();
-        /**
-         * Drop published handles before destroying the hardware and processing
-         * resources they reference. Producers are destroyed before their backing
-         * devices because Graph stores only non-owning producer pointers.
-         */
+
         context_.products().clear();
         producer_execution_state_.clear();
+
         marker_depth_producer_.reset();
         charuco_pose_producer_.reset();
         depth_producer_.reset();
@@ -519,25 +523,23 @@ namespace parallax::core {
         camera_producer_.reset();
         segmentation_producer_.reset();
 
-        if (efficientvit_sam_) efficientvit_sam_->shutdown();
+        if (efficientvit_sam_) {
+            efficientvit_sam_->shutdown();
+        }
         efficientvit_sam_.reset();
 
         detection_producer_.reset();
-        if (nanoowl_) nanoowl_->shutdown();
 
-        nanoowl_.reset();
+        // Do NOT explicitly shutdown/reset nanoowl_ here.
+        // Its lifetime remains owned by Runtime.
         pipeline_.shutdown();
-        
-        if (lidar_) {
-            lidar_->shutdown();
-            lidar_.reset();
-        }
-        
+        lidar_.reset();
+
         if (camera_) {
             camera_->shutdown();
             camera_.reset();
         }
-        
+
         context_.shutdown();
         initialized_ = false;
     }

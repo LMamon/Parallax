@@ -7,9 +7,7 @@
 
 
 namespace parallax::isp {
-    IspProducer::IspProducer(ISP& isp, parallax::core::ProductStore& store) : 
-                             isp_(isp),
-                             store_(store) {}
+    IspProducer::IspProducer(ISP& isp, parallax::core::ProductStore& store) : isp_(isp), store_(store) {}
 
     std::string_view IspProducer::name() const noexcept {
         return "isp";
@@ -35,13 +33,11 @@ namespace parallax::isp {
 
     parallax::core::SubmitResult IspProducer::submit(parallax::core::ExecutionContext& context) {
         const auto raw = store_.latest<parallax::camera::RawFrame>(parallax::core::ProductId::RawStereo);
-
         if (!raw || !raw->valid()) {
             return parallax::core::SubmitResult::Failed;
         }
 
         auto output = isp_.acquireOutput();
-
         if (!output) {
             /**
              * Every preallocated ISP generation is still retained by a consumer.
@@ -57,6 +53,10 @@ namespace parallax::isp {
             return parallax::core::SubmitResult::Failed;
         }
 
+
+        if (cudaStreamSynchronize(isp_.stream()) != cudaSuccess) {
+            return parallax::core::SubmitResult::Failed;
+        }
         /**
 
         * SYNCHRONIZATION INVENTORY — ORDERING ONLY

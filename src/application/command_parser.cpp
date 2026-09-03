@@ -64,8 +64,7 @@ namespace parallax::application {
                 return failure(CommandParseError::UnexpectedArgument, "expected 'marker depth'");
             }
 
-            return {
-                Command{CommandVerb::MarkerDepth,CommandBehavior::OneShot, {}}, CommandParseError::None, {}};
+            return {Command{CommandVerb::MarkerDepth,CommandBehavior::OneShot, {}}, CommandParseError::None, {}};
         }
 
         if (tokens[0] == "detect") {
@@ -77,8 +76,19 @@ namespace parallax::application {
                 return failure(CommandParseError::UnexpectedArgument, "detect accepts exactly one target");
             }
 
-            return {
-                Command{CommandVerb::Detect, CommandBehavior::OneShot, tokens[1]}, CommandParseError::None, {}};
+            return {Command{CommandVerb::Detect, CommandBehavior::OneShot, tokens[1]}, CommandParseError::None, {}};
+        }
+
+        if (tokens[0] == "segment") {
+            if (tokens.size() < 2) {
+                return failure(CommandParseError::MissingTarget, "segment requires a target");
+            }
+
+            if (tokens.size() > 2) {
+                return failure(CommandParseError::UnexpectedArgument, "segment accepts exactly one target");
+            }
+
+            return {Command{CommandVerb::Segment, CommandBehavior::OneShot, tokens[1]}, CommandParseError::None, {}};
         }
 
         if (tokens[0] == "track") {
@@ -90,8 +100,7 @@ namespace parallax::application {
                 return failure(CommandParseError::UnexpectedArgument,"track accepts exactly one target");
             }
 
-            return {
-                Command{CommandVerb::Track, CommandBehavior::Persistent, tokens[1]}, CommandParseError::None, {}};
+            return {Command{CommandVerb::Track, CommandBehavior::Persistent, tokens[1]}, CommandParseError::None, {}};
         }
 
         if (tokens[0] == "stop") {
@@ -99,10 +108,10 @@ namespace parallax::application {
                 return failure(CommandParseError::UnexpectedArgument, "expected 'stop tracking'");
             }
 
-            return {
-                Command{CommandVerb::StopTracking, CommandBehavior::OneShot, {}}, CommandParseError::None, {}};
+            return {Command{CommandVerb::StopTracking, CommandBehavior::OneShot, {}}, CommandParseError::None, {}};
         }
 
         return failure(CommandParseError::UnknownCommand, "unknown command");
     }
+
 }

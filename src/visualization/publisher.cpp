@@ -108,7 +108,13 @@ namespace parallax::visualization {
 
         const std::size_t disparity_bytes = pixels * sizeof(std::int16_t);
         const std::size_t depth_bytes = pixels * sizeof(float);
+        const std::size_t mask_bytes =static_cast<std::size_t>(width_) * height_ * sizeof(std::uint8_t);
 
+        if (cudaMallocHost(reinterpret_cast<void**>(&host_segmentation_mask_), mask_bytes) != cudaSuccess) {
+            std::cerr << "Failed to allocate segmentation mask staging buffer\n";
+            shutdown();
+            return false;
+        }
 
         if (cudaMallocHost(reinterpret_cast<void**>(&host_rgb_), rgb_bytes) != cudaSuccess) {
             std::cerr << "Failed to allocate RGB staging buffer\n";
@@ -212,7 +218,6 @@ namespace parallax::visualization {
 
             if (rgb && rgb->valid()) {
                 const parallax::pose::CharucoPoseResult* overlay = nullptr;
-
                 const auto marker = store.latest<parallax::pose::CharucoPoseResult>(
                                                 parallax::core::ProductId::MarkerDepth);
 
@@ -244,7 +249,6 @@ namespace parallax::visualization {
 
             if (stereo && stereo->valid()) {
                 if (!stereo->completion.valid()) return false;
-
                 if (stereo->completion.requires_wait() && !wait_for_host(stereo->completion)) {
                     return false;
                 }
@@ -308,6 +312,33 @@ namespace parallax::visualization {
                     last_detection_annotation_observation_ = detections->metadata.observation;
                     last_detection_annotation_query_revision_ = detections->payload->query_revision;
                     has_published_detection_annotation_ = true;
+                }
+            }
+        }
+
+        if (foxglove_->segmentationMaskChannel().hasSinks()) {
+            const auto segmentation = store.latest<parallax::perception::SegmentationMask>(
+                                                   parallax::core::ProductId::Segmentation);
+
+            if (segmentation && segmentation->valid() && segmentation->payload->valid()) {
+
+                const bool new_segmentation = !has_published_segmentation_ ||
+                                               segmentation->metadata.observation !=
+                                               last_segmentation_observation_ ||
+                                               segmentation->payload->query_revision !=
+                                               last_segmentation_query_revision_;
+
+                if (new_segmentation) {
+                    if (!segmentation->completion.valid()) return false;
+                    if (segmentation->completion.requires_wait() && !wait_for_host(segmentation->completion)) {
+                        return false;
+                    }
+
+                    if (!publishSegmentationMask(*segmentation)) return false;
+
+                    last_segmentation_observation_ = segmentation->metadata.observation;
+                    last_segmentation_query_revision_ = segmentation->payload->query_revision;
+                    has_published_segmentation_ = true;
                 }
             }
         }
@@ -523,7 +554,6 @@ namespace parallax::visualization {
         return checkFoxglove(foxglove_->lidarScanChannel().log(message), "Failed to publish /lidar/scan");
     }
 
-
     bool Publisher::publishDetections(const parallax::core::Product<parallax::perception::DetectionSet>& product) {
         if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload->valid()) {
             return false;
@@ -532,7 +562,6 @@ namespace parallax::visualization {
         const auto& result = *product.payload;
 
         nlohmann::json message;
-
         message["query"] = result.query;
         message["query_revision"] = result.query_revision;
         message["detected"] = !result.empty();
@@ -563,9 +592,7 @@ namespace parallax::visualization {
     }
 
     bool Publisher::publishDetectionAnnotations(const parallax::core::Product<parallax::perception::DetectionSet>& product) {
-        if (!initialized_ || foxglove_ == nullptr
-            || !product.valid() || !product.payload->valid()) {
-
+        if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload->valid()) {
             return false;
         }
 
@@ -622,7 +649,6 @@ namespace parallax::visualization {
             foxglove::messages::PointsAnnotation rectangle;
 
             rectangle.type = foxglove::messages::PointsAnnotation::PointsAnnotationType::LINE_LOOP;
-
             rectangle.thickness = 3.0;
             rectangle.points.reserve(4);
 
@@ -694,12 +720,64 @@ namespace parallax::visualization {
             background.a = 0.65;
 
             label.background_color = background;
-
             message.texts.push_back(std::move(label));
         }
-
         return checkFoxglove(foxglove_->detectionAnnotationsChannel().log(message), "Failed to publish /perception/annotations");
     }
+
+    bool Publisher::publishSegmentationMask(const parallax::core::Product<parallax::perception::SegmentationMask>& product) {
+        if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload || !product.payload->valid()) {
+            return false;
+        }
+
+        const auto& mask = *product.payload;
+        if (mask.representation != parallax::perception::MaskRepresentation::CudaDevice ||
+            mask.layout != parallax::perception::MaskLayout::RowMajor) {
+
+            return false;
+        }
+
+        if (mask.width != width_ || mask.height != height_) {
+            std::cerr << "Visualization segmentation dimensions changed\n";
+            return false;
+        }
+
+        const std::size_t host_pitch = static_cast<std::size_t>(mask.width);
+        if (cudaMemcpy2DAsync(host_segmentation_mask_,
+                              host_pitch,
+                              mask.storage.get(),
+                              mask.pitch_bytes,
+                              host_pitch,
+                              mask.height,
+                              cudaMemcpyDeviceToHost,
+                              stream_) != cudaSuccess) {
+
+            std::cerr << "Failed to download segmentation mask\n";
+
+            return false;
+        }
+
+        if (cudaStreamSynchronize(stream_) != cudaSuccess) {
+            std::cerr << "Failed to synchronize segmentation mask download\n";
+            return false;
+        }
+
+        foxglove::messages::RawImage message;
+
+        message.timestamp = nowTimestamp();
+        message.frame_id = kFrameId;
+        message.width = mask.width;
+        message.height = mask.height;
+        message.encoding = "mono8";
+        message.step = mask.width;
+
+        const std::size_t bytes = static_cast<std::size_t>(mask.width) * mask.height;
+        message.data.resize(bytes);
+
+        std::memcpy(message.data.data(), host_segmentation_mask_, bytes);
+        return checkFoxglove(foxglove_->segmentationMaskChannel().log(message), "Failed to publish /perception/segmentation");
+    }
+    
 
     void Publisher::shutdown() {
         video_encoder_.shutdown();
@@ -718,6 +796,11 @@ namespace parallax::visualization {
             cudaFreeHost(host_disparity_);
             host_disparity_ = nullptr;
         }
+
+        if (host_segmentation_mask_ != nullptr) {
+            cudaFreeHost(host_segmentation_mask_);
+            host_segmentation_mask_ = nullptr;
+        }
         
         if (stream_ != nullptr) {
             cudaStreamDestroy(stream_);
@@ -726,6 +809,10 @@ namespace parallax::visualization {
         
         disparity_float_.clear();
         encoded_video_.clear();
+
+        last_segmentation_observation_ = {};
+        last_segmentation_query_revision_ = 0;
+        has_published_segmentation_ = false;
 
         width_ = 0;
         height_ = 0;

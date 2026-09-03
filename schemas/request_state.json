@@ -12,6 +12,12 @@
     "detection_target": {
       "type": "string"
     },
+    "segmentation_requested": {
+      "type": "boolean"
+    },
+    "segmentation_target": {
+      "type": "string"
+    },
     "tracking_requested": {
       "type": "boolean"
     },
@@ -23,6 +29,8 @@
     "marker_depth_requested",
     "detection_requested",
     "detection_target",
+    "segmentation_requested",
+    "segmentation_target",
     "tracking_requested",
     "tracking_target"
   ],

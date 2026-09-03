@@ -187,7 +187,9 @@ namespace parallax::core {
                                                  {"detection_target", state.detection_target},
                                                  {"detection_query_revision", state.detection_query_revision},
                                                  {"tracking_requested", state.tracking_requested},
-                                                 {"tracking_target", state.tracking_target}};
+                                                 {"tracking_target", state.tracking_target},
+                                                 {"segmentation_requested", state.segmentation_requested},
+                                                 {"segmentation_target", state.segmentation_target}};
 
                     const std::string serialized_state = request_state.dump();
                     const auto error = foxglove_.requestStateChannel().log(reinterpret_cast<const std::byte*>(

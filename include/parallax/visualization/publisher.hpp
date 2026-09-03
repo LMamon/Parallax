@@ -9,6 +9,7 @@
 #include <parallax/core/sensor_extrinsics.hpp>
 
 #include <parallax/perception/detection.hpp>
+#include <parallax/perception/segmentation.hpp>
 
 #include <parallax/core/completion.hpp>
 #include <parallax/lidar/frame_types.hpp>
@@ -61,11 +62,13 @@ namespace parallax::visualization {
             bool publishLidarScan(const parallax::lidar::LidarScan& scan);
             bool publishDetections(const parallax::core::Product<parallax::perception::DetectionSet>& product);
             bool publishDetectionAnnotations(const parallax::core::Product<parallax::perception::DetectionSet>& product);
+            bool publishSegmentationMask(const parallax::core::Product<parallax::perception::SegmentationMask>& product);
 
             VideoEncoder video_encoder_;
             cudaStream_t stream_ = nullptr;
             
             // Reusable pinned host staging.
+            std::uint8_t* host_segmentation_mask_ = nullptr;
             std::uint8_t* host_rgb_ = nullptr;
             std::int16_t* host_disparity_ = nullptr;
             float* host_depth_ = nullptr;
@@ -88,6 +91,9 @@ namespace parallax::visualization {
             std::uint64_t last_detection_query_revision_ = 0;
             bool has_published_detection_ = false;
             
+            parallax::core::SourceObservation last_segmentation_observation_{};
+            std::uint64_t last_segmentation_query_revision_ = 0;
+            bool has_published_segmentation_ = false;
             /**
              * Non-owning access to the native Foxglove capability surface.
              *

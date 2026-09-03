@@ -70,6 +70,34 @@ namespace parallax::application {
                 return {RequestStatus::Unavailable, "tracking requested; producer is not available yet"};
             }
 
+            case CommandVerb::Segment: {
+                if (command.target.empty()) {
+                    return {RequestStatus::Invalid, "segmentation target is empty"};
+                }
+
+                /**
+                 * Segmentation is explicitly requested downstream work.
+                 *
+                 * It also requires Detection because the selected detection supplies
+                 * the box prompt. Ordinary Detect commands never acquire Segmentation
+                 * demand.
+                 *
+                 * Detection query revision remains the canonical prompt identity used
+                 * to reject masks produced from a replaced target.
+                 */
+                state_.detection_requested = true;
+                state_.detection_target = command.target;
+                state_.detection_query_revision = next_detection_query_revision_++;
+
+                state_.segmentation_requested = true;
+                state_.segmentation_target = command.target;
+
+                acquire_once(core::ProductId::Detection, detection_demand_owned_);
+                acquire_once(core::ProductId::Segmentation, segmentation_demand_owned_);
+
+                return {RequestStatus::Applied, "segmentation requested"};
+            }
+
             case CommandVerb::StopTracking: {
                 release_if_owned(core::ProductId::Track2D, tracking_demand_owned_);
 
@@ -85,6 +113,7 @@ namespace parallax::application {
         std::lock_guard<std::mutex> lock(state_mutex_);
         release_if_owned(core::ProductId::MarkerDepth, marker_depth_demand_owned_);
         release_if_owned(core::ProductId::Detection, detection_demand_owned_);
+        release_if_owned(core::ProductId::Segmentation, segmentation_demand_owned_);
         release_if_owned(core::ProductId::Track2D, tracking_demand_owned_);
 
         state_ = {};
@@ -94,4 +123,5 @@ namespace parallax::application {
         std::lock_guard<std::mutex> lock(state_mutex_);
         return state_;
     }
+
 }

@@ -12,7 +12,7 @@ namespace parallax::application {
     // details. RequestController is responsible for translating commands into
     // application-owned state and dependency-graph demand.
     enum class CommandVerb : std::uint8_t {
-        MarkerDepth, Detect, Track, StopTracking
+        MarkerDepth, Detect, Track, StopTracking, Segment
     };
 
     // Commands may represent either a bounded request or persistent application

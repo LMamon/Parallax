@@ -22,7 +22,6 @@ namespace parallax::visualization {
             const std::string path = std::string(PARALLAX_SCHEMA_DIR) + "/" + filename;
 
             std::ifstream file(path, std::ios::binary);
-
             if (!file) {
                 throw std::runtime_error("Failed to open Foxglove schema: " + path);
             }
@@ -348,6 +347,17 @@ namespace parallax::visualization {
         }
         detection_annotations_channel_.emplace(std::move(detection_annotations.value()));
         bindProduct(detection_annotations_channel_->id(), ProductId::Detection);
+
+        auto segmentation_mask = foxglove::messages::RawImageChannel::create("/perception/segmentation", context_);
+        if (!segmentation_mask.has_value()) {
+            std::cerr << "Failed to create /perception/segmentation channel: "
+                      << foxglove::strerror(segmentation_mask.error()) << '\n';
+
+            return false;
+        }
+
+        segmentation_mask_channel_.emplace(std::move(segmentation_mask.value()));
+        bindProduct(segmentation_mask_channel_->id(), ProductId::Segmentation);
         // every graph backed channel gets bindProduct(...)
         
         return true;

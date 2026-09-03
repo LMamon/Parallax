@@ -72,6 +72,8 @@ namespace parallax::core {
             return false;
         }
 
+        efficientvit_sam_ = std::make_unique<parallax::perception::EfficientVitSam>();
+
         /**
          * Construct the complete producer set before registering or finalizing the
          * graph. Graph stores non-owning Producer pointers, so Runtime owns every
@@ -99,6 +101,12 @@ namespace parallax::core {
         marker_depth_producer_ = std::make_unique<parallax::pose::MarkerDepthPoducer>(context_.products());
         detection_producer_ = std::make_unique<parallax::perception::DetectionProducer>(*nanoowl_, context_.products());
 
+        segmentation_producer_ = std::make_unique<parallax::perception::SegmentationProducer>(
+                                                *efficientvit_sam_,
+                                                context_.products(),
+                                                "models/efficientvit-sam/engines/l0_encoder_fp16.engine",
+                                                "models/efficientvit-sam/engines/l0_decoder_fp16.engine");
+
         /**
          * Registration describes the complete concrete dependency graph.
          * Finalization happens exactly once, after every producer is present.
@@ -112,14 +120,14 @@ namespace parallax::core {
         graph_.register_producer(*marker_depth_producer_);
         graph_.register_producer(*detection_producer_);
         graph_.register_producer(*lidar_producer_);
+        graph_.register_producer(*detection_producer_);
+        graph_.register_producer(*segmentation_producer_);
 
         graph_.finalize();
 
         configure_product_history(graph_, context_.products());
 
         /**
-         * Persistent perception-service demand.
-         *
          * These are deliberately root products rather than an exhaustive list of
          * intermediates. DependencyResolver derives the required producer subgraph.
          *
@@ -127,8 +135,6 @@ namespace parallax::core {
          * Disparity extends that path through stereo matching.
          * MarkerDepth extends it through metric depth and marker pose/depth.
          * LidarScan keeps the independent RPLIDAR source active.
-         *
-         * Foxglove observation is not required for any of these products to exist.
          */
         resolver_.acquire(ProductId::RectifiedRgb, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::Disparity, DemandSource::RuntimeBaseline);
@@ -242,9 +248,7 @@ namespace parallax::core {
         const auto refresh_execution_plan = [&]() {
             auto snapshot = resolver_.active_demand();
 
-            if (snapshot.revision == execution_plan_revision) {
-                return;
-            }
+            if (snapshot.revision == execution_plan_revision) return;
 
             snapshot.products.erase(std::remove(snapshot.products.begin(),
                                                 snapshot.products.end(),
@@ -333,8 +337,6 @@ namespace parallax::core {
 
                 if (result == SubmitResult::NoWork) {
                     ++stats.no_work;
-                    // frame_failed = true;
-                    // break;
                     continue;
                 }
 
@@ -491,7 +493,6 @@ namespace parallax::core {
 
         if (lidar_thread_.joinable()) lidar_thread_.join();
 
-
         if (!context_.drain()) {
             std::cerr << "Runtime: failed to drain execution context during shutdown\n";
         }
@@ -514,7 +515,15 @@ namespace parallax::core {
         isp_producer_.reset();
         lidar_producer_.reset();
         camera_producer_.reset();
+        segmentation_producer_.reset();
 
+        if (efficientvit_sam_) efficientvit_sam_->shutdown();
+        efficientvit_sam_.reset();
+
+        detection_producer_.reset();
+        if (nanoowl_) nanoowl_->shutdown();
+
+        nanoowl_.reset();
         pipeline_.shutdown();
         
         if (lidar_) {

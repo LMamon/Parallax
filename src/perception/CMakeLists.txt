@@ -2,6 +2,7 @@ add_library(parallax_perception
     nanoowl_bridge.cpp
     detection_producer.cpp
     efficientvit_sam.cpp
+    segmentation_producer.cpp
 )
 
 find_library(

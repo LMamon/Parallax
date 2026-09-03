@@ -26,6 +26,8 @@
 
 #include <parallax/perception/nanoowl_bridge.hpp>
 #include <parallax/perception/detection_producer.hpp>
+#include <parallax/perception/efficientvit_sam.hpp>
+#include <parallax/perception/segmentation_producer.hpp>
 
 #include <parallax/pose/charuco_pose_producer.hpp>
 #include <parallax/pose/marker_depth_producer.hpp>
@@ -83,6 +85,9 @@ namespace parallax::core {
             std::atomic_bool running_{false};
             std::thread lidar_thread_;
             
+            std::unique_ptr<parallax::perception::EfficientVitSam> efficientvit_sam_;
+            std::unique_ptr<parallax::perception::SegmentationProducer> segmentation_producer_;
+
             /**
              * Runtime-scoped shared execution infrastructure.
              *

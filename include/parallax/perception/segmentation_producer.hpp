@@ -13,6 +13,16 @@ namespace parallax::perception {
 
     class SegmentationProducer final : public parallax::core::Producer {
         public:
+            struct SegmentationProducerMetrics {
+                std::uint64_t submissions = 0;
+                std::uint64_t compatible_image_misses = 0;
+                std::uint64_t superseded_prompts = 0;
+            };
+
+            [[nodiscard]] SegmentationProducerMetrics metrics() const noexcept {
+                return metrics_;
+            }
+
             SegmentationProducer(EfficientVitSam& segmenter,
                                  parallax::core::ProductStore& products,
                                  std::filesystem::path encoder_engine,
@@ -46,5 +56,7 @@ namespace parallax::perception {
             const std::vector<parallax::core::CompatibleInputRequirement> compatible_inputs_{
                                                                     {parallax::core::ProductId::RgbLeft, 2}
             };
+
+            SegmentationProducerMetrics metrics_{};
     };
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -62,13 +63,21 @@ namespace parallax::core {
          */
         [[nodiscard]] std::shared_ptr<T> acquire() {
             std::lock_guard<std::mutex> lock(mutex_);
-
             if (!initialized_) return {};
 
             for (auto& slot : slots_) {
-                if (slot && slot.use_count() == 1) return slot;
-            }
+                if (slot && slot.use_count() == 1) {
+                    auto acquired = slot;
 
+                    std::size_t in_use = 0;
+                    for (const auto& candidate : slots_) {
+                        if (candidate && candidate.use_count() > 1) ++in_use;
+                    }
+
+                    high_water_mark_ = std::max(high_water_mark_, in_use);
+                    return acquired;
+                }
+            }
             return {};
         }
 
@@ -79,12 +88,30 @@ namespace parallax::core {
             std::lock_guard<std::mutex> lock(mutex_);
             slots_ = {};
             initialized_ = false;
+            high_water_mark_ = 0;
+        }
+
+        [[nodiscard]] std::size_t in_use() const noexcept {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!initialized_) return 0;
+
+            std::size_t count = 0;
+            for (const auto& slot : slots_) {
+                if (slot && slot.use_count() > 1) ++count;
+            }
+            return count;
         }
 
         [[nodiscard]] bool initialized() const noexcept { return initialized_; }
 
+        [[nodiscard]] std::size_t high_water_mark() const noexcept {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return high_water_mark_;
+        }
+
     private:
         std::array<std::shared_ptr<T>, Capacity> slots_{};
+        std::size_t high_water_mark_ = 0;
         mutable std::mutex mutex_;
         bool initialized_ = false;
     };

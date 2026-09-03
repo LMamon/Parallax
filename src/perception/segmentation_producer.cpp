@@ -72,7 +72,10 @@ namespace parallax::perception {
 
         const auto rgb = find_segmentation_rgb(products_, *detection);
 
-        if (!rgb) return parallax::core::SubmitResult::NoWork;
+        if (!rgb) {
+            ++metrics_.compatible_image_misses;
+            return parallax::core::SubmitResult::NoWork;
+        }
 
         const cudaStream_t stream = context.neuralCudaLane();
         if (stream == nullptr) return parallax::core::SubmitResult::Failed;
@@ -111,7 +114,6 @@ namespace parallax::perception {
         }
 
         const auto completion = context.recordCudaCompletion(stream);
-
         if (!completion.valid()) return parallax::core::SubmitResult::Failed;
 
         auto mask = std::make_shared<SegmentationMask>();
@@ -137,6 +139,8 @@ namespace parallax::perception {
                                                                          metadata,
                                                                          std::move(mask),
                                                                          completion));
+
+        ++metrics_.submissions;
 
         last_observation_ = detection->metadata.observation;
         last_query_revision_ = detection->payload->query_revision;

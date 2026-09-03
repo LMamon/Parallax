@@ -246,6 +246,13 @@ namespace parallax::perception {
 
             static constexpr std::size_t MaskSlotCount = 2;
 
+            static constexpr std::size_t PersistentBufferBytes = float_bytes(3ULL * 512ULL * 512ULL) +
+                                                                 float_bytes(256ULL * 64ULL * 64ULL) +
+                                                                 float_bytes(4) +
+                                                                 float_bytes(2) +
+                                                                 float_bytes(256ULL * 256ULL) +
+                                                                 float_bytes(1);
+
         public:
             ~Impl() { shutdown(); }
 
@@ -289,6 +296,11 @@ namespace parallax::perception {
                     if (!allocate_buffers()) throw std::runtime_error("failed to allocate EfficientViT-SAM device buffers");
                     if (!bind_buffers()) throw std::runtime_error("failed to bind EfficientViT-SAM device buffers");
 
+                    metrics_.model_loaded = true;
+                    ++metrics_.model_load_count;
+                    metrics_.persistent_buffer_bytes = PersistentBufferBytes;
+                    metrics_.mask_pool_capacity = MaskSlotCount;
+
                     return true;
                 }
                 catch (const std::exception& error) {
@@ -308,7 +320,8 @@ namespace parallax::perception {
 
                 runtime_.reset();
 
-                metrics_ = {};
+                metrics_.model_loaded = false;
+                metrics_.mask_pool_in_use = 0;
             }
 
             bool allocate_buffers() {
@@ -350,7 +363,6 @@ namespace parallax::perception {
 
             std::shared_ptr<MaskSlot> acquire_mask(std::uint32_t width, std::uint32_t height) {
                 if (!initialize_mask_pool(width, height)) return {};
-
                 return mask_pool_.acquire();
             }
 
@@ -359,7 +371,15 @@ namespace parallax::perception {
             float* low_res_mask() noexcept { return static_cast<float*>(low_res_mask_.data()); }
             void record_inference() noexcept { ++metrics_.inference_count; }
 
-            EfficientVitSamMetrics metrics() const noexcept { return metrics_; }
+            EfficientVitSamMetrics metrics() const noexcept {
+                auto metrics = metrics_;
+
+                metrics.mask_pool_in_use = mask_pool_.in_use();
+                metrics.mask_pool_capacity = mask_pool_.capacity();
+                metrics.mask_pool_high_water = mask_pool_.high_water_mark();
+
+                return metrics;
+            }
 
             void* encoder_input() noexcept { return encoder_input_.data(); }
             void* point_coords() noexcept { return point_coords_.data(); }

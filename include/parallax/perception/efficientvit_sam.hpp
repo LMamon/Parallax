@@ -14,7 +14,16 @@ namespace parallax::perception {
     struct EfficientVitSamMetrics {
         double last_encoder_ms = 0.0;
         double last_decoder_ms = 0.0;
+
         std::uint64_t inference_count = 0;
+        std::uint64_t model_load_count = 0;
+
+        std::uint64_t mask_pool_capacity = 0;
+        std::uint64_t mask_pool_in_use = 0;
+        std::uint64_t mask_pool_high_water = 0;
+
+        std::size_t persistent_buffer_bytes = 0;
+        bool model_loaded = false;
     };
 
     struct EfficientVitSamGeometry {
@@ -60,10 +69,7 @@ namespace parallax::perception {
                          
             void shutdown() noexcept;
 
-            [[nodiscard]] bool initialized() const noexcept {
-                return initialized_;
-            }
-
+            [[nodiscard]] bool initialized() const noexcept { return initialized_; }
             [[nodiscard]] EfficientVitSamMetrics metrics() const noexcept;
 
         private:

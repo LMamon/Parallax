@@ -1,5 +1,7 @@
 #include <parallax/perception/efficientvit_sam.hpp>
 #include <parallax/perception/efficientvit_sam_cuda.hpp>
+#include <parallax/core/fixed_payload_pool.hpp>
+
 #include <NvInfer.h>
 #include <cuda_runtime.h>
 
@@ -25,43 +27,6 @@ namespace parallax::perception {
         };
 
         TensorRtLogger g_logger;
-        class DeviceBuffer {
-            public:
-                DeviceBuffer() = default;
-                ~DeviceBuffer() { release(); }
-
-                DeviceBuffer(const DeviceBuffer&) = delete;
-                DeviceBuffer& operator=(const DeviceBuffer&) = delete;
-
-                bool allocate(std::size_t bytes) {
-                    release();
-
-                    if (bytes == 0) return false;
-
-                    if (cudaMalloc(&data_, bytes) != cudaSuccess) {
-                        data_ = nullptr;
-                        bytes_ = 0;
-                        return false;
-                    }
-
-                    bytes_ = bytes;
-                    return true;
-                }
-
-                void release() noexcept {
-                    if (data_) cudaFree(data_);
-
-                    data_ = nullptr;
-                    bytes_ = 0;
-                }
-
-                [[nodiscard]] void* data() noexcept { return data_; }
-                [[nodiscard]] std::size_t bytes() const noexcept { return bytes_; }
-
-            private:
-                void* data_ = nullptr;
-                std::size_t bytes_ = 0;
-        };
 
         std::vector<char> read_file(const std::filesystem::path& path) {
             std::ifstream file(path, std::ios::binary | std::ios::ate);
@@ -234,6 +199,53 @@ namespace parallax::perception {
     }
 
     class EfficientVitSam::Impl {
+        private:
+            class DeviceBuffer {
+                public:
+                    DeviceBuffer() = default;
+                    ~DeviceBuffer() { release(); }
+
+                    DeviceBuffer(const DeviceBuffer&) = delete;
+                    DeviceBuffer& operator=(const DeviceBuffer&) = delete;
+
+                    bool allocate(std::size_t bytes) {
+                        release();
+
+                        if (bytes == 0) return false;
+
+                        if (cudaMalloc(&data_, bytes) != cudaSuccess) {
+                            data_ = nullptr;
+                            bytes_ = 0;
+                            return false;
+                        }
+
+                        bytes_ = bytes;
+                        return true;
+                    }
+
+                    void release() noexcept {
+                        if (data_) cudaFree(data_);
+
+                        data_ = nullptr;
+                        bytes_ = 0;
+                    }
+
+                    [[nodiscard]] void* data() noexcept { return data_; }
+                    [[nodiscard]] std::size_t bytes() const noexcept { return bytes_; }
+
+                private:
+                    void* data_ = nullptr;
+                    std::size_t bytes_ = 0;
+            };
+
+            struct MaskSlot {
+                DeviceBuffer buffer;
+                std::uint32_t width = 0;
+                std::uint32_t height = 0;
+            };
+
+            static constexpr std::size_t MaskSlotCount = 2;
+
         public:
             ~Impl() { shutdown(); }
 
@@ -264,6 +276,16 @@ namespace parallax::perception {
                         throw std::runtime_error("failed to create TensorRT execution contexts");
                     }
 
+                    if (!encoder_context_->setInputShape("input_image", nvinfer1::Dims4{1, 3, 512, 512})) {
+                        throw std::runtime_error("failed to configure encoder input shape");
+                    }
+
+                    if (!decoder_context_->setInputShape("point_coords", nvinfer1::Dims3{1, 2, 2}) ||
+                        !decoder_context_->setInputShape("point_labels", nvinfer1::Dims2{1, 2})) {
+
+                        throw std::runtime_error("failed to configure decoder prompt shapes");
+                    }
+
                     if (!allocate_buffers()) throw std::runtime_error("failed to allocate EfficientViT-SAM device buffers");
                     if (!bind_buffers()) throw std::runtime_error("failed to bind EfficientViT-SAM device buffers");
 
@@ -277,6 +299,7 @@ namespace parallax::perception {
             }
 
             void shutdown() noexcept {
+                mask_pool_.reset();
                 decoder_context_.reset();
                 encoder_context_.reset();
 
@@ -307,6 +330,35 @@ namespace parallax::perception {
                        bind_tensor(*decoder_context_, "iou_predictions", iou_prediction_.data());
             }
 
+            bool initialize_mask_pool(std::uint32_t width, std::uint32_t height) {
+                if (mask_pool_.initialized()) {
+                    const auto* prototype = mask_pool_.prototype();
+                    return prototype && prototype->width == width && prototype->height == height;
+                }
+
+                const std::size_t bytes =static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+
+                return mask_pool_.initialize([width, height, bytes](MaskSlot& slot, std::size_t) {
+                        if (!slot.buffer.allocate(bytes)) return false;
+
+                        slot.width = width;
+                        slot.height = height;
+
+                        return true;
+                    });
+            }
+
+            std::shared_ptr<MaskSlot> acquire_mask(std::uint32_t width, std::uint32_t height) {
+                if (!initialize_mask_pool(width, height)) return {};
+
+                return mask_pool_.acquire();
+            }
+
+            bool execute_encoder(cudaStream_t stream) { return encoder_context_ && encoder_context_->enqueueV3(stream); }
+            bool execute_decoder(cudaStream_t stream) { return decoder_context_ && decoder_context_->enqueueV3(stream); }
+            float* low_res_mask() noexcept { return static_cast<float*>(low_res_mask_.data()); }
+            void record_inference() noexcept { ++metrics_.inference_count; }
+
             EfficientVitSamMetrics metrics() const noexcept { return metrics_; }
 
             void* encoder_input() noexcept { return encoder_input_.data(); }
@@ -315,23 +367,28 @@ namespace parallax::perception {
 
         private:
             std::unique_ptr<nvinfer1::IRuntime> runtime_;
+            
+            std::unique_ptr<nvinfer1::IRuntime> decoder_runtime_;
+            std::unique_ptr<nvinfer1::IRuntime> encoder_runtime_;
 
             std::unique_ptr<nvinfer1::ICudaEngine> encoder_;
             std::unique_ptr<nvinfer1::ICudaEngine> decoder_;
-
+            
             std::unique_ptr<nvinfer1::IExecutionContext> encoder_context_;
             std::unique_ptr<nvinfer1::IExecutionContext> decoder_context_;
-
+            
             EfficientVitSamMetrics metrics_{};
-
+            
             DeviceBuffer encoder_input_;
             DeviceBuffer image_embeddings_;
-
+            
             DeviceBuffer point_coords_;
             DeviceBuffer point_labels_;
-
+            
             DeviceBuffer low_res_mask_;
             DeviceBuffer iou_prediction_;
+
+            parallax::core::FixedPayloadPool<MaskSlot, MaskSlotCount> mask_pool_;
     };
 
     EfficientVitSam::EfficientVitSam() : impl_(std::make_unique<Impl>()) {}
@@ -339,7 +396,6 @@ namespace parallax::perception {
     EfficientVitSam::~EfficientVitSam() { shutdown(); }
     bool EfficientVitSam::initialize(const std::filesystem::path& encoder_engine, const std::filesystem::path& decoder_engine) {
         if (initialized_) return true;
-
         initialized_ = impl_->initialize(encoder_engine, decoder_engine);
 
         return initialized_;
@@ -347,8 +403,9 @@ namespace parallax::perception {
 
     bool EfficientVitSam::segment(const parallax::isp::StereoRgbFrame& frame, 
                                   const cv::Rect2f& box, cudaStream_t stream,
-                                  EfficientVitSamResult&) {
+                                  EfficientVitSamResult& result) {
 
+        result = {};
         if (!initialized_ || !impl_ || stream == nullptr || !frame.left.isAllocated()) {
             return false;
         }
@@ -362,7 +419,6 @@ namespace parallax::perception {
         }
 
         const auto geometry = make_geometry(frame.width, frame.height);
-
         if (geometry.encoder_width <= 0 || geometry.encoder_height <= 0 || geometry.prompt_width <= 0 || geometry.prompt_height <= 0) {
             return false;
         }
@@ -393,7 +449,38 @@ namespace parallax::perception {
 
             return false;
         }
-        return false;
+        if (!impl_->execute_encoder(stream)) return false;
+        if (!impl_->execute_decoder(stream)) return false;
+
+        auto mask = impl_->acquire_mask(frame.width, frame.height);
+
+        if (!mask) return false;
+        if (!postprocess_efficientvit_sam_mask(impl_->low_res_mask(),
+                                               geometry.prompt_width,
+                                               geometry.prompt_height,
+                                               static_cast<std::uint8_t*>(mask->buffer.data()),
+                                               geometry.original_width,
+                                               geometry.original_height,
+                                               stream)) {
+
+            return false;
+        }
+
+        const void* mask_data = mask->buffer.data();
+        /*
+        * The alias keeps the fixed pool slot leased while exposing only the
+        * CUDA mask allocation to downstream products.
+        */
+        result.storage = std::shared_ptr<const void>(mask, mask_data);
+
+        result.width = frame.width;
+        result.height = frame.height;
+        result.pitch_bytes = frame.width;
+        result.confidence = 0.0F;
+
+        impl_->record_inference();
+
+        return result.valid();
     }
 
     void EfficientVitSam::shutdown() noexcept {

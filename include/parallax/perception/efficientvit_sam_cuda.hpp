@@ -27,5 +27,13 @@ namespace parallax::perception {
                                       float* point_coords,
                                       float* point_labels,
                                       cudaStream_t stream);
+                                      
+    bool postprocess_efficientvit_sam_mask(const float* low_res_mask,
+                                           int prompt_width,
+                                           int prompt_height,
+                                           std::uint8_t* output_mask,
+                                           int output_width,
+                                           int output_height,
+                                           cudaStream_t stream);
 
 }

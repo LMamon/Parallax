@@ -29,13 +29,17 @@ namespace parallax::perception {
     };
 
     struct EfficientVitSamResult {
-        void* mask = nullptr;
+        std::shared_ptr<const void> storage{};
 
         std::uint32_t width = 0;
         std::uint32_t height = 0;
         std::size_t pitch_bytes = 0;
 
         float confidence = 0.0F;
+        
+        [[nodiscard]] bool valid() const noexcept {
+            return static_cast<bool>(storage) && width != 0 && height != 0 && pitch_bytes != 0;
+        }
     };
 
     class EfficientVitSam {

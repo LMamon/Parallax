@@ -31,6 +31,17 @@ add_executable(parallax_segmentation_test
     segmentation_test.cpp
 )
 
+add_executable(
+    parallax_efficientvit_sam_smoke
+    efficientvit_sam_smoke.cpp
+)
+
+target_link_libraries(
+    parallax_efficientvit_sam_smoke
+    PRIVATE
+        parallax_perception
+)
+
 target_link_libraries(parallax_segmentation_test
     PRIVATE
         parallax_core

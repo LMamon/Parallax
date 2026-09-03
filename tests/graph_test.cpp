@@ -23,16 +23,23 @@ namespace parallax::core {
                 TestProducer(std::string_view name,
                              std::vector<ProductId> inputs,
                              std::vector<ProductId> outputs,
-                             std::vector<OrderedInputRequirement> ordered_inputs = {}) :
+                             std::vector<OrderedInputRequirement> ordered_inputs = {},
+                             std::vector<CompatibleInputRequirement> compatible_inputs = {}) :
                                 name_(name),
                                 inputs_(std::move(inputs)),
                                 outputs_(std::move(outputs)),
-                                ordered_inputs_(std::move(ordered_inputs)) {}
+                                ordered_inputs_(std::move(ordered_inputs)),
+                                compatible_inputs_(std::move(compatible_inputs)) {}
 
                 [[nodiscard]] std::string_view name() const noexcept override { return name_; }
                 [[nodiscard]] const std::vector<ProductId>& inputs() const noexcept override { return inputs_; }
                 [[nodiscard]] const std::vector<ProductId>& outputs() const noexcept override { return outputs_; }
                 [[nodiscard]] ExecutionPolicy execution_policy() const noexcept override { return {}; }
+                
+                [[nodiscard]] const std::vector<CompatibleInputRequirement>& compatible_inputs() 
+                                                const noexcept override {
+                        return compatible_inputs_;
+                }
 
                 SubmitResult submit(ExecutionContext& context) override {
                     (void)context;
@@ -52,7 +59,8 @@ namespace parallax::core {
                 std::vector<ProductId> outputs_;
                 
                 int submit_count_ = 0;
-                std::vector<OrderedInputRequirement> ordered_inputs_;      
+                std::vector<OrderedInputRequirement> ordered_inputs_;
+                std::vector<CompatibleInputRequirement> compatible_inputs_;
         };
 
         void publish_test_product(
@@ -742,6 +750,115 @@ namespace parallax::core {
             EXPECT_EQ(plan[1], &rectifier);
             EXPECT_EQ(plan[2], &stereo);
             EXPECT_EQ(plan[3], &detector);
+        }
+
+        TEST(DependencyResolverTest, DetectionResolutionDoesNotIncludeSegmentation) {
+            Graph graph;
+            TestProducer camera{"camera", {}, {ProductId::RgbLeft}};
+            TestProducer detector{"detector", {ProductId::RgbLeft}, {ProductId::Detection}};
+            TestProducer segmentation{"segmentation",
+                                     {ProductId::Detection, ProductId::RgbLeft},
+                                     {ProductId::Segmentation},
+                                     {},
+                                     {CompatibleInputRequirement{ProductId::RgbLeft, 2}}};
+
+            graph.register_producer(camera);
+            graph.register_producer(detector);
+            graph.register_producer(segmentation);
+            graph.finalize();
+
+            DependencyResolver resolver{graph};
+
+            const auto resolved = resolver.resolve(ProductId::Detection);
+
+            ASSERT_EQ(resolved.size(), 2U);
+
+            EXPECT_EQ(resolved[0], &camera);
+            EXPECT_EQ(resolved[1], &detector);
+        }
+
+
+        TEST(DependencyResolverTest, SegmentationResolutionIncludesOnlyRequiredBranch) {
+            Graph graph;
+
+            TestProducer camera{"camera", {}, {ProductId::RgbLeft}};
+            TestProducer detector{"detector", {ProductId::RgbLeft}, {ProductId::Detection}};
+
+            TestProducer segmentation{"segmentation",
+                                     {ProductId::Detection, ProductId::RgbLeft},
+                                     {ProductId::Segmentation},
+                                     {},
+                                     {CompatibleInputRequirement{ProductId::RgbLeft, 2}}};
+
+            TestProducer stereo{"stereo", {ProductId::RgbLeft}, {ProductId::Disparity}};
+
+            graph.register_producer(camera);
+            graph.register_producer(detector);
+            graph.register_producer(segmentation);
+            graph.register_producer(stereo);
+            graph.finalize();
+
+            DependencyResolver resolver{graph};
+
+            const auto resolved = resolver.resolve(ProductId::Segmentation);
+
+            ASSERT_EQ(resolved.size(), 3U);
+
+            EXPECT_EQ(resolved[0], &camera);
+            EXPECT_EQ(resolved[1], &detector);
+            EXPECT_EQ(resolved[2], &segmentation);
+        }
+
+
+        TEST(GraphTest, SegmentationCompatibilityConfiguresBoundedRgbHistory) {
+            Graph graph;
+            ProductStore store;
+
+            TestProducer camera{"camera", {}, {ProductId::RgbLeft}};
+
+            TestProducer detector{"detector",
+                                 {ProductId::RgbLeft},
+                                 {ProductId::Detection}};
+
+            TestProducer segmentation{"segmentation",
+                                     {ProductId::Detection, ProductId::RgbLeft},
+                                     {ProductId::Segmentation},
+                                     {},
+                                     {CompatibleInputRequirement{ProductId::RgbLeft, 2}}};
+
+            graph.register_producer(camera);
+            graph.register_producer(detector);
+            graph.register_producer(segmentation);
+            graph.finalize();
+
+            configure_product_history(graph, store);
+
+            EXPECT_EQ(store.history_capacity(ProductId::RgbLeft), 2U);
+        }
+
+        TEST(ExecutionGateTest, SlowSegmentationDoesNotPaceDetection) {
+            const auto now = std::chrono::steady_clock::now();
+
+            ExecutionPolicy segmentation_policy{};
+            segmentation_policy.target_hz = 5.0;
+            segmentation_policy.drop_policy = DropPolicy::Supersede;
+
+            ProducerExecutionState segmentation_state{};
+            segmentation_state.has_last_submission = true;
+            segmentation_state.last_submission = now - std::chrono::milliseconds(20);
+
+            InputObservation segmentation_input{SourceObservation{SourceId::StereoCamera, 50}, now};
+
+            ExecutionPolicy detection_policy{};
+            detection_policy.target_hz = 0.0;
+            detection_policy.drop_policy = DropPolicy::Supersede;
+
+            ProducerExecutionState detection_state{};
+
+            InputObservation detection_input{SourceObservation{SourceId::StereoCamera, 51}, now};
+
+            EXPECT_EQ(submission_decision(segmentation_policy, segmentation_state, segmentation_input, now), SubmissionDecision::RateLimited);
+            EXPECT_EQ(submission_decision(detection_policy, detection_state, detection_input, now), SubmissionDecision::Submit);
         }
     }
 }

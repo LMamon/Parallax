@@ -149,12 +149,14 @@ namespace {
         (void)controller_.apply(Command{CommandVerb::MarkerDepth, CommandBehavior::OneShot, ""});
         (void)controller_.apply(Command{CommandVerb::Detect, CommandBehavior::Persistent, "person"});
         (void)controller_.apply(Command{CommandVerb::Track, CommandBehavior::Persistent, "person"});
+        (void)controller_.apply(Command{CommandVerb::Segment, CommandBehavior::OneShot, "cup"});
 
         controller_.reset();
 
         EXPECT_EQ(resolver_.demand(ProductId::MarkerDepth, DemandSource::Application), 0U);
         EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 0U);
         EXPECT_EQ(resolver_.demand(ProductId::Track2D, DemandSource::Application), 0U);
+        EXPECT_EQ(resolver_.demand(ProductId::Segmentation, DemandSource::Application), 0U);
 
         const auto& state = controller_.state();
 
@@ -163,6 +165,8 @@ namespace {
         EXPECT_TRUE(state.detection_target.empty());
         EXPECT_FALSE(state.tracking_requested);
         EXPECT_TRUE(state.tracking_target.empty());
+        EXPECT_FALSE(state.segmentation_requested);
+        EXPECT_TRUE(state.segmentation_target.empty());
     }
 
     TEST_F(RequestControllerTest, ResetDoesNotReuseDetectionQueryRevision) {
@@ -175,5 +179,68 @@ namespace {
 
         (void)controller_.apply(Command{CommandVerb::Detect, CommandBehavior::Persistent, "vehicle"});
         EXPECT_GT(controller_.state().detection_query_revision, first_revision);
+    }
+
+    TEST_F(RequestControllerTest, DetectionDoesNotAcquireSegmentationDemand) {
+        const auto result = controller_.apply(Command{CommandVerb::Detect, CommandBehavior::Persistent, "person"});
+
+        EXPECT_EQ(result.status, RequestStatus::Applied);
+
+        const auto state = controller_.state();
+
+        EXPECT_TRUE(state.detection_requested);
+        EXPECT_FALSE(state.segmentation_requested);
+
+        EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 1U);
+        EXPECT_EQ(resolver_.demand(ProductId::Segmentation, DemandSource::Application), 0U);
+    }
+
+    TEST_F(RequestControllerTest, SegmentationAcquiresDetectionAndSegmentationDemand) {
+        const auto result = controller_.apply(Command{CommandVerb::Segment, CommandBehavior::OneShot, "person"});
+
+        EXPECT_EQ(result.status, RequestStatus::Applied);
+
+        const auto state = controller_.state();
+
+        EXPECT_TRUE(state.detection_requested);
+        EXPECT_TRUE(state.segmentation_requested);
+
+        EXPECT_EQ(state.detection_target, "person");
+        EXPECT_EQ(state.segmentation_target, "person");
+
+        EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 1U);
+        EXPECT_EQ(resolver_.demand(ProductId::Segmentation, DemandSource::Application), 1U);
+    }
+
+    TEST_F(RequestControllerTest, RepeatedSegmentationRequestDoesNotLeakDemand) {
+        (void)controller_.apply(Command{CommandVerb::Segment, CommandBehavior::OneShot, "person"});
+
+        const auto first_revision = controller_.state().detection_query_revision;
+        (void)controller_.apply(Command{CommandVerb::Segment, CommandBehavior::OneShot, "cup"});
+
+        const auto state = controller_.state();
+
+        EXPECT_EQ(state.detection_target, "cup");
+        EXPECT_EQ(state.segmentation_target, "cup");
+
+        EXPECT_GT(state.detection_query_revision, first_revision);
+        EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 1U);
+        EXPECT_EQ(resolver_.demand(ProductId::Segmentation, DemandSource::Application), 1U);
+    }
+
+    TEST_F(RequestControllerTest, ResetReleasesSegmentationDemand) {
+        (void)controller_.apply(Command{CommandVerb::Segment, CommandBehavior::OneShot, "person"});
+
+        controller_.reset();
+
+        EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 0U);
+        EXPECT_EQ(resolver_.demand(ProductId::Segmentation, DemandSource::Application), 0U);
+
+        const auto state = controller_.state();
+
+        EXPECT_FALSE(state.detection_requested);
+        EXPECT_FALSE(state.segmentation_requested);
+        EXPECT_TRUE(state.detection_target.empty());
+        EXPECT_TRUE(state.segmentation_target.empty());
     }
 }

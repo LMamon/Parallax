@@ -211,4 +211,18 @@ namespace {
 
         EXPECT_EQ(rgb, nullptr);
     }
+
+    TEST(SegmentationCompatibilityTest, RgbRetentionRemainsBoundedAcrossManyFrames) {
+        parallax::core::ProductStore store;
+        store.set_history_capacity(parallax::core::ProductId::RgbLeft, 2);
+
+        for (std::uint64_t sequence = 1; sequence <= 100; ++sequence) {
+            store.publish(make_rgb_product(sequence));
+        }
+
+        EXPECT_EQ(store.history_capacity(parallax::core::ProductId::RgbLeft), 2U);
+        EXPECT_EQ(parallax::perception::find_segmentation_rgb(store, make_detection_product(1)), nullptr);
+        ASSERT_NE(parallax::perception::find_segmentation_rgb(store, make_detection_product(99)), nullptr);
+        ASSERT_NE(parallax::perception::find_segmentation_rgb(store, make_detection_product(100)), nullptr);
+    }
 }

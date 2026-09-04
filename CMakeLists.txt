@@ -104,6 +104,7 @@ add_subdirectory(src/pose)
 add_subdirectory(src/visualization)
 add_subdirectory(src/vpi)
 add_subdirectory(src/perception)
+add_subdirectory(src/tracking)
 
 # Add these when their CMakeLists.txt files exist.
 # add_subdirectory(src/bindings)

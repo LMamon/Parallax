@@ -1,76 +1,80 @@
 find_package(GTest REQUIRED)
+include(GoogleTest)
 
-add_executable(parallax_tests
-    smoke_test.cpp)
+function(parallax_add_gtest target source)
+    add_executable(${target} ${source})
 
-add_executable(parallax_product_store_test
+    target_link_libraries(${target}
+        PRIVATE
+            GTest::gtest_main
+            ${ARGN}
+    )
+
+    gtest_discover_tests(${target})
+endfunction()
+
+parallax_add_gtest(
+    parallax_tests
+    smoke_test.cpp
+    parallax_core
+)
+
+parallax_add_gtest(
+    parallax_product_store_test
     product_store_test.cpp
+    parallax_core
 )
 
-add_executable(parallax_graph_test
+parallax_add_gtest(
+    parallax_graph_test
     graph_test.cpp
+    parallax_core
 )
 
-add_executable(parallax_rplidar_smoke
-    rplidar_smoke.cpp
-)
-
-add_executable(parallax_runtime_metrics_test
+parallax_add_gtest(
+    parallax_runtime_metrics_test
     runtime_metrics_test.cpp
+    parallax_core
+    parallax_cuda
+    CUDA::cudart
 )
 
-add_executable(parallax_request_controller_test
+parallax_add_gtest(
+    parallax_request_controller_test
     request_controller_test.cpp
+    parallax_application
+    parallax_core
 )
 
-add_executable(parallax_detection_test
+parallax_add_gtest(
+    parallax_detection_test
     detection_test.cpp
+    parallax_core
+    parallax_perception
 )
 
-add_executable(parallax_segmentation_test
+parallax_add_gtest(
+    parallax_segmentation_test
     segmentation_test.cpp
+    parallax_core
+    parallax_perception
+)
+
+parallax_add_gtest(
+    parallax_tracking_test
+    tracking_test.cpp
+    parallax_core
+)
+
+parallax_add_gtest(
+    parallax_dcf_tracker_test
+    dcf_tracker_test.cpp
+    parallax_tracking
 )
 
 add_executable(
-    parallax_efficientvit_sam_smoke
-    efficientvit_sam_smoke.cpp
-)
-
-add_executable(parallax_tracking_test
-    tracking_test.cpp
-)
-
-target_link_libraries(parallax_tracking_test
-    PRIVATE
-        parallax_core
-        GTest::gtest_main
-)
-
-target_link_libraries(
-    parallax_efficientvit_sam_smoke
-    PRIVATE
-        parallax_perception
-)
-
-target_link_libraries(parallax_segmentation_test
-    PRIVATE
-        parallax_core
-        parallax_perception
-        GTest::gtest_main
-)
-
-target_link_libraries(parallax_detection_test
-    PRIVATE
-        parallax_core
-        parallax_perception
-        GTest::gtest_main
-)
-
-target_link_libraries(parallax_request_controller_test
-    PRIVATE
-        parallax_application
-        parallax_core
-        GTest::gtest_main
+    parallax_rplidar_smoke
+    rplidar_smoke.cpp
 )
 
 target_link_libraries(parallax_rplidar_smoke
@@ -78,38 +82,12 @@ target_link_libraries(parallax_rplidar_smoke
         parallax_lidar
 )
 
-target_link_libraries(parallax_runtime_metrics_test
-    PRIVATE
-        parallax_core
-        parallax_cuda
-        CUDA::cudart
-        GTest::gtest_main
+add_executable(
+    parallax_efficientvit_sam_smoke
+    efficientvit_sam_smoke.cpp
 )
 
-target_link_libraries(parallax_tests
+target_link_libraries(parallax_efficientvit_sam_smoke
     PRIVATE
-        parallax_core
-        GTest::gtest_main
+        parallax_perception
 )
-
-target_link_libraries(parallax_product_store_test
-    PRIVATE
-        parallax_core
-        GTest::gtest_main
-)
-
-target_link_libraries(parallax_graph_test
-    PRIVATE
-        parallax_core
-        GTest::gtest_main
-)
-
-include(GoogleTest)
-gtest_discover_tests(parallax_tests)
-gtest_discover_tests(parallax_product_store_test)
-gtest_discover_tests(parallax_graph_test)
-gtest_discover_tests(parallax_runtime_metrics_test)
-gtest_discover_tests(parallax_request_controller_test)
-gtest_discover_tests(parallax_detection_test)
-gtest_discover_tests(parallax_segmentation_test)
-gtest_discover_tests(parallax_tracking_test)

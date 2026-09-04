@@ -197,4 +197,26 @@ namespace {
         EXPECT_TRUE(producer.targetQuery().empty());
         EXPECT_EQ(resolver.demand(parallax::core::ProductId::Detection, parallax::core::DemandSource::InternalDependent), 0U);
     }
+
+    TEST(SingleTargetProducerTest, ExposesTrackingState) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        EXPECT_FALSE(producer.tracking());
+        EXPECT_FALSE(producer.track().valid());
+
+        ASSERT_TRUE(producer.setTarget("person", 1));
+
+        EXPECT_FALSE(producer.tracking());
+        EXPECT_TRUE(producer.needsDetection());
+
+        const auto& track = producer.track();
+
+        EXPECT_EQ(track.target_query, "person");
+        EXPECT_EQ(track.target_revision, 1U);
+        EXPECT_EQ(track.lifecycle, parallax::tracking::TrackLifecycle::Reacquiring);
+    }
 }

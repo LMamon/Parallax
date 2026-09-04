@@ -31,6 +31,8 @@ namespace parallax::tracking {
             [[nodiscard]] std::string_view targetQuery() const noexcept { return target_query_; }
             [[nodiscard]] std::uint64_t targetRevision() const noexcept { return target_revision_; }
             [[nodiscard]] bool needsDetection() const noexcept { return reacquisition_needed_; }
+            [[nodiscard]] const Track2D& track() const noexcept { return track_; }
+            [[nodiscard]] bool tracking() const noexcept { return tracker_.initialized(); }
 
             core::SubmitResult submit(core::ExecutionContext& context) override;
 

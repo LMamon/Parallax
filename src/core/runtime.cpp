@@ -445,8 +445,7 @@ namespace parallax::core {
                                                     {"missing_or_incompatible_input", stats.missing_or_incompatible_input.load()},
                                                     {"rate_limited", stats.rate_limited.load()},
                                                     {"stale_input", stats.stale_input.load()},
-                                                    {"superseded", stats.superseded.load()}
-                                                });
+                                                    {"superseded", stats.superseded.load()}});
                 }
 
                 const auto& metrics = runtime_metrics();
@@ -456,6 +455,21 @@ namespace parallax::core {
                     message["detection"] = {{"query_revision", detector_metrics.query_revision},
                                             {"query_encoding_count", detector_metrics.query_encoding_count},
                                             {"last_predict_ms", detector_metrics.last_predict_ms}};
+                }
+
+                if (single_target_producer_) {
+                    const auto& track = single_target_producer_->track();
+
+                    message["tracking"] = {{"target", single_target_producer_->targetQuery()},
+                                           {"target_revision", single_target_producer_->targetRevision()},
+                                           {"tracking", single_target_producer_->tracking()},
+                                           {"needs_detection", single_target_producer_->needsDetection()},
+                                           {"track_id", track.track_id},
+                                           {"lifecycle", static_cast<std::uint8_t>(track.lifecycle)},
+                                           {"quality", track.quality},
+                                           {"source_sequence", track.source_observation.sequence},
+                                           {"detector_sequence", track.last_detector_observation.sequence},
+                                           {"tracker_sequence", track.last_tracker_observation.sequence}};
                 }
 
                 message["resources"] = {{"cuda_allocations", metrics.cuda_allocations.load()},

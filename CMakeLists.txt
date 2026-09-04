@@ -105,6 +105,7 @@ add_subdirectory(src/visualization)
 add_subdirectory(src/vpi)
 add_subdirectory(src/perception)
 add_subdirectory(src/tracking)
+add_subdirectory(src/core/runtime)
 
 # Add these when their CMakeLists.txt files exist.
 # add_subdirectory(src/bindings)
@@ -128,14 +129,6 @@ target_include_directories(parallax
 )
 target_link_libraries(parallax
     PRIVATE
-        parallax_camera
-        parallax_core
-        parallax_application
-        parallax_cuda
-        parallax_pose
-        parallax_isp
-        parallax_stereo
-        parallax_visualization
-        parallax_vpi
+        parallax_runtime
         ${OpenCV_LIBS}
 )

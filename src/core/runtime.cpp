@@ -107,6 +107,8 @@ namespace parallax::core {
                                                 "models/efficientvit-sam/engines/l0_encoder_fp16.engine",
                                                 "models/efficientvit-sam/engines/l0_decoder_fp16.engine");
 
+        single_target_producer_ = std::make_unique<parallax::tracking::SingleTargetProducer>(context_.products());
+
         /**
          * Registration describes the complete concrete dependency graph.
          * Finalization happens exactly once, after every producer is present.
@@ -119,6 +121,7 @@ namespace parallax::core {
         graph_.register_producer(*charuco_pose_producer_);
         graph_.register_producer(*marker_depth_producer_);
         graph_.register_producer(*detection_producer_);
+        graph_.register_producer(*single_target_producer_);
         graph_.register_producer(*lidar_producer_);
         graph_.register_producer(*segmentation_producer_);
 

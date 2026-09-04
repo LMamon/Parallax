@@ -5,7 +5,6 @@ add_library(parallax_core STATIC
     pipeline.cpp
     product_store.cpp
     sensor_extrinsics.cpp
-    runtime.cpp
 )
 
 target_include_directories(parallax_core

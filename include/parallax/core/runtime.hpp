@@ -35,6 +35,8 @@
 #include <parallax/lidar/rplidar.hpp>
 #include <parallax/lidar/rplidar_producer.hpp>
 
+#include <parallax/tracking/single_target_producer.hpp>
+
 #include <csignal>
 #include <chrono>
 #include <atomic>
@@ -115,6 +117,7 @@ namespace parallax::core {
             std::unique_ptr<parallax::pose::MarkerDepthPoducer>marker_depth_producer_;
             std::unique_ptr<parallax::perception::NanoOwlBridge> nanoowl_;
             std::unique_ptr<parallax::perception::DetectionProducer> detection_producer_;
+            std::unique_ptr<parallax::tracking::SingleTargetProducer> single_target_producer_;
             /**
             * LiDAR is Runtime-owned because its connection and scan lifecycle span the
             * full application runtime. Its producer is graph-visible but does not belong

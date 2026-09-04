@@ -1,5 +1,9 @@
 #include <parallax/tracking/track.hpp>
 #include <parallax/tracking/tracker_ordering.hpp>
+#include <parallax/core/dependency_resolver.hpp>
+#include <parallax/core/graph.hpp>
+#include <parallax/core/product_store.hpp>
+#include <parallax/tracking/single_target_producer.hpp>
 
 #include <gtest/gtest.h>
 
@@ -124,4 +128,73 @@ namespace {
         EXPECT_TRUE(result.requires_reset());
     }
 
+    TEST(SingleTargetProducerTest, RgbIsTheContinuousGraphInput) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        ASSERT_EQ(producer.inputs().size(), 1U);
+        EXPECT_EQ(producer.inputs().front(), parallax::core::ProductId::RgbLeft);
+        ASSERT_EQ(producer.compatible_inputs().size(), 1U);
+        EXPECT_EQ(producer.compatible_inputs().front().product, parallax::core::ProductId::RgbLeft);
+        EXPECT_EQ(producer.compatible_inputs().front().history_capacity, 2U);
+    }
+
+    TEST(SingleTargetProducerTest, TargetAcquiresOneDetectorReference) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        ASSERT_TRUE(producer.setTarget("person", 1));
+        EXPECT_TRUE(producer.needsDetection());
+        EXPECT_EQ(resolver.demand(parallax::core::ProductId::Detection, parallax::core::DemandSource::InternalDependent), 1U);
+    }
+
+    TEST(SingleTargetProducerTest, RepeatedTargetDoesNotLeakDetectorDemand) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        ASSERT_TRUE(producer.setTarget("person", 1));
+        ASSERT_TRUE(producer.setTarget("person", 1));
+        EXPECT_EQ(resolver.demand(parallax::core::ProductId::Detection, parallax::core::DemandSource::InternalDependent), 1U);
+    }
+
+    TEST(SingleTargetProducerTest, TargetReplacementKeepsDetectorDemandBounded) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        ASSERT_TRUE(producer.setTarget("person", 1));
+        ASSERT_TRUE(producer.setTarget("vehicle", 2));
+
+        EXPECT_EQ(producer.targetQuery(), "vehicle");
+        EXPECT_EQ(producer.targetRevision(), 2U);
+        EXPECT_EQ(resolver.demand(parallax::core::ProductId::Detection, parallax::core::DemandSource::InternalDependent), 1U);
+    }
+
+    TEST(SingleTargetProducerTest, ResetReleasesTrackerOwnedDetectorDemand) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        ASSERT_TRUE(producer.setTarget("person", 1));
+        ASSERT_EQ(resolver.demand(parallax::core::ProductId::Detection, parallax::core::DemandSource::InternalDependent), 1U);
+
+        producer.reset();
+
+        EXPECT_FALSE(producer.needsDetection());
+        EXPECT_TRUE(producer.targetQuery().empty());
+        EXPECT_EQ(resolver.demand(parallax::core::ProductId::Detection, parallax::core::DemandSource::InternalDependent), 0U);
+    }
 }

@@ -13,7 +13,8 @@
 
 namespace parallax::tracking {
 
-    SingleTargetProducer::SingleTargetProducer(core::ProductStore& products) noexcept : products_(products) {}
+    SingleTargetProducer::SingleTargetProducer(core::ProductStore& products, core::DependencyResolver& resolver) noexcept
+                                                : products_(products), resolver_(resolver) {}
 
     std::string_view SingleTargetProducer::name() const noexcept {
         return "single_target_tracking";
@@ -25,6 +26,10 @@ namespace parallax::tracking {
 
     const std::vector<core::ProductId>& SingleTargetProducer::outputs() const noexcept {
         return outputs_;
+    }
+
+    const std::vector<core::CompatibleInputRequirement>& SingleTargetProducer::compatible_inputs() const noexcept {
+        return compatible_inputs_;
     }
 
     core::ExecutionPolicy SingleTargetProducer::execution_policy() const noexcept {
@@ -40,55 +45,106 @@ namespace parallax::tracking {
         return policy;
     }
 
+    bool SingleTargetProducer::setTarget(const std::string& target, std::uint64_t revision) {
+
+        if (target.empty() || revision == 0) return false;
+
+        if (target == target_query_ && revision == target_revision_) {
+            return true;
+        }
+
+        tracker_.reset();
+
+        target_query_ = target;
+        target_revision_ = revision;
+
+        track_ = {};
+        track_.track_id = next_track_id_++;
+        track_.target_query = target_query_;
+        track_.target_revision = target_revision_;
+        track_.image_space = perception::ImageSpace::RgbLeft;
+        track_.lifecycle = TrackLifecycle::Reacquiring;
+
+        /*
+         * A replaced target invalidates any detector result already waiting in
+         * ProductStore. Keep one detector demand reference while acquiring it.
+         */
+        reacquisition_needed_ = true;
+        reacquisition_started_at_ = std::chrono::steady_clock::now();
+
+        if (!detection_demand_owned_) {
+            resolver_.acquire(core::ProductId::Detection, core::DemandSource::InternalDependent);
+            detection_demand_owned_ = true;
+        }
+
+        return true;
+    }
+
     core::SubmitResult SingleTargetProducer::submit(core::ExecutionContext& context) {
+
+        if (target_query_.empty() || target_revision_ == 0) {
+            return core::SubmitResult::NoWork;
+        }
+
         if (!tracker_.initialized()) {
+            if (!reacquisition_needed_) begin_reacquisition();
+
             return initialize_from_detection(context) ? core::SubmitResult::Submitted : core::SubmitResult::NoWork;
         }
+
         return update_track(context);
     }
 
     bool SingleTargetProducer::initialize_from_detection(core::ExecutionContext& context) {
+        if (!reacquisition_needed_) return false;
+
         const auto detection = products_.latest<perception::DetectionSet>(core::ProductId::Detection);
 
         if (!detection ||
             !detection->valid() ||
             !detection->payload->valid() ||
             detection->payload->empty()) {
-
             return false;
         }
 
-        if (detection->payload->image_space != perception::ImageSpace::RgbLeft) {
+        if (detection->payload->query != target_query_ || detection->payload->image_space != perception::ImageSpace::RgbLeft) {
             return false;
+        }
+
+        /*
+         * Do not reacquire from a detector result that predates this acquisition
+         * request, even when its class name still matches.
+         */
+        if (detection->metadata.production_timestamp < reacquisition_started_at_) {
+            return false;
+        }
+
+        if (track_.last_detector_observation.valid()) {
+            const auto& previous = track_.last_detector_observation;
+            const auto& candidate = detection->metadata.observation;
+            if (candidate.source != previous.source || candidate.sequence <= previous.sequence) {
+                return false;
+            }
         }
 
         const auto rgb = products_.find_observation<isp::StereoRgbFrame>(core::ProductId::RgbLeft, detection->metadata.observation);
 
         if (!rgb || !rgb->valid()) return false;
 
-        if (!context.waitFor(rgb->completion, context.neuralCudaLane())) {
-            return false;
-        }
+        // DCF owns a separate VPI stream, so make this dependency explicit.
+        if (!context.waitForHost(rgb->completion)) return false;
 
         const auto best = std::max_element(detection->payload->scores.begin(), detection->payload->scores.end());
-
         if (best == detection->payload->scores.end()) return false;
 
         const std::size_t index = static_cast<std::size_t>(std::distance(detection->payload->scores.begin(), best));
-
         if (!tracker_.initialize(rgb->payload->left, detection->payload->boxes[index])) {
             return false;
         }
 
-        track_ = {};
-        track_.track_id = next_track_id_++;
-        track_.target_query = detection->payload->query;
-        track_.target_revision = detection->payload->query_revision;
         track_.box = detection->payload->boxes[index];
         track_.quality = detection->payload->scores[index];
         track_.lifecycle = TrackLifecycle::Tentative;
-        track_.image_space = perception::ImageSpace::RgbLeft;
-
         track_.source_observation = detection->metadata.observation;
         track_.last_detector_observation = detection->metadata.observation;
         track_.last_tracker_observation = detection->metadata.observation;
@@ -97,9 +153,9 @@ namespace parallax::tracking {
 
         auto metadata = detection->metadata;
         metadata.production_timestamp = std::chrono::steady_clock::now();
-
         publish_track(TrackLifecycle::Tentative, track_.box, track_.quality, metadata);
 
+        clear_reacquisition();
         return true;
     }
 
@@ -113,7 +169,6 @@ namespace parallax::tracking {
 
         if (ordering.decision == TrackerFrameDecision::RejectDuplicate ||
             ordering.decision == TrackerFrameDecision::RejectOlder) {
-
             return core::SubmitResult::NoWork;
         }
 
@@ -122,23 +177,17 @@ namespace parallax::tracking {
 
             auto metadata = rgb->metadata;
             metadata.production_timestamp = std::chrono::steady_clock::now();
-
             track_.source_observation = rgb->metadata.observation;
             track_.last_tracker_observation = rgb->metadata.observation;
             track_.last_tracker_timestamp = rgb->metadata.timestamp;
-
             publish_track(TrackLifecycle::Lost, track_.box, 0.0F, metadata);
 
+            begin_reacquisition();
             return core::SubmitResult::Submitted;
         }
 
-        /*
-         * The tracker follows the newest acceptable RGB generation.
-         * Detection provenance stays unchanged until a later reacquisition.
-         */
-        if (!context.waitFor(rgb->completion, context.neuralCudaLane())) {
-            return core::SubmitResult::Failed;
-        }
+        // DCF reads this RGB generation on its own VPI stream.
+        if (!context.waitForHost(rgb->completion)) return core::SubmitResult::Failed;
 
         const auto result = tracker_.update(rgb->payload->left);
 
@@ -150,14 +199,38 @@ namespace parallax::tracking {
 
         if (!result.tracked) {
             tracker_.reset();
+
             publish_track(TrackLifecycle::Lost, result.box, result.response, metadata);
 
+            begin_reacquisition();
             return core::SubmitResult::Submitted;
         }
 
         publish_track(TrackLifecycle::Tracking, result.box, result.response, metadata);
 
         return core::SubmitResult::Submitted;
+    }
+
+    void SingleTargetProducer::begin_reacquisition() {
+        if (reacquisition_needed_) return;
+
+        reacquisition_needed_ = true;
+        reacquisition_started_at_ = std::chrono::steady_clock::now();
+
+        if (!detection_demand_owned_) {
+            resolver_.acquire(core::ProductId::Detection, core::DemandSource::InternalDependent);
+            detection_demand_owned_ = true;
+        }
+    }
+
+    void SingleTargetProducer::clear_reacquisition() noexcept {
+        reacquisition_needed_ = false;
+        reacquisition_started_at_ = {};
+
+        if (!detection_demand_owned_) return;
+
+        resolver_.release(core::ProductId::Detection, core::DemandSource::InternalDependent);
+        detection_demand_owned_ = false;
     }
 
     void SingleTargetProducer::publish_track(TrackLifecycle lifecycle,
@@ -179,6 +252,9 @@ namespace parallax::tracking {
 
     void SingleTargetProducer::reset() noexcept {
         tracker_.reset();
+        clear_reacquisition();
+        target_query_.clear();
+        target_revision_ = 0;
         track_ = {};
     }
 }

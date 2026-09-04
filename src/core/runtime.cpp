@@ -107,7 +107,7 @@ namespace parallax::core {
                                                 "models/efficientvit-sam/engines/l0_encoder_fp16.engine",
                                                 "models/efficientvit-sam/engines/l0_decoder_fp16.engine");
 
-        single_target_producer_ = std::make_unique<parallax::tracking::SingleTargetProducer>(context_.products());
+        single_target_producer_ = std::make_unique<parallax::tracking::SingleTargetProducer>(context_.products(), resolver_);
 
         /**
          * Registration describes the complete concrete dependency graph.
@@ -495,21 +495,17 @@ namespace parallax::core {
     void Runtime::shutdown() {
         stop();
 
-        if (lidar_thread_.joinable()) {
-            lidar_thread_.join();
-        }
+        if (lidar_thread_.joinable()) lidar_thread_.join();
 
         // Stop physical hardware as soon as its worker can no longer access it.
-        if (lidar_) {
-            lidar_->shutdown();
-        }
+        if (lidar_) lidar_->shutdown();
 
-        if (!context_.drain()) {
-            std::cerr << "Runtime: failed to drain execution context during shutdown\n";
-        }
+        if (!context_.drain()) std::cerr << "Runtime: failed to drain execution context during shutdown\n";
 
         publisher_.shutdown();
         foxglove_.shutdown();
+
+        if (single_target_producer_) single_target_producer_->reset();
 
         request_controller_.reset();
 
@@ -525,10 +521,9 @@ namespace parallax::core {
         lidar_producer_.reset();
         camera_producer_.reset();
         segmentation_producer_.reset();
+        single_target_producer_.reset();
 
-        if (efficientvit_sam_) {
-            efficientvit_sam_->shutdown();
-        }
+        if (efficientvit_sam_) efficientvit_sam_->shutdown();
         efficientvit_sam_.reset();
 
         detection_producer_.reset();

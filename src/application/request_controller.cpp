@@ -60,14 +60,19 @@ namespace parallax::application {
                     return {RequestStatus::Invalid, "tracking target is empty"};
                 }
 
-                // Tracking is persistent application state. Reissuing track with a
-                // different target replaces the target without acquiring another
-                // Application demand reference.
+                /*
+                * Repeating the same target preserves its lifecycle. A replacement gets a
+                * new revision so Runtime can deterministically reset the tracker.
+                */
+                if (!state_.tracking_requested || state_.tracking_target != command.target) {
+                    state_.tracking_query_revision = next_tracking_query_revision_++;
+                }
+
                 state_.tracking_requested = true;
                 state_.tracking_target = command.target;
 
                 acquire_once(core::ProductId::Track2D, tracking_demand_owned_);
-                return {RequestStatus::Unavailable, "tracking requested; producer is not available yet"};
+                return {RequestStatus::Applied, "tracking requested"};
             }
 
             case CommandVerb::Segment: {
@@ -103,6 +108,8 @@ namespace parallax::application {
 
                 state_.tracking_requested = false;
                 state_.tracking_target.clear();
+                state_.tracking_query_revision = 0;
+
                 return {RequestStatus::Applied, "tracking stopped"};
             }
         }

@@ -40,13 +40,13 @@ namespace parallax::application {
 
         bool tracking_requested = false;
         std::string tracking_target;
+            
+        std::uint64_t tracking_query_revision = 0;
     };
 
     class RequestController {
         public:
-            explicit RequestController(
-                core::DependencyResolver& resolver
-            ) noexcept;
+            explicit RequestController(core::DependencyResolver& resolver) noexcept;
 
             // Translate application intent into graph demand/state.
             //
@@ -58,7 +58,6 @@ namespace parallax::application {
             // persistent application state. Runtime will use this during reset
             // and shutdown once it owns the controller lifecycle.
             void reset();
-
             [[nodiscard]] RequestState state() const;
 
         private:
@@ -77,6 +76,8 @@ namespace parallax::application {
             bool detection_demand_owned_ = false;
             bool segmentation_demand_owned_ = false;
             bool tracking_demand_owned_ = false;
+            
+            std::uint64_t next_tracking_query_revision_ = 1;
             std::uint64_t next_detection_query_revision_ = 1;
     };
 }

@@ -190,6 +190,7 @@ namespace parallax::core {
                                                  {"detection_query_revision", state.detection_query_revision},
                                                  {"tracking_requested", state.tracking_requested},
                                                  {"tracking_target", state.tracking_target},
+                                                 {"tracking_query_revision", state.tracking_query_revision},
                                                  {"segmentation_requested", state.segmentation_requested},
                                                  {"segmentation_target", state.segmentation_target}};
 
@@ -283,12 +284,50 @@ namespace parallax::core {
             // The foxglove service handler remains control-plane only:
             // it records intent/demand and never calls NanoOWL directly.
             const auto request_state = request_controller_.state();
-            if (request_state.detection_requested && detection_producer_ && !detection_producer_->setQuery(
-                                                                            request_state.detection_target,
-                                                                            request_state.detection_query_revision)) {
 
-                std::cerr << "Runtime: failed to apply NanoOWL detection query\n";
-                break;
+            /*
+            * RequestController owns intent; the producer owns DCF state.
+            * Repeating the same revision is intentionally a no-op.
+            */
+            if (single_target_producer_) {
+                if (request_state.tracking_requested) {
+                    if (!single_target_producer_->setTarget(request_state.tracking_target, request_state.tracking_query_revision)) {
+
+                        std::cerr << "Runtime: failed to apply tracking target\n";
+                        break;
+                    }
+                }
+                else if (!single_target_producer_->targetQuery().empty()) {
+                    single_target_producer_->reset();
+                }
+            }
+
+            const bool tracker_needs_detection = request_state.tracking_requested &&
+                                                 single_target_producer_ &&
+                                                 single_target_producer_->needsDetection();
+
+            const bool segmentation_conflicts = tracker_needs_detection &&
+                                                request_state.segmentation_requested &&
+                                                request_state.segmentation_target != request_state.tracking_target;
+
+            /*
+            * Tracking borrows the existing detector only while acquiring a box.
+            * An active segmentation prompt is not replaced with an unrelated target.
+            */
+            if (detection_producer_) {
+                if (tracker_needs_detection && !segmentation_conflicts) {
+
+                    if (!detection_producer_->setQuery(request_state.tracking_target, request_state.tracking_query_revision)) {
+                        std::cerr << "Runtime: failed to apply tracking detection query\n";
+                        break;
+                    }
+                }
+                else if (request_state.detection_requested) {
+                    if (!detection_producer_->setQuery(request_state.detection_target, request_state.detection_query_revision)) {
+                        std::cerr << "Runtime: failed to apply NanoOWL detection query\n";
+                        break;
+                    }
+                }
             }
 
             for (Producer* producer : execution_plan) {

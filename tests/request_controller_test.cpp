@@ -109,14 +109,18 @@ namespace {
 
     TEST_F(RequestControllerTest, TrackingTargetReplacementDoesNotLeakDemand) {
         const auto first = controller_.apply(Command{CommandVerb::Track, CommandBehavior::Persistent, "person"});
+        const auto first_revision = controller_.state().tracking_query_revision;
         const auto second = controller_.apply(Command{CommandVerb::Track, CommandBehavior::Persistent, "vehicle"});
 
-        EXPECT_EQ(first.status, RequestStatus::Unavailable);
-        EXPECT_EQ(second.status, RequestStatus::Unavailable);
+        const auto state = controller_.state();
+
+        EXPECT_EQ(first.status, RequestStatus::Applied);
+        EXPECT_EQ(second.status, RequestStatus::Applied);
 
         EXPECT_TRUE(controller_.state().tracking_requested);
 
         EXPECT_EQ(controller_.state().tracking_target, "vehicle");
+        EXPECT_GT(state.tracking_query_revision, first_revision);
         EXPECT_EQ(resolver_.demand(ProductId::Track2D, DemandSource::Application), 1U);
     }
 
@@ -134,6 +138,7 @@ namespace {
 
         EXPECT_EQ(resolver_.demand(ProductId::Track2D, DemandSource::Application), 0U);
         EXPECT_EQ(resolver_.demand(ProductId::Track2D, DemandSource::FoxgloveSubscriber), 1U);
+        EXPECT_EQ(controller_.state().tracking_query_revision, 0U);
     }
 
     TEST_F(RequestControllerTest, RepeatedStopTrackingDoesNotUnderflowDemand) {
@@ -157,9 +162,9 @@ namespace {
         EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 0U);
         EXPECT_EQ(resolver_.demand(ProductId::Track2D, DemandSource::Application), 0U);
         EXPECT_EQ(resolver_.demand(ProductId::Segmentation, DemandSource::Application), 0U);
-
+        
         const auto& state = controller_.state();
-
+        
         EXPECT_FALSE(state.marker_depth_requested);
         EXPECT_FALSE(state.detection_requested);
         EXPECT_TRUE(state.detection_target.empty());
@@ -167,6 +172,7 @@ namespace {
         EXPECT_TRUE(state.tracking_target.empty());
         EXPECT_FALSE(state.segmentation_requested);
         EXPECT_TRUE(state.segmentation_target.empty());
+        EXPECT_EQ(state.tracking_query_revision, 0U);
     }
 
     TEST_F(RequestControllerTest, ResetDoesNotReuseDetectionQueryRevision) {
@@ -242,5 +248,30 @@ namespace {
         EXPECT_FALSE(state.segmentation_requested);
         EXPECT_TRUE(state.detection_target.empty());
         EXPECT_TRUE(state.segmentation_target.empty());
+    }
+
+    TEST_F(RequestControllerTest, RepeatedTrackingTargetPreservesRevisionAndDemand) {
+        const auto first = controller_.apply(Command{CommandVerb::Track, CommandBehavior::Persistent, "person"});
+        const auto first_state = controller_.state();
+
+        const auto second = controller_.apply(Command{CommandVerb::Track, CommandBehavior::Persistent, "person"});
+        const auto second_state = controller_.state();
+
+        EXPECT_EQ(first.status, RequestStatus::Applied);
+        EXPECT_EQ(second.status, RequestStatus::Applied);
+
+        EXPECT_EQ(second_state.tracking_query_revision, first_state.tracking_query_revision);
+        EXPECT_EQ(resolver_.demand(ProductId::Track2D, DemandSource::Application), 1U);
+    }
+
+    TEST_F(RequestControllerTest, TrackingRevisionIsNotReusedAfterStop) {
+        (void)controller_.apply(Command{CommandVerb::Track, CommandBehavior::Persistent, "person"});
+        const auto first_revision = controller_.state().tracking_query_revision;
+
+        (void)controller_.apply(Command{CommandVerb::StopTracking, CommandBehavior::OneShot, ""});
+        EXPECT_EQ(controller_.state().tracking_query_revision, 0U);
+        
+        (void)controller_.apply(Command{CommandVerb::Track, CommandBehavior::Persistent, "person"});
+        EXPECT_GT(controller_.state().tracking_query_revision, first_revision);
     }
 }

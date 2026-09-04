@@ -13,6 +13,7 @@
 
 #include <parallax/core/completion.hpp>
 #include <parallax/lidar/frame_types.hpp>
+#include <parallax/tracking/track.hpp>
 
 #include <functional>
 #include <foxglove/websocket.hpp>
@@ -63,6 +64,7 @@ namespace parallax::visualization {
             bool publishDetections(const parallax::core::Product<parallax::perception::DetectionSet>& product);
             bool publishDetectionAnnotations(const parallax::core::Product<parallax::perception::DetectionSet>& product);
             bool publishSegmentationMask(const parallax::core::Product<parallax::perception::SegmentationMask>& product);
+            bool publishTrackAnnotations(const parallax::core::Product<parallax::tracking::Track2D>& product);
 
             VideoEncoder video_encoder_;
             cudaStream_t stream_ = nullptr;
@@ -94,6 +96,11 @@ namespace parallax::visualization {
             parallax::core::SourceObservation last_segmentation_observation_{};
             std::uint64_t last_segmentation_query_revision_ = 0;
             bool has_published_segmentation_ = false;
+
+            parallax::core::SourceObservation last_track_annotation_observation_{};
+            std::uint64_t last_track_annotation_revision_ = 0;
+            parallax::tracking::TrackLifecycle last_track_annotation_lifecycle_ = parallax::tracking::TrackLifecycle::Idle;
+            bool has_published_track_annotation_ = false;
             /**
              * Non-owning access to the native Foxglove capability surface.
              *

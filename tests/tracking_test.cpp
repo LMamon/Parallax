@@ -4,7 +4,11 @@
 #include <parallax/core/graph.hpp>
 #include <parallax/core/product_store.hpp>
 #include <parallax/tracking/single_target_producer.hpp>
+#include <parallax/core/execution_context.hpp>
+#include <parallax/perception/detection.hpp>
 
+#include <chrono>
+#include <memory>
 #include <gtest/gtest.h>
 
 namespace {
@@ -218,5 +222,61 @@ namespace {
         EXPECT_EQ(track.target_query, "person");
         EXPECT_EQ(track.target_revision, 1U);
         EXPECT_EQ(track.lifecycle, parallax::tracking::TrackLifecycle::Reacquiring);
+    }
+
+    TEST(SingleTargetProducerTest, RejectsDetectionFromOldTargetRevision) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+        parallax::core::ExecutionContext context;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        ASSERT_TRUE(producer.setTarget("person", 2));
+
+        auto detections = std::make_shared<parallax::perception::DetectionSet>();
+
+        detections->query = "person";
+        detections->query_revision = 1;
+        detections->image_space = parallax::perception::ImageSpace::RgbLeft;
+
+        detections->boxes.push_back(cv::Rect2f{100.0F,
+                                               100.0F,
+                                               80.0F,
+                                               120.0F});
+
+        detections->scores.push_back(0.9F);
+        detections->labels.push_back(0);
+
+        parallax::core::ProductMetadata metadata{};
+        metadata.observation = {parallax::core::SourceId::StereoCamera, 10};
+
+        metadata.timestamp = std::chrono::steady_clock::now();
+
+        metadata.production_timestamp = metadata.timestamp;
+        metadata.valid = true;
+        products.publish(parallax::core::make_product<parallax::perception::DetectionSet>(
+                                                      parallax::core::ProductId::Detection,
+                                                      metadata, std::move(detections),
+                                                      parallax::core::CompletionHandle::cpu_ready()));
+
+        EXPECT_EQ(producer.submit(context), parallax::core::SubmitResult::NoWork);
+        EXPECT_TRUE(producer.needsDetection());
+        EXPECT_FALSE(producer.tracking());
+    }
+
+    TEST(SingleTargetProducerTest, DetectorDemandIsVisibleInMetrics) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        ASSERT_TRUE(producer.setTarget("person", 1));
+
+        const auto metrics = producer.metrics();
+
+        EXPECT_EQ(metrics.detector_refreshes, 1U);
+        EXPECT_EQ(metrics.reacquisition_requests, 0U);
     }
 }

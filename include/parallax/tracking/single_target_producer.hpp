@@ -14,6 +14,21 @@
 
 namespace parallax::tracking {
 
+    struct SingleTargetMetrics {
+        std::uint64_t tracker_updates = 0;
+        std::uint64_t skipped_rgb_observations = 0;
+        std::uint64_t sequence_gap_resets = 0;
+        std::uint64_t lost_transitions = 0;
+        std::uint64_t reacquisition_requests = 0;
+        std::uint64_t reacquisition_successes = 0;
+        std::uint64_t detector_refreshes = 0;
+        std::uint64_t resets = 0;
+
+        double tracker_update_hz = 0.0;
+        double detector_refresh_hz = 0.0;
+        double lost_duration_ms = 0.0;
+    };
+
     class SingleTargetProducer final : public core::Producer {
         public:
             SingleTargetProducer(core::ProductStore& products, core::DependencyResolver& resolver) noexcept;
@@ -33,6 +48,7 @@ namespace parallax::tracking {
             [[nodiscard]] bool needsDetection() const noexcept { return reacquisition_needed_; }
             [[nodiscard]] const Track2D& track() const noexcept { return track_; }
             [[nodiscard]] bool tracking() const noexcept { return tracker_.initialized(); }
+            [[nodiscard]] SingleTargetMetrics metrics() const noexcept;
 
             core::SubmitResult submit(core::ExecutionContext& context) override;
 
@@ -66,7 +82,12 @@ namespace parallax::tracking {
 
             const std::vector<core::ProductId> inputs_{core::ProductId::RgbLeft};
             const std::vector<core::ProductId> outputs_{core::ProductId::Track2D};
+            SingleTargetMetrics metrics_{};
 
+            std::chrono::steady_clock::time_point first_tracker_update_{};
+            std::chrono::steady_clock::time_point first_detector_refresh_{};
+            std::chrono::steady_clock::time_point lost_since_{};
+            
             // Keep only enough RGB history to recover the image used by a detector result.
             const std::vector<core::CompatibleInputRequirement> compatible_inputs_{{core::ProductId::RgbLeft, 2}};
     };

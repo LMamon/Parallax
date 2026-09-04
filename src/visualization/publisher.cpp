@@ -2,6 +2,8 @@
 #include <parallax/pose/charuco_pose.hpp>
 #include <opencv4/opencv2/imgproc.hpp>
 #include <parallax/perception/detection.hpp>
+#include <parallax/tracking/track.hpp>
+
 
 #include <algorithm>
 #include <cstring>
@@ -312,6 +314,27 @@ namespace parallax::visualization {
                     last_detection_annotation_observation_ = detections->metadata.observation;
                     last_detection_annotation_query_revision_ = detections->payload->query_revision;
                     has_published_detection_annotation_ = true;
+                }
+            }
+        }
+
+        if (foxglove_->trackAnnotationsChannel().hasSinks()) {
+            const auto track = store.latest<parallax::tracking::Track2D>(parallax::core::ProductId::Track2D);
+
+            if (track && track->valid() && track->payload->valid()) {
+
+                const bool new_annotation = !has_published_track_annotation_ ||
+                                            track->metadata.observation != last_track_annotation_observation_ ||
+                                            track->payload->target_revision != last_track_annotation_revision_ ||
+                                            track->payload->lifecycle != last_track_annotation_lifecycle_;
+
+                if (new_annotation) {
+                    if (!publishTrackAnnotations(*track)) return false;
+
+                    last_track_annotation_observation_ = track->metadata.observation;
+                    last_track_annotation_revision_ = track->payload->target_revision;
+                    last_track_annotation_lifecycle_ = track->payload->lifecycle;
+                    has_published_track_annotation_ = true;
                 }
             }
         }
@@ -778,6 +801,104 @@ namespace parallax::visualization {
         return checkFoxglove(foxglove_->segmentationMaskChannel().log(message), "Failed to publish /perception/segmentation");
     }
     
+    bool Publisher::publishTrackAnnotations(const parallax::core::Product<parallax::tracking::Track2D>& product) {
+        if (!initialized_ ||
+            foxglove_ == nullptr ||
+            !product.valid() ||
+            !product.payload ||
+            !product.payload->valid()) {
+
+            return false;
+        }
+
+        const auto& track = *product.payload;
+        const auto& box = track.box;
+
+        if (!std::isfinite(box.x) ||
+            !std::isfinite(box.y) ||
+            !std::isfinite(box.width) ||
+            !std::isfinite(box.height) ||
+            box.width <= 0.0F ||
+            box.height <= 0.0F) {
+
+            return false;
+        }
+
+        foxglove::messages::ImageAnnotations message;
+        message.timestamp = nowTimestamp();
+
+        // Track boxes stay in RgbLeft pixels.
+        foxglove::messages::KeyValuePair image_space;
+        image_space.key = "image_space";
+        image_space.value = "rgb_left_isp";
+        message.metadata.push_back(std::move(image_space));
+
+        foxglove::messages::KeyValuePair source_sequence;
+        source_sequence.key = "source_sequence";
+        source_sequence.value = std::to_string(product.metadata.observation.sequence);
+
+        message.metadata.push_back(std::move(source_sequence));
+
+        const double x0 = box.x;
+        const double y0 = box.y;
+        const double x1 = box.x + box.width;
+        const double y1 = box.y + box.height;
+
+        foxglove::messages::PointsAnnotation rectangle;
+        rectangle.type = foxglove::messages::PointsAnnotation::PointsAnnotationType::LINE_LOOP;
+
+        rectangle.thickness = 3.0;
+
+        rectangle.points = {{x0, y0},
+                            {x1, y0},
+                            {x1, y1},
+                            {x0, y1}};
+
+        foxglove::messages::Color outline;
+        outline.r = 1.0;
+        outline.g = 0.7;
+        outline.b = 0.0;
+        outline.a = 1.0;
+        rectangle.outline_color = outline;
+
+        message.points.push_back(std::move(rectangle));
+
+        foxglove::messages::TextAnnotation label;
+
+        foxglove::messages::Point2 position;
+        position.x = x0;
+        position.y = std::max(18.0, y0 - 4.0);
+
+        label.position = position;
+        label.font_size = 18.0;
+
+        std::ostringstream text;
+        text << "track " << track.track_id
+            << ' ' << track.target_query
+            << ' ' << std::fixed
+            << std::setprecision(2)
+            << track.quality;
+
+        label.text = text.str();
+
+        foxglove::messages::Color text_color;
+        text_color.r = 1.0;
+        text_color.g = 1.0;
+        text_color.b = 1.0;
+        text_color.a = 1.0;
+        label.text_color = text_color;
+
+        foxglove::messages::Color background;
+        background.r = 0.0;
+        background.g = 0.0;
+        background.b = 0.0;
+        background.a = 0.65;
+        label.background_color = background;
+
+        message.texts.push_back(std::move(label));
+
+        return checkFoxglove(foxglove_->trackAnnotationsChannel().log(message), "Failed to publish /tracking/annotations");
+    }
 
     void Publisher::shutdown() {
         video_encoder_.shutdown();

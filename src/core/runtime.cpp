@@ -459,6 +459,7 @@ namespace parallax::core {
 
                 if (single_target_producer_) {
                     const auto& track = single_target_producer_->track();
+                    const auto tracker_metrics = single_target_producer_->metrics();
 
                     message["tracking"] = {{"target", single_target_producer_->targetQuery()},
                                            {"target_revision", single_target_producer_->targetRevision()},
@@ -469,7 +470,18 @@ namespace parallax::core {
                                            {"quality", track.quality},
                                            {"source_sequence", track.source_observation.sequence},
                                            {"detector_sequence", track.last_detector_observation.sequence},
-                                           {"tracker_sequence", track.last_tracker_observation.sequence}};
+                                           {"tracker_sequence", track.last_tracker_observation.sequence},
+                                           {"updates", tracker_metrics.tracker_updates},
+                                           {"update_hz", tracker_metrics.tracker_update_hz},
+                                           {"skipped_rgb", tracker_metrics.skipped_rgb_observations},
+                                           {"sequence_gap_resets", tracker_metrics.sequence_gap_resets},
+                                           {"lost_transitions", tracker_metrics.lost_transitions},
+                                           {"reacquisition_requests", tracker_metrics.reacquisition_requests},
+                                           {"reacquisition_successes", tracker_metrics.reacquisition_successes},
+                                           {"detector_refreshes", tracker_metrics.detector_refreshes},
+                                           {"detector_refresh_hz", tracker_metrics.detector_refresh_hz},
+                                           {"lost_duration_ms", tracker_metrics.lost_duration_ms},
+                                           {"resets", tracker_metrics.resets}};
                 }
 
                 message["resources"] = {{"cuda_allocations", metrics.cuda_allocations.load()},

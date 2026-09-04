@@ -102,6 +102,8 @@ namespace parallax::visualization {
             [[nodiscard]] foxglove::RawChannel& detectionChannel() noexcept { return *detection_channel_; }
             [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& detectionAnnotationsChannel() noexcept { return *detection_annotations_channel_; }
             [[nodiscard]] foxglove::messages::RawImageChannel& segmentationMaskChannel() noexcept { return *segmentation_mask_channel_; }
+            [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& trackAnnotationsChannel() noexcept { return *track_annotations_channel_; }
+
 
         private:
             bool initializeChannels();
@@ -136,6 +138,7 @@ namespace parallax::visualization {
             std::optional<foxglove::messages::PoseInFrameChannel> marker_pose_channel_;
             std::optional<foxglove::RawChannel> detection_channel_;
             std::optional<foxglove::messages::ImageAnnotationsChannel> detection_annotations_channel_;
+            std::optional<foxglove::messages::ImageAnnotationsChannel> track_annotations_channel_;
             std::optional<foxglove::messages::RawImageChannel> segmentation_mask_channel_;
 
             std::vector<std::byte> marker_depth_schema_;

@@ -52,6 +52,7 @@ namespace parallax::tracking {
         if (target == target_query_ && revision == target_revision_) {
             return true;
         }
+        if (!target_query_.empty() || tracker_.initialized()) ++metrics_.resets;
 
         tracker_.reset();
 
@@ -75,6 +76,11 @@ namespace parallax::tracking {
         if (!detection_demand_owned_) {
             resolver_.acquire(core::ProductId::Detection, core::DemandSource::InternalDependent);
             detection_demand_owned_ = true;
+            ++metrics_.detector_refreshes;
+
+            if (first_detector_refresh_ == std::chrono::steady_clock::time_point{}) {
+                first_detector_refresh_ = std::chrono::steady_clock::now();
+            }
         }
 
         return true;
@@ -107,7 +113,10 @@ namespace parallax::tracking {
             return false;
         }
 
-        if (detection->payload->query != target_query_ || detection->payload->image_space != perception::ImageSpace::RgbLeft) {
+        if (detection->payload->query != target_query_ ||
+            detection->payload->query_revision != target_revision_ ||
+            detection->payload->image_space != perception::ImageSpace::RgbLeft) {
+
             return false;
         }
 
@@ -128,7 +137,6 @@ namespace parallax::tracking {
         }
 
         const auto rgb = products_.find_observation<isp::StereoRgbFrame>(core::ProductId::RgbLeft, detection->metadata.observation);
-
         if (!rgb || !rgb->valid()) return false;
 
         // DCF owns a separate VPI stream, so make this dependency explicit.
@@ -138,6 +146,8 @@ namespace parallax::tracking {
         if (best == detection->payload->scores.end()) return false;
 
         const std::size_t index = static_cast<std::size_t>(std::distance(detection->payload->scores.begin(), best));
+        const bool reacquiring = track_.last_detector_observation.valid();
+
         if (!tracker_.initialize(rgb->payload->left, detection->payload->boxes[index])) {
             return false;
         }
@@ -155,18 +165,21 @@ namespace parallax::tracking {
         metadata.production_timestamp = std::chrono::steady_clock::now();
         publish_track(TrackLifecycle::Tentative, track_.box, track_.quality, metadata);
 
+        if (reacquiring) ++metrics_.reacquisition_successes;
+
+        lost_since_ = {};
         clear_reacquisition();
         return true;
     }
 
     core::SubmitResult SingleTargetProducer::update_track(core::ExecutionContext& context) {
-
         const auto rgb = products_.latest<isp::StereoRgbFrame>(core::ProductId::RgbLeft);
 
         if (!rgb || !rgb->valid()) return core::SubmitResult::NoWork;
 
         const auto ordering = evaluate_tracker_frame(track_.last_tracker_observation, rgb->metadata.observation);
 
+        metrics_.skipped_rgb_observations += ordering.skipped;
         if (ordering.decision == TrackerFrameDecision::RejectDuplicate ||
             ordering.decision == TrackerFrameDecision::RejectOlder) {
             return core::SubmitResult::NoWork;
@@ -175,11 +188,20 @@ namespace parallax::tracking {
         if (ordering.requires_reset()) {
             tracker_.reset();
 
+            ++metrics_.sequence_gap_resets;
+            ++metrics_.lost_transitions;
+            ++metrics_.resets;
+
+            if (lost_since_ == std::chrono::steady_clock::time_point{}) {
+                lost_since_ = std::chrono::steady_clock::now();
+            }
+
             auto metadata = rgb->metadata;
             metadata.production_timestamp = std::chrono::steady_clock::now();
             track_.source_observation = rgb->metadata.observation;
             track_.last_tracker_observation = rgb->metadata.observation;
             track_.last_tracker_timestamp = rgb->metadata.timestamp;
+
             publish_track(TrackLifecycle::Lost, track_.box, 0.0F, metadata);
 
             begin_reacquisition();
@@ -188,6 +210,12 @@ namespace parallax::tracking {
 
         // DCF reads this RGB generation on its own VPI stream.
         if (!context.waitForHost(rgb->completion)) return core::SubmitResult::Failed;
+
+        ++metrics_.tracker_updates;
+
+        if (first_tracker_update_ == std::chrono::steady_clock::time_point{}) {
+            first_tracker_update_ = std::chrono::steady_clock::now();
+        }
 
         const auto result = tracker_.update(rgb->payload->left);
 
@@ -200,6 +228,13 @@ namespace parallax::tracking {
         if (!result.tracked) {
             tracker_.reset();
 
+            ++metrics_.lost_transitions;
+            ++metrics_.resets;
+
+            if (lost_since_ == std::chrono::steady_clock::time_point{}) {
+                lost_since_ = std::chrono::steady_clock::now();
+            }
+
             publish_track(TrackLifecycle::Lost, result.box, result.response, metadata);
 
             begin_reacquisition();
@@ -207,7 +242,6 @@ namespace parallax::tracking {
         }
 
         publish_track(TrackLifecycle::Tracking, result.box, result.response, metadata);
-
         return core::SubmitResult::Submitted;
     }
 
@@ -217,9 +251,17 @@ namespace parallax::tracking {
         reacquisition_needed_ = true;
         reacquisition_started_at_ = std::chrono::steady_clock::now();
 
+        ++metrics_.reacquisition_requests;
+
         if (!detection_demand_owned_) {
             resolver_.acquire(core::ProductId::Detection, core::DemandSource::InternalDependent);
+
             detection_demand_owned_ = true;
+            ++metrics_.detector_refreshes;
+
+            if (first_detector_refresh_ == std::chrono::steady_clock::time_point{}) {
+                first_detector_refresh_ = std::chrono::steady_clock::now();
+            }
         }
     }
 
@@ -253,8 +295,40 @@ namespace parallax::tracking {
     void SingleTargetProducer::reset() noexcept {
         tracker_.reset();
         clear_reacquisition();
+        if (!target_query_.empty() || tracker_.initialized() || reacquisition_needed_) {
+            ++metrics_.resets;
+        }
+
         target_query_.clear();
         target_revision_ = 0;
         track_ = {};
+        lost_since_ = {};
+    }
+
+    SingleTargetMetrics SingleTargetProducer::metrics() const noexcept {
+        auto result = metrics_;
+        const auto now = std::chrono::steady_clock::now();
+
+        if (result.tracker_updates > 0 && first_tracker_update_ != std::chrono::steady_clock::time_point{}) {
+            const double seconds = std::chrono::duration<double>(now - first_tracker_update_).count();
+
+            if (seconds > 0.0) {
+                result.tracker_update_hz = static_cast<double>(result.tracker_updates) / seconds;
+            }
+        }
+
+        if (result.detector_refreshes > 0 && first_detector_refresh_ != std::chrono::steady_clock::time_point{}) {
+            const double seconds = std::chrono::duration<double>(now - first_detector_refresh_).count();
+
+            if (seconds > 0.0) {
+                result.detector_refresh_hz = static_cast<double>(result.detector_refreshes) / seconds;
+            }
+        }
+
+        if (lost_since_ != std::chrono::steady_clock::time_point{}) {
+            result.lost_duration_ms = std::chrono::duration<double, std::milli>(now - lost_since_).count();
+        }
+
+        return result;
     }
 }

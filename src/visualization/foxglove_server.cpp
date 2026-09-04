@@ -358,6 +358,17 @@ namespace parallax::visualization {
 
         segmentation_mask_channel_.emplace(std::move(segmentation_mask.value()));
         bindProduct(segmentation_mask_channel_->id(), ProductId::Segmentation);
+
+        auto track_annotations = foxglove::messages::ImageAnnotationsChannel::create("/tracking/annotations", context_);
+        if (!track_annotations.has_value()) {
+            std::cerr << "Failed to create /tracking/annotations channel: "
+                      << foxglove::strerror(track_annotations.error()) << '\n';
+
+            return false;
+        }
+
+        track_annotations_channel_.emplace(std::move(track_annotations.value()));
+        bindProduct(track_annotations_channel_->id(), ProductId::Track2D);
         // every graph backed channel gets bindProduct(...)
         
         return true;

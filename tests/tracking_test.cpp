@@ -7,6 +7,7 @@
 #include <parallax/core/execution_context.hpp>
 #include <parallax/perception/detection.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <gtest/gtest.h>
@@ -278,5 +279,96 @@ namespace {
 
         EXPECT_EQ(metrics.detector_refreshes, 1U);
         EXPECT_EQ(metrics.reacquisition_requests, 0U);
+    }
+
+    TEST(SingleTargetProducerTest, TrackingDoesNotDeclareDetectorAsContinuousInput) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        ASSERT_EQ(producer.inputs().size(), 1U);
+        EXPECT_EQ(producer.inputs().front(), parallax::core::ProductId::RgbLeft);
+        EXPECT_EQ(std::count(producer.inputs().begin(), producer.inputs().end(), parallax::core::ProductId::Detection), 0);
+    }
+
+
+    TEST(SingleTargetProducerTest, TrackingDoesNotDeclareUnrelatedPerceptionInputs) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        const auto has_input = [&](parallax::core::ProductId id) {
+            return std::find(producer.inputs().begin(), producer.inputs().end(), id) != producer.inputs().end();
+        };
+
+        EXPECT_FALSE(has_input(parallax::core::ProductId::Depth));
+        EXPECT_FALSE(has_input(parallax::core::ProductId::Segmentation));
+        EXPECT_FALSE(has_input(parallax::core::ProductId::Disparity));
+    }
+
+
+    TEST(SingleTargetProducerTest, RgbCompatibilityHistoryIsBounded) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        ASSERT_EQ(producer.compatible_inputs().size(), 1U);
+
+        const auto& requirement = producer.compatible_inputs().front();
+
+        EXPECT_EQ(requirement.product, parallax::core::ProductId::RgbLeft);
+
+        EXPECT_EQ(requirement.history_capacity, 2U);
+    }
+
+
+    TEST(SingleTargetProducerTest, ReacquisitionDemandCannotAccumulate) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        ASSERT_TRUE(producer.setTarget("person", 1));
+
+        EXPECT_EQ(resolver.demand(parallax::core::ProductId::Detection, parallax::core::DemandSource::InternalDependent), 1U);
+
+        // Repeating the same request cannot add detector demand.
+        ASSERT_TRUE(producer.setTarget("person", 1));
+        ASSERT_TRUE(producer.setTarget("person", 1));
+
+        EXPECT_EQ(resolver.demand(parallax::core::ProductId::Detection, parallax::core::DemandSource::InternalDependent), 1U);
+
+        EXPECT_EQ(producer.metrics().detector_refreshes, 1U);
+    }
+
+
+    TEST(SingleTargetProducerTest, ResetClearsTrackingLifecycleState) {
+        parallax::core::Graph graph;
+        parallax::core::DependencyResolver resolver{graph};
+        parallax::core::ProductStore products;
+
+        parallax::tracking::SingleTargetProducer producer{products, resolver};
+
+        ASSERT_TRUE(producer.setTarget("person", 4));
+        ASSERT_TRUE(producer.needsDetection());
+
+        producer.reset();
+
+        EXPECT_TRUE(producer.targetQuery().empty());
+        EXPECT_EQ(producer.targetRevision(), 0U);
+        EXPECT_FALSE(producer.needsDetection());
+        EXPECT_FALSE(producer.tracking());
+
+        EXPECT_EQ(producer.track().lifecycle, parallax::tracking::TrackLifecycle::Idle);
+
+        EXPECT_FALSE(producer.track().valid());
+        EXPECT_EQ(resolver.demand(parallax::core::ProductId::Detection, parallax::core::DemandSource::InternalDependent), 0U);
     }
 }

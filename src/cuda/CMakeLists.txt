@@ -1,6 +1,7 @@
 add_library(parallax_cuda
     cuda_buffer.cu
     depth.cu
+    depth_roi.cu
     efficientvit_sam.cu
 )
 

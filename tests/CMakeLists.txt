@@ -68,6 +68,13 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_object3d_association_test
+    object3d_association_test.cpp
+    parallax_core
+    parallax_perception
+)
+
+parallax_add_gtest(
     parallax_tracking_test
     tracking_test.cpp
     parallax_tracking

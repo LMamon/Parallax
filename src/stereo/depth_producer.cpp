@@ -3,6 +3,7 @@
 #include <parallax/core/execution_context.hpp>
 
 #include <memory>
+#include <cmath>
 
 namespace parallax::stereo {
     DepthProducer::DepthProducer(const StereoCalibration& calibration,
@@ -75,9 +76,13 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::NoWork;
         }
 
+        const float rectified_fx_px = static_cast<float>(calibration_.P1()[0]);
+        if (!std::isfinite(rectified_fx_px) || rectified_fx_px <= 0.0F) {
+            return parallax::core::SubmitResult::Failed;
+        }
         if (!parallax::cuda::disparityToDepth(disparity->payload->disparity,
                                               depth->depth,
-                                              static_cast<float>(calibration_.metadata().virtual_fx),
+                                              rectified_fx_px,
                                               static_cast<float>(calibration_.metadata().baseline_mm / 1000.0),
                                               parallax::isp::StereoMatchFrame::DisparityScale,
                                               lane.cudaHandle())) {

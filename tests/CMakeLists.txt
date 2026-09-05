@@ -90,6 +90,14 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_marker_depth_producer_test
+    marker_depth_producer_test.cpp
+    parallax_core
+    parallax_pose
+    parallax_cuda
+)
+
+parallax_add_gtest(
     parallax_tracking_test
     tracking_test.cpp
     parallax_tracking

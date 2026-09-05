@@ -14,6 +14,7 @@ target_include_directories(parallax_pose
 
 target_link_libraries(parallax_pose
     PUBLIC
+        parallax_cuda
         ${OpenCV_LIBS}
         CUDA::cudart
 )

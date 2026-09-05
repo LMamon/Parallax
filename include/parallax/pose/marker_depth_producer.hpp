@@ -2,8 +2,11 @@
 
 #include <parallax/core/producer.hpp>
 #include <parallax/core/product_store.hpp>
+#include <parallax/cuda/cuda_buffer.cuh>
+#include <parallax/cuda/depth_roi.cuh>
 
 #include <vector>
+#include <cstdint>
 
 namespace parallax::pose {
     /**
@@ -42,5 +45,14 @@ namespace parallax::pose {
                 parallax::core::ProductId::Projection,
                 parallax::core::ProductId::MarkerDepth
             };
+
+            static constexpr std::uint32_t RoiRadius = 3;
+            static constexpr std::uint32_t MinValidSamples = 5;
+
+            parallax::cuda::CudaBuffer request_device_;
+            parallax::cuda::CudaBuffer result_device_;
+
+            parallax::cuda::DepthRoiRequest request_host_{};
+            parallax::cuda::DepthRoiResult result_host_{};
     };
 }

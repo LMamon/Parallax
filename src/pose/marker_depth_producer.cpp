@@ -1,11 +1,8 @@
 #include <parallax/pose/marker_depth_producer.hpp>
+
+#include <parallax/core/execution_context.hpp>
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/pose/charuco_pose.hpp>
-#include <parallax/core/execution_context.hpp>
-#include <parallax/core/runtime_metrics.hpp>
-
-
-#include <cuda_runtime.h>
 
 #include <chrono>
 #include <cmath>
@@ -15,7 +12,6 @@
 
 namespace parallax::pose {
     MarkerDepthPoducer::MarkerDepthPoducer(parallax::core::ProductStore& store) : store_(store) {}
-
     std::string_view MarkerDepthPoducer::name() const noexcept {
         return "pose.marker_depth";
     }
@@ -38,35 +34,27 @@ namespace parallax::pose {
 
     parallax::core::SubmitResult MarkerDepthPoducer::submit(parallax::core::ExecutionContext& context) {
         const auto pose = store_.latest<parallax::pose::CharucoPoseResult>(parallax::core::ProductId::Pose);
-
-        if (!pose || !pose->valid()) {
-            return parallax::core::SubmitResult::NoWork;
-        }
-
+        
+        if (!pose || !pose->valid()) return parallax::core::SubmitResult::NoWork;
         const auto depth = store_.latest<parallax::isp::DepthFrame>(parallax::core::ProductId::Depth);
+        
+        if (!depth || !depth->valid()) return parallax::core::SubmitResult::NoWork;
 
-        if (!depth || !depth->valid()) {
-            return parallax::core::SubmitResult::NoWork;
-        }
-
-        /**
-         * Marker pose and metric depth must describe the same stereo-camera
-         * observation. Freshness alone cannot establish that relationship:
-         * a newer depth product may be perfectly fresh while belonging to a
-         * different camera frame.
+        /*
+         * Marker geometry and depth must describe the same camera observation.
+         * Marker depth intentionally keeps the stricter exact-observation rule;
+         * Object3D's bounded temporal association does not apply here.
          */
         if (!parallax::core::same_source_observation(*depth, pose->metadata.observation)) {
             return parallax::core::SubmitResult::NoWork;
         }
 
-        /**
-         * Keep projection metadata independently available even when no valid metric
-         * depth exists at the projected center.
-         */
+        // Projection remains useful even when stereo cannot provide metric
+        // support at the projected marker center.
         auto result = std::make_shared<parallax::pose::CharucoPoseResult>(*pose->payload);
 
         result->depth_valid = false;
-        result->depth_m = 0.0f;
+        result->depth_m = 0.0F;
 
         if (result->pose_valid && result->plane_valid) {
             const int x = static_cast<int>(std::lround(result->projected_center.x));
@@ -77,53 +65,81 @@ namespace parallax::pose {
                 y >= 0 &&
                 y < static_cast<int>(depth->payload->height)) {
 
-                const auto* row = reinterpret_cast<const std::uint8_t*>(depth->payload->depth.data()) +
-                                                                        static_cast<std::size_t>(y) *
-                                                                        depth->payload->depth.pitch();
+                auto& lane = context.stereoLane();
+                const cudaStream_t stream = lane.cudaHandle();
 
-                const float* pixel = reinterpret_cast<const float*>(row) + x;
-                float depth_m = 0.0f;
+                if (stream == nullptr) return parallax::core::SubmitResult::Failed;
 
-                /**
-                 * SYNCHRONIZATION INVENTORY — REQUIRED CPU OBSERVATION
-                 *
-                 *
-                 * MarkerDepth needs one scalar depth value on the CPU. The Depth product
-                 * carries the exact completion generation that produced its device buffer,
-                 * so this host wait cannot accidentally synchronize against a newer frame.
-                 *
-                 * Depth publication itself remains asynchronous.
+                /*
+                 * Depth publication can precede completion of its CUDA work.
+                 * Chain this reduction behind the exact depth generation rather
+                 * than synchronizing the entire stereo pipeline.
                  */
-                if (!context.waitForHost(depth->completion)) {
+                if (!context.waitFor(depth->completion, lane)) {
                     return parallax::core::SubmitResult::Failed;
                 }
 
-                const cudaError_t copy_status = cudaMemcpy(&depth_m, pixel, sizeof(float), cudaMemcpyDeviceToHost);
+                request_host_.center_x = x;
+                request_host_.center_y = y;
 
-                if (copy_status == cudaSuccess) {
-                    auto& metrics = parallax::core::runtime_metrics();
-                    ++metrics.device_to_host_transfers;
-                    metrics.device_to_host_bytes += sizeof(float);
+                /*
+                 * Marker depth is a single-ROI use of the same GPU primitive
+                 * used by Object3D. Scratch allocations are retained by the
+                 * producer and reused across submissions.
+                 */
+                if (!request_device_.isAllocated() && !request_device_.allocate(1, 1, 1,
+                                                                sizeof(parallax::cuda::DepthRoiRequest))) {
+                    return parallax::core::SubmitResult::Failed;
                 }
 
-                if (copy_status == cudaSuccess &&
-                    std::isfinite(depth_m) &&
-                    depth_m > 0.0f) {
+                if (!result_device_.isAllocated() && !result_device_.allocate(1, 1, 1,
+                                                                sizeof(parallax::cuda::DepthRoiResult))) {
+                    return parallax::core::SubmitResult::Failed;
+                }
 
-                    result->depth_m = depth_m;
+                if (!request_device_.uploadAsync(&request_host_, sizeof(parallax::cuda::DepthRoiRequest), stream)) {
+                    return parallax::core::SubmitResult::Failed;
+                }
+
+                if (!parallax::cuda::reduceDepthRois(depth->payload->depth,
+                                                     request_device_,
+                                                     result_device_,
+                                                     1,
+                                                     RoiRadius,
+                                                     stream)) {
+
+                    return parallax::core::SubmitResult::Failed;
+                }
+
+                if (!result_device_.downloadAsync(&result_host_, sizeof(parallax::cuda::DepthRoiResult), stream)) {
+                    return parallax::core::SubmitResult::Failed;
+                }
+
+                // CPU pose metadata needs only the compact ROI result. The full
+                // depth frame never crosses the device boundary.
+                auto completion = context.recordCudaCompletion(stream);
+                if (!completion.valid() || !context.waitForHost(completion)) {
+                    return parallax::core::SubmitResult::Failed;
+                }
+
+                if (result_host_.valid_samples >= MinValidSamples &&
+                    result_host_.sampled_pixels != 0 &&
+                    std::isfinite(result_host_.depth_m) && result_host_.depth_m > 0.0F) {
+
+                    result->depth_m = result_host_.depth_m;
                     result->depth_valid = true;
                 }
             }
         }
 
-        /**
-         * Projection and MarkerDepth currently share CharucoPoseResult as their C++
-         * payload type but retain separate semantic ProductIds. ProductId identifies 
-         * meaning in the graph not just C++ type
+        /*
+         * Projection and MarkerDepth share the pose payload type but remain
+         * separate graph products because ProductId describes semantics, not
+         * merely the underlying C++ type.
          */
         std::shared_ptr<const parallax::pose::CharucoPoseResult> published_result = result;
 
-        store_.publish(parallax::core::make_product(parallax::core::ProductId::Projection, 
+        store_.publish(parallax::core::make_product(parallax::core::ProductId::Projection,
                                                     pose->metadata,
                                                     published_result));
 

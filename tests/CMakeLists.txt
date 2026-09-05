@@ -75,6 +75,13 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_image_space_mapper_test
+    image_space_mapper_test.cpp
+    parallax_core
+    parallax_perception
+)
+
+parallax_add_gtest(
     parallax_tracking_test
     tracking_test.cpp
     parallax_tracking

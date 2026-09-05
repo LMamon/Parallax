@@ -3,6 +3,7 @@ add_library(parallax_perception
     detection_producer.cpp
     efficientvit_sam.cpp
     segmentation_producer.cpp
+    image_space_mapper.cpp
 )
 
 find_library(
@@ -27,6 +28,7 @@ target_link_libraries(parallax_perception
         parallax_core
         parallax_isp
         parallax_cuda
+        parallax_stereo
         CUDA::cudart
         ${OpenCV_LIBS}
 

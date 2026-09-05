@@ -29,7 +29,7 @@ namespace parallax::core {
         Detection,
         Segmentation,
         Track2D,
-        Track3D,
+        Object3D,
         LidarScan
     };
 }

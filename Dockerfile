@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     strace \
     nlohmann-json3-dev \
     libopencv-dev \
+    libeigen3-dev \
     libopenblas0 \
     libv4l-dev \
     libyaml-cpp-dev \

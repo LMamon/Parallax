@@ -536,7 +536,7 @@ namespace parallax::core {
         TEST(GraphTest, OrderedInputMustBeDeclaredDependency) {
             Graph graph;
 
-            TestProducer producer{"ordered", {ProductId::Depth}, {ProductId::Track3D}, {{ProductId::LidarScan, 4}}};
+            TestProducer producer{"ordered", {ProductId::Depth}, {ProductId::Object3D}, {{ProductId::LidarScan, 4}}};
 
             EXPECT_THROW(graph.register_producer(producer), std::logic_error);
         }
@@ -545,7 +545,7 @@ namespace parallax::core {
             Graph graph;
             ProductStore store;
 
-            TestProducer producer{"ordered", {ProductId::Depth}, {ProductId::Track3D}, {{ProductId::Depth, 4}}};
+            TestProducer producer{"ordered", {ProductId::Depth}, {ProductId::Object3D}, {{ProductId::Depth, 4}}};
 
             graph.register_producer(producer);
             graph.finalize();
@@ -559,7 +559,7 @@ namespace parallax::core {
             ProductStore store;
 
             TestProducer first{"first", {ProductId::Depth}, {ProductId::Track2D}, {{ProductId::Depth, 4}}};
-            TestProducer second{"second", {ProductId::Depth}, {ProductId::Track3D}, {{ProductId::Depth, 12}}};
+            TestProducer second{"second", {ProductId::Depth}, {ProductId::Object3D}, {{ProductId::Depth, 12}}};
 
             graph.register_producer(first);
             graph.register_producer(second);

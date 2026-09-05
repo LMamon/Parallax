@@ -1,0 +1,282 @@
+#include <parallax/perception/stereo_roi_associator.hpp>
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
+namespace parallax::perception {
+
+    bool RectifiedCameraModel::valid() const noexcept {
+        return std::isfinite(fx_px) &&
+               std::isfinite(fy_px) &&
+               std::isfinite(cx_px) &&
+               std::isfinite(cy_px) &&
+               fx_px > 0.0F &&
+               fy_px > 0.0F && !coordinate_frame.empty();
+    }
+
+    StereoRoiAssociator::StereoRoiAssociator(const stereo::StereoCalibration& calibration, std::string coordinate_frame)
+                                                : calibration_(calibration), coordinate_frame_(std::move(coordinate_frame)) {}
+
+    bool StereoRoiAssociator::initialize() {
+        if (!calibration_.loaded()) return false;
+
+        const auto& metadata = calibration_.metadata();
+        const auto& p1 = calibration_.P1();
+
+        /*
+         * Object3D is back-projected from RectifiedLeft depth coordinates.
+         * P1 therefore owns the correct camera model here. Do not substitute
+         * distorted-camera or virtual calibration values.
+         */
+        RectifiedCameraModel camera_model{};
+        camera_model.fx_px = static_cast<float>(p1[0]);
+        camera_model.fy_px = static_cast<float>(p1[5]);
+        camera_model.cx_px = static_cast<float>(p1[2]);
+        camera_model.cy_px = static_cast<float>(p1[6]);
+        camera_model.coordinate_frame = coordinate_frame_;
+
+        return initialize(metadata.image_width,
+                         metadata.image_height,
+                         calibration_.leftMapX(),
+                         calibration_.leftMapY(),
+                         std::move(camera_model));
+    }
+
+    bool StereoRoiAssociator::initialize(std::uint32_t width,
+                                         std::uint32_t height,
+                                         const std::vector<float>& rectified_to_rgb_x,
+                                         const std::vector<float>& rectified_to_rgb_y,
+                                         RectifiedCameraModel camera_model) {
+
+        initialized_ = false;
+        if (width == 0 || height == 0 || !camera_model.valid()) {
+            return false;
+        }
+
+        if (!mapper_.initialize(width, height, rectified_to_rgb_x, rectified_to_rgb_y)) {
+            return false;
+        }
+
+        /*
+         * Scratch storage is allocated once for the maximum bounded batch.
+         * The association path never grows device memory because detector
+         * output increased unexpectedly.
+         */
+        if (!requests_device_.allocate(static_cast<std::uint32_t>(MaxObjects), 1, 1, sizeof(cuda::DepthRoiRequest))) {
+            return false;
+        }
+
+        if (!results_device_.allocate(static_cast<std::uint32_t>(MaxObjects), 1, 1, sizeof(cuda::DepthRoiResult))) {
+            requests_device_.release();
+            return false;
+        }
+
+        image_width_ = width;
+        image_height_ = height;
+        camera_model_ = std::move(camera_model);
+
+        initialized_ = true;
+        return true;
+    }
+
+    bool StereoRoiAssociator::associate(const DetectionSet& detections,
+                                        const core::ProductMetadata& semantic_metadata,
+                                        const core::Product<isp::DepthFrame>& depth,
+                                        core::ExecutionContext& context,
+                                        Object3DSet& output) {
+
+        output = {};
+
+        if (!initialized_ ||
+            !detections.valid() ||
+            !semantic_metadata.valid ||
+            !semantic_metadata.observation.valid() ||
+            !depth.valid() || !depth.payload) {
+            return false;
+        }
+
+        /*
+         * This class performs metric association, not temporal compatibility
+         * selection. The caller must supply the Depth generation selected by
+         * the Phase 16 compatibility policy.
+         */
+        if (!depth.metadata.valid || !depth.metadata.observation.valid()) return false;
+
+        if (depth.payload->width != image_width_ ||
+            depth.payload->height != image_height_ ||
+            !depth.payload->depth.isAllocated()) {
+            return false;
+        }
+
+        /*
+         * MaxObjects is a real bounded-work contract. Silently truncating a
+         * larger detector result would make output completeness ambiguous.
+         */
+        if (detections.size() > MaxObjects) return false;
+
+        output.query = detections.query;
+        output.query_revision = detections.query_revision;
+        if (detections.empty()) return true;
+
+        std::array<std::size_t, MaxObjects> detection_indices{};
+        std::array<cv::Point2f, MaxObjects> rectified_centers{};
+
+        std::uint32_t request_count = 0;
+
+        /*
+         * NanoOWL boxes remain expressed in their original semantic image
+         * space. Only the sampling center is transformed into RectifiedLeft.
+         * Object3D keeps the original image box for provenance/visualization.
+         */
+        for (std::size_t i = 0; i < detections.size(); ++i) {
+            const auto& box = detections.boxes[i];
+            const float score = detections.scores[i];
+
+            if (!std::isfinite(box.x) ||
+                !std::isfinite(box.y) ||
+                !std::isfinite(box.width) ||
+                !std::isfinite(box.height) ||
+                box.width <= 0.0F ||
+                box.height <= 0.0F || !std::isfinite(score)) {
+                continue;
+            }
+
+            const cv::Point2f semantic_center{box.x + box.width * 0.5F, box.y + box.height * 0.5F};
+            cv::Point2f rectified_center{};
+
+            /*
+             * A detection near calibration/crop boundaries can be semantically
+             * valid but have no supported rectified depth coordinate. Skip that
+             * object rather than inventing a metric position.
+             */
+            if (!mapper_.mapPoint(semantic_center, detections.image_space, ImageSpace::RectifiedLeft, rectified_center)) {
+                continue;
+            }
+
+            requests_host_[request_count] = {static_cast<std::int32_t>(std::lround(rectified_center.x)),
+                                             static_cast<std::int32_t>(std::lround(rectified_center.y))};
+
+            detection_indices[request_count] = i;
+            rectified_centers[request_count] = rectified_center;
+
+            ++request_count;
+        }
+
+        if (request_count == 0) return true;
+
+        auto& lane = context.stereoLane();
+        const cudaStream_t stream = lane.cudaHandle();
+
+        if (stream == nullptr) return false;
+
+        // Depth may still be in flight when the product is visible in the
+        // store. Add a generation-specific accelerator dependency instead of
+        // globally synchronizing stereo or the device.
+        if (!context.waitFor(depth.completion, lane)) return false;
+
+
+        // CudaBuffer copies the fixed scratch row. Even though only
+        // request_count entries are consumed by the kernel, keeping a fixed
+        // allocation/copy shape avoids per-frame allocation and remains tiny.        
+        const std::size_t request_host_pitch = MaxObjects * sizeof(cuda::DepthRoiRequest);
+        if (!requests_device_.uploadAsync(requests_host_.data(), request_host_pitch, stream)) {
+            return false;
+        }
+
+        if (!cuda::reduceDepthRois(depth.payload->depth,
+                                  requests_device_,
+                                  results_device_,
+                                  request_count,
+                                  RoiRadius,
+                                  stream)) {
+
+            return false;
+        }
+
+        const std::size_t result_host_pitch = MaxObjects * sizeof(cuda::DepthRoiResult);
+        if (!results_device_.downloadAsync(results_host_.data(), result_host_pitch, stream)) {
+            return false;
+        }
+
+        // CPU Object3D metadata needs the compact ROI results. Synchronize only
+        // this submitted CUDA chain, after the full depth image has already
+        // been reduced to at most MaxObjects tiny structs.
+        auto completion = context.recordCudaCompletion(stream);
+        if (!completion.valid() || !context.waitForHost(completion)) return false;
+
+        output.objects.reserve(request_count);
+
+        const auto association_timestamp = std::chrono::steady_clock::now();
+
+        const auto source_delta = depth.metadata.timestamp >= semantic_metadata.timestamp
+                                  ? depth.metadata.timestamp - semantic_metadata.timestamp
+                                  : semantic_metadata.timestamp - depth.metadata.timestamp;
+
+        for (std::uint32_t request = 0; request < request_count; ++request) {
+            const auto& roi = results_host_[request];
+
+            // Sparse stereo may leave the center invalid while surrounding
+            // pixels remain useful. Require a minimum support count instead of
+            // requiring one special pixel to be valid.
+            if (roi.valid_samples < MinValidSamples ||
+                roi.sampled_pixels == 0 ||
+                !std::isfinite(roi.depth_m) || roi.depth_m <= 0.0F) {
+                continue;
+            }
+
+            std::array<float, 3> xyz{};
+            if (!backProject(rectified_centers[request], roi.depth_m, xyz)) continue;
+
+            const std::size_t detection_index = detection_indices[request];
+
+            Object3D object{};
+            object.label = detections.query;
+            object.query_revision = detections.query_revision;
+            object.semantic_confidence = detections.scores[detection_index];
+            object.image_box = detections.boxes[detection_index];
+            object.image_space = detections.image_space;
+
+            object.position_m = xyz;
+            object.depth_m = roi.depth_m;
+            object.coordinate_frame = camera_model_.coordinate_frame;
+
+            object.geometry = Object3DGeometry::Point;
+            object.method = Object3DMethod::StereoRoi;
+
+            object.semantic_observation = semantic_metadata.observation;
+            object.metric_observation = depth.metadata.observation;
+            object.association_timestamp = association_timestamp;
+            object.source_time_delta = source_delta;
+
+            // This is support density, not semantic confidence. Keep those
+            // quality signals separate so downstream policy can reason about
+            // detector confidence and stereo support independently.
+            object.support_quality = static_cast<float>(roi.valid_samples) / static_cast<float>(roi.sampled_pixels);
+
+            output.objects.push_back(std::move(object));
+        }
+        return true;
+    }
+
+    bool StereoRoiAssociator::backProject(const cv::Point2f& rectified_point, float depth_m, std::array<float, 3>& xyz) const noexcept {
+        if (!camera_model_.valid() ||
+            !std::isfinite(rectified_point.x) ||
+            !std::isfinite(rectified_point.y) ||
+            !std::isfinite(depth_m) || depth_m <= 0.0F) {
+
+            return false;
+        }
+
+        // P1 describes the rectified left pinhole camera. Depth is Z in that
+        // same camera frame, so no additional calibration transform is needed.
+        xyz[0] = (rectified_point.x - camera_model_.cx_px) * depth_m / camera_model_.fx_px;
+        xyz[1] = (rectified_point.y - camera_model_.cy_px) * depth_m / camera_model_.fy_px;
+        xyz[2] = depth_m;
+
+        return std::isfinite(xyz[0]) && std::isfinite(xyz[1]) && std::isfinite(xyz[2]);
+    }
+}

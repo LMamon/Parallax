@@ -82,6 +82,14 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_stereo_roi_associator_test
+    stereo_roi_associator_test.cpp
+    parallax_core
+    parallax_perception
+    parallax_cuda
+)
+
+parallax_add_gtest(
     parallax_tracking_test
     tracking_test.cpp
     parallax_tracking

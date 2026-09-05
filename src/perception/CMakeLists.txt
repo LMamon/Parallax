@@ -4,6 +4,7 @@ add_library(parallax_perception
     efficientvit_sam.cpp
     segmentation_producer.cpp
     image_space_mapper.cpp
+    stereo_roi_associator.cpp
 )
 
 find_library(

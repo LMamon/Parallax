@@ -104,10 +104,10 @@ namespace parallax::visualization {
                                std::uint32_t width, 
                                std::uint32_t height,
                                std::uint32_t fps,
-                               std::string coordinate_frame_) {
+                               std::string coordinate_frame) {
 
         if (initialized_) return true;
-        if (width == 0 || height == 0 || fps == 0 || coordinate_frame_.empty()) {
+        if (width == 0 || height == 0 || fps == 0 || coordinate_frame.empty()) {
             std::cerr << "Invalid visualization dimensions/FPS\n";
             return false;
         }
@@ -121,7 +121,7 @@ namespace parallax::visualization {
         width_ = width;
         height_ = height;
         fps_ = fps;
-        coordinate_frame_ = std::move(coordinate_frame_);
+        coordinate_frame_ = std::move(coordinate_frame);
 
         if (cudaStreamCreate(&stream_) != cudaSuccess) {
             std::cerr << "Failed to create visualization CUDA stream\n";

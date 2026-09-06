@@ -325,15 +325,13 @@ namespace parallax::visualization {
          * rather than rasterizing rectangles into another full-frame image.
          *
          * Both detection channels observe the same compact ProductId::Detection.
-         * Subscribing to either channel may therefore contribute normal
-         * FoxgloveSubscriber demand without introducing a detector-specific
-         * execution trigger.
+         * Subscribing to either channel therefore contributes normal Foxglove demand
+         * without introducing a visualization-specific execution path.
          *
-         * Coordinate-space note:
-         * NanoOWL currently consumes RgbLeft while /camera/left/image is RectifiedRgb.
-         * These annotations therefore describe the detector's source-image pixels.
-         * Do not claim geometric alignment with the rectified image until a matching
-         * image-space consumer or explicit coordinate transform is introduced.
+         * NanoOWL detections originate in RgbLeft image space while the displayed
+         * left image is rectified. ImageSpaceMapper owns the calibrated mapping into
+         * RectifiedLeft coordinates before annotations are published, so visualization
+         * does not duplicate camera geometry or assume the two pixel spaces coincide.
          */
         auto detection_annotations = foxglove::messages::ImageAnnotationsChannel::create(
                                                                                 "/perception/annotations",

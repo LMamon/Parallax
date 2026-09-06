@@ -34,7 +34,11 @@ namespace parallax::visualization {
             Publisher(const Publisher&) = delete;
             Publisher& operator=(const Publisher&) = delete;
             using HostWait = std::function<bool(const parallax::core::CompletionHandle&)>;
-            bool initialize(FoxgloveServer& foxglove, std::uint32_t width, std::uint32_t height, std::uint32_t fps);
+            bool initialize(FoxgloveServer& foxglove, 
+                            std::uint32_t width, 
+                            std::uint32_t height, 
+                            std::uint32_t fps, 
+                            std::string coordinate_frame);
 
             /**
             * Observe the newest graph products currently available in ProductStore.
@@ -45,7 +49,6 @@ namespace parallax::visualization {
             * - no demand acquisition;
             * - no visualization-only accelerator wait when a channel has no sinks.
             */
-
             bool publishLeftCalibration(const parallax::stereo::StereoCalibration& calibration);
             bool publishStaticTransforms(const parallax::core::SensorExtrinsics& extrinsics);
             bool publishAvailable(const parallax::core::ProductStore& store, const HostWait& wait_for_host);
@@ -110,5 +113,6 @@ namespace parallax::visualization {
              */
             FoxgloveServer* foxglove_ = nullptr;
             bool initialized_ = false;
+            std::string coordinate_frame_;
     };
 }

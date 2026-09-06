@@ -14,11 +14,10 @@
 #include <array>
 #include <iomanip>
 #include <cmath>
+#include <utility>
 
 namespace parallax::visualization {
     namespace {
-        constexpr const char* kFrameId = "camera_left_optical";
-
         bool checkFoxglove(const foxglove::FoxgloveError& error, const char* message) {
             if (error != foxglove::FoxgloveError::Ok) {
                 std::cerr << message << ": "
@@ -80,10 +79,14 @@ namespace parallax::visualization {
 
     Publisher::~Publisher() { shutdown(); }
 
-    bool Publisher::initialize(FoxgloveServer& foxglove, std::uint32_t width, std::uint32_t height, std::uint32_t fps) {
-        if (initialized_) return true;
+    bool Publisher::initialize(FoxgloveServer& foxglove, 
+                               std::uint32_t width, 
+                               std::uint32_t height,
+                               std::uint32_t fps,
+                               std::string coordinate_frame) {
 
-        if (width == 0 || height == 0 || fps == 0) {
+        if (initialized_) return true;
+        if (width == 0 || height == 0 || fps == 0 || coordinate_frame.empth()) {
             std::cerr << "Invalid visualization dimensions/FPS\n";
             return false;
         }
@@ -94,10 +97,10 @@ namespace parallax::visualization {
         }
 
         foxglove_ = &foxglove;
-
         width_ = width;
         height_ = height;
         fps_ = fps;
+        coordinate_frame_ = std::move(coordinate_frame);
 
         if (cudaStreamCreate(&stream_) != cudaSuccess) {
             std::cerr << "Failed to create visualization CUDA stream\n";
@@ -158,7 +161,7 @@ namespace parallax::visualization {
 
         foxglove::messages::CameraCalibration message;
 
-        message.frame_id = kFrameId;
+        message.frame_id = coordinate_frame;
 
         message.width = metadata.image_width;
         message.height = metadata.image_height;
@@ -426,7 +429,7 @@ namespace parallax::visualization {
         foxglove::messages::CompressedVideo message;
 
         message.timestamp = nowTimestamp();
-        message.frame_id = kFrameId;
+        message.frame_id = coordinate_frame;
         message.format = "h264";
         message.data = encoded_video_;
 
@@ -460,7 +463,7 @@ namespace parallax::visualization {
         foxglove::messages::RawImage message;
 
         message.timestamp = nowTimestamp();
-        message.frame_id = kFrameId;
+        message.frame_id = coordinate_frame;
         message.width = frame.width;
         message.height = frame.height;
         message.encoding = "32FC1";
@@ -507,7 +510,7 @@ namespace parallax::visualization {
 
         foxglove::messages::RawImage message;
 
-        message.frame_id = kFrameId;
+        message.frame_id = coordinate_frame;
         message.width = frame.width;
         message.height = frame.height;
         message.encoding = "32FC1";
@@ -788,7 +791,7 @@ namespace parallax::visualization {
         foxglove::messages::RawImage message;
 
         message.timestamp = nowTimestamp();
-        message.frame_id = kFrameId;
+        message.frame_id = coordinate_frame;
         message.width = mask.width;
         message.height = mask.height;
         message.encoding = "mono8";

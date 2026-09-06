@@ -233,7 +233,11 @@ namespace parallax::core {
         }
 
         const auto& rgb = pipeline_.rgb();
-        if (!publisher_.initialize(foxglove_, rgb.width, rgb.height, config_.frame_rate)) {
+        if (!publisher_.initialize(foxglove_, 
+                                   rgb.width, 
+                                   rgb.height, 
+                                   config_.frame_rate, 
+                                   sensor_extrinsics_.left_camera.child_frame)) {
             std::cerr << "Runtime: failed to initialize visualization publisher\n";
 
             shutdown();

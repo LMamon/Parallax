@@ -75,6 +75,27 @@ namespace parallax::visualization {
                     return "unknown";
             }
         }
+    
+        std::string formatDepth(float depth_m) {
+            if (!std::isfinite(depth_m) || depth_m <= 0.0F) return {};
+
+            constexpr float MetersToFeet = 3.280839895F;
+            constexpr float FeetToInches = 12.0F;
+            const float feet = depth_m * MetersToFeet;
+
+            std::ostringstream stream;
+            stream << std::fixed;
+
+            if (feet < 1.0F) {
+                stream << std::setprecision(1) << feet * FeetToInches << " in";
+            } else if (feet < 3.0F) {
+                stream << std::setprecision(1) << feet << " ft";
+            } else {
+                stream << std::setprecision(2) << depth_m << " m";
+            }
+
+            return stream.str();
+        }
     }
 
     Publisher::~Publisher() { shutdown(); }
@@ -83,10 +104,10 @@ namespace parallax::visualization {
                                std::uint32_t width, 
                                std::uint32_t height,
                                std::uint32_t fps,
-                               std::string coordinate_frame) {
+                               std::string coordinate_frame_) {
 
         if (initialized_) return true;
-        if (width == 0 || height == 0 || fps == 0 || coordinate_frame.empth()) {
+        if (width == 0 || height == 0 || fps == 0 || coordinate_frame_.empty()) {
             std::cerr << "Invalid visualization dimensions/FPS\n";
             return false;
         }
@@ -100,7 +121,7 @@ namespace parallax::visualization {
         width_ = width;
         height_ = height;
         fps_ = fps;
-        coordinate_frame_ = std::move(coordinate_frame);
+        coordinate_frame_ = std::move(coordinate_frame_);
 
         if (cudaStreamCreate(&stream_) != cudaSuccess) {
             std::cerr << "Failed to create visualization CUDA stream\n";
@@ -161,8 +182,7 @@ namespace parallax::visualization {
 
         foxglove::messages::CameraCalibration message;
 
-        message.frame_id = coordinate_frame;
-
+        message.frame_id = coordinate_frame_;
         message.width = metadata.image_width;
         message.height = metadata.image_height;
 
@@ -369,6 +389,46 @@ namespace parallax::visualization {
             }
         }
 
+        if (foxglove_->objectDepthAnnotationsChannel().hasSinks()) {
+            const auto objects = store.latest<parallax::perception::Object3DSet>(parallax::core::ProductId::Object3D);
+
+            if (objects && objects->valid() && objects->payload->valid()) {
+                const bool new_annotation = !has_published_object_depth_annotation_ ||
+                                            objects->metadata.observation != last_object_depth_annotation_observation_ ||
+                                            objects->payload->query_revision != last_object_depth_annotation_revision_;
+
+                if (new_annotation) {
+                    if (!publishObjectDepthAnnotations(*objects)) {
+                        return false;
+                    }
+
+                    last_object_depth_annotation_observation_ = objects->metadata.observation;
+                    last_object_depth_annotation_revision_ = objects->payload->query_revision;
+                    has_published_object_depth_annotation_ = true;
+                }
+            }
+        }
+
+        if (foxglove_->object3DSceneChannel().hasSinks()) {
+            const auto objects = store.latest<parallax::perception::Object3DSet>(parallax::core::ProductId::Object3D);
+
+            if (objects && objects->valid() && objects->payload->valid()) {
+                const bool new_scene = !has_published_object_scene_ ||
+                                        objects->metadata.observation != last_object_scene_observation_ ||
+                                        objects->payload->query_revision != last_object_scene_revision_;
+
+                if (new_scene) {
+                    if (!publishObject3DScene(*objects)) {
+                        return false;
+                    }
+
+                    last_object_scene_observation_ = objects->metadata.observation;
+                    last_object_scene_revision_ = objects->payload->query_revision;
+                    has_published_object_scene_ = true;
+                }
+            }
+        }
+
         return true;
     }
 
@@ -390,12 +450,12 @@ namespace parallax::visualization {
                                        sizeof(std::uint8_t);
 
         if (!frame.left.downloadAsync(host_rgb_, host_pitch, stream_)) {
-            std::cerr << "Failed to download left RGB frame\n";
+            std::cerr << "Failed to download depth frame\n";
             return false;
         }
 
         if (cudaStreamSynchronize(stream_) != cudaSuccess) {
-            std::cerr << "Failed to synchronize RGB download\n";
+            std::cerr << "Failed to synchronize depth download\n";
             return false;
         }
 
@@ -429,7 +489,7 @@ namespace parallax::visualization {
         foxglove::messages::CompressedVideo message;
 
         message.timestamp = nowTimestamp();
-        message.frame_id = coordinate_frame;
+        message.frame_id = coordinate_frame_;
         message.format = "h264";
         message.data = encoded_video_;
 
@@ -449,12 +509,12 @@ namespace parallax::visualization {
         const std::size_t host_pitch = static_cast<std::size_t>(width_) * sizeof(float);
 
         if (!frame.depth.downloadAsync(host_depth_, host_pitch, stream_)) {
-            std::cerr << "Failed to download left RGB frame\n";
+            std::cerr << "Failed to download depth frame\n";
             return false;
         }
 
         if (cudaStreamSynchronize(stream_) != cudaSuccess) {
-            std::cerr << "Failed to synchronize RGB download\n";
+            std::cerr << "Failed to synchronize depth download\n";
             return false;
         }
 
@@ -463,7 +523,7 @@ namespace parallax::visualization {
         foxglove::messages::RawImage message;
 
         message.timestamp = nowTimestamp();
-        message.frame_id = coordinate_frame;
+        message.frame_id = coordinate_frame_;
         message.width = frame.width;
         message.height = frame.height;
         message.encoding = "32FC1";
@@ -510,7 +570,7 @@ namespace parallax::visualization {
 
         foxglove::messages::RawImage message;
 
-        message.frame_id = coordinate_frame;
+        message.frame_id = coordinate_frame_;
         message.width = frame.width;
         message.height = frame.height;
         message.encoding = "32FC1";
@@ -791,7 +851,7 @@ namespace parallax::visualization {
         foxglove::messages::RawImage message;
 
         message.timestamp = nowTimestamp();
-        message.frame_id = coordinate_frame;
+        message.frame_id = coordinate_frame_;
         message.width = mask.width;
         message.height = mask.height;
         message.encoding = "mono8";
@@ -902,6 +962,256 @@ namespace parallax::visualization {
 
         return checkFoxglove(foxglove_->trackAnnotationsChannel().log(message), "Failed to publish /tracking/annotations");
     }
+
+    bool Publisher::publishObjectDepthAnnotations(const parallax::core::Product<parallax::perception::Object3DSet>& product) {
+        if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload || !product.payload->valid()) {
+            return false;
+        }
+
+        foxglove::messages::ImageAnnotations message;
+        message.timestamp = nowTimestamp();
+
+        foxglove::messages::KeyValuePair image_space;
+        image_space.key = "image_space";
+        image_space.value = "rectified_left";
+        message.metadata.push_back(std::move(image_space));
+
+        for (const auto& object : product.payload->objects) {
+            if (!object.valid() ||
+                object.depth_image_space != parallax::perception::ImageSpace::RectifiedLeft ||
+                object.depth_roi.width <= 0.0F || object.depth_roi.height <= 0.0F) {
+                continue;
+            }
+
+            const auto& roi = object.depth_roi;
+
+            foxglove::messages::PointsAnnotation rectangle;
+            rectangle.type = foxglove::messages::PointsAnnotation::PointsAnnotationType::LINE_LOOP;
+            rectangle.thickness = 3.0;
+
+            rectangle.points = {{roi.x, roi.y},
+                                {roi.x + roi.width, roi.y},
+                                {roi.x + roi.width, roi.y + roi.height},
+                                {roi.x, roi.y + roi.height}};
+
+            foxglove::messages::Color outline;
+            outline.r = 1.0;
+            outline.g = 1.0;
+            outline.b = 0.0;
+            outline.a = 1.0;
+
+            rectangle.outline_color = outline;
+            message.points.push_back(std::move(rectangle));
+
+            const std::string distance = formatDepth(object.depth_m);
+
+            if (distance.empty()) continue;
+
+            foxglove::messages::TextAnnotation label;
+            foxglove::messages::Point2 position;
+            position.x = roi.x;
+            position.y = std::max(18.0, static_cast<double>(roi.y - 4.0F));
+
+            label.position = position;
+            label.font_size = 18.0;
+            label.text = object.label + " · " + distance;
+
+            foxglove::messages::Color text;
+            text.r = 1.0;
+            text.g = 1.0;
+            text.b = 1.0;
+            text.a = 1.0;
+
+            label.text_color = text;
+
+            foxglove::messages::Color background;
+            background.r = 0.0;
+            background.g = 0.0;
+            background.b = 0.0;
+            background.a = 0.65;
+
+            label.background_color = background;
+
+            message.texts.push_back(std::move(label));
+        }
+
+        return checkFoxglove(foxglove_->objectDepthAnnotationsChannel().log(message), "Failed to publish /perception/depth/annotations");
+    }
+
+    bool Publisher::publishObject3DScene(const parallax::core::Product<parallax::perception::Object3DSet>& product) {
+        if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload || !product.payload->valid()) {
+            return false;
+        }
+
+        foxglove::messages::SceneUpdate update;
+        update.entities.reserve(product.payload->objects.size());
+
+        for (std::size_t i = 0; i < product.payload->objects.size(); ++i) {
+            const auto& object = product.payload->objects[i];
+
+            if (!object.valid()) continue;
+
+            foxglove::messages::SceneEntity entity;
+            entity.timestamp = nowTimestamp();
+            entity.frame_id = object.coordinate_frame;
+
+            /*
+            * One-shot detections use observation-derived identity.
+            * Persistent tracking may later use its stable track_id.
+            */
+            if (object.persistent()) {
+                entity.id = "track_" + std::to_string(object.track_id);
+            } else {
+                entity.id = "object_" + std::to_string(object.semantic_observation.sequence) +
+                            "_" + std::to_string(i);
+            }
+
+            entity.frame_locked = true;
+
+            /*
+            * The sphere marks the representative metric position produced by
+            * stereo ROI association. It does not imply object volume.
+            */
+            foxglove::messages::SpherePrimitive marker;
+            foxglove::messages::Pose marker_pose;
+            foxglove::messages::Vector3 position;
+
+            position.x = object.position_m[0];
+            position.y = object.position_m[1];
+            position.z = object.position_m[2];
+
+            marker_pose.position = position;
+
+            foxglove::messages::Quaternion orientation;
+            orientation.w = 1.0;
+
+            marker_pose.orientation = orientation;
+            marker.pose = marker_pose;
+
+            foxglove::messages::Vector3 size;
+            size.x = 0.04;
+            size.y = 0.04;
+            size.z = 0.04;
+
+            marker.size = size;
+
+            foxglove::messages::Color marker_color;
+            marker_color.r = 1.0;
+            marker_color.g = 1.0;
+            marker_color.b = 0.0;
+            marker_color.a = 1.0;
+
+            marker.color = marker_color;
+
+            entity.spheres.push_back(std::move(marker));
+
+            /*
+            * Draw only the planar image-supported rectangle. This does not
+            * represent measured object width, height, or physical volume.
+            */
+            if (object.geometry == parallax::perception::Object3DGeometry::ImageSupportedGeometry) {
+                foxglove::messages::LinePrimitive rectangle;
+                rectangle.type = foxglove::messages::LinePrimitive::LineType::LINE_LOOP;
+
+                rectangle.thickness = 2.0;
+                rectangle.scale_invariant = true;
+                rectangle.points.reserve(4);
+
+                for (const auto& corner : object.image_supported_corners_m) {
+                    foxglove::messages::Point3 point;
+
+                    point.x = corner[0];
+                    point.y = corner[1];
+                    point.z = corner[2];
+
+                    rectangle.points.push_back(point);
+                }
+
+                foxglove::messages::Color line_color;
+                line_color.r = 0.0;
+                line_color.g = 1.0;
+                line_color.b = 0.0;
+                line_color.a = 1.0;
+
+                rectangle.color = line_color;
+
+                entity.lines.push_back(std::move(rectangle));
+            }
+
+            const std::string distance = formatDepthForDisplay(object.depth_m);
+
+            // Billboard text is presentation-only. It follows the measured point
+            // and remains readable while the Foxglove 3D camera is moved.
+            foxglove::messages::TextPrimitive text;
+            foxglove::messages::Pose text_pose;
+            foxglove::messages::Vector3 text_position;
+
+            text_position.x = object.position_m[0];
+            text_position.y = object.position_m[1];
+            text_position.z = object.position_m[2] + 0.05;
+
+            text_pose.position = text_position;
+
+            foxglove::messages::Quaternion text_orientation;
+            text_orientation.w = 1.0;
+
+            text_pose.orientation = text_orientation;
+            text.pose = text_pose;
+            text.billboard = true;
+            text.scale_invariant = true;
+            text.font_size = 14.0;
+
+            foxglove::messages::Color text_color;
+            text_color.r = 1.0;
+            text_color.g = 1.0;
+            text_color.b = 1.0;
+            text_color.a = 1.0;
+            text.color = text_color;
+
+            text.text = distance.empty() ? object.label : object.label + " · " + distance;
+
+            entity.texts.push_back(std::move(text));
+
+            // Keep semantic and metric values available as inspectable entity
+            // metadata in addition to their rendered representation.
+            foxglove::messages::KeyValuePair label;
+            label.key = "label";
+            label.value = object.label;
+
+            entity.metadata.push_back(std::move(label));
+            if (!distance.empty()) {
+                foxglove::messages::KeyValuePair depth;
+                depth.key = "distance";
+                depth.value = distance;
+                entity.metadata.push_back(std::move(depth));
+            }
+            update.entities.push_back(std::move(entity));
+        }
+
+        return checkFoxglove(foxglove_->object3DSceneChannel().log(update), "Failed to publish /perception/objects3d");
+    }
+
+    std::string formatDepthForDisplay(float depth_m) {
+        if (!std::isfinite(depth_m) || depth_m <= 0.0F) return {};
+
+        constexpr float MetersToFeet = 3.280839895F;
+        constexpr float FeetToInches = 12.0F;
+        const float feet = depth_m * MetersToFeet;
+
+        std::ostringstream stream;
+        stream << std::fixed;
+
+        if (feet < 1.0F) {
+            stream << std::setprecision(1) << feet * FeetToInches << " in";
+        } else if (feet < 3.0F) {
+            stream << std::setprecision(1) << feet << " ft";
+        } else {
+            stream << std::setprecision(2) << depth_m << " m";
+        }
+
+        return stream.str();
+    }
+
 
     void Publisher::shutdown() {
         video_encoder_.shutdown();

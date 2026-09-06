@@ -38,6 +38,13 @@ namespace parallax::perception {
         cv::Rect2f image_box{};
         ImageSpace image_space = ImageSpace::Unknown;
 
+        cv::Rect2f depth_roi{};
+        ImageSpace depth_image_space = ImageSpace::Unknown;
+
+        // Image-supported rectangle projected at the representative depth.
+        // Valid when geometry == ImageSupportedGeometry.
+        std::array<std::array<float, 3>, 4> image_supported_corners_m{};
+
         std::array<float, 3> position_m{};
         float depth_m = 0.0F;
         std::string coordinate_frame;

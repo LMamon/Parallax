@@ -92,18 +92,20 @@ namespace parallax::visualization {
             [[nodiscard]] foxglove::messages::CompressedVideoChannel& leftImageChannel() noexcept { return *left_image_channel_; }
             [[nodiscard]] foxglove::messages::CameraCalibrationChannel& leftCalibrationChannel() noexcept { return *left_calibration_channel_; }
             [[nodiscard]] foxglove::messages::RawImageChannel& disparityChannel() noexcept { return *disparity_channel_; }
-            [[nodiscard]] foxglove::RawChannel& runtimeTelemetryChannel() noexcept { return *runtime_telemetry_channel_; }
             [[nodiscard]] foxglove::messages::RawImageChannel& depthChannel() noexcept { return *depth_channel_; }
             [[nodiscard]] foxglove::messages::PoseInFrameChannel& markerPoseChannel() noexcept { return *marker_pose_channel_; }
-            [[nodiscard]] foxglove::RawChannel& markerDepthChannel() noexcept { return *marker_depth_channel_; }
             [[nodiscard]] foxglove::messages::LaserScanChannel& lidarScanChannel() noexcept { return *lidar_scan_channel_; }
             [[nodiscard]] foxglove::messages::FrameTransformChannel& transformChannel() noexcept { return *transform_channel_; }
-            [[nodiscard]] foxglove::RawChannel& requestStateChannel() noexcept { return *request_state_channel_; }
-            [[nodiscard]] foxglove::RawChannel& detectionChannel() noexcept { return *detection_channel_; }
             [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& detectionAnnotationsChannel() noexcept { return *detection_annotations_channel_; }
             [[nodiscard]] foxglove::messages::RawImageChannel& segmentationMaskChannel() noexcept { return *segmentation_mask_channel_; }
             [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& trackAnnotationsChannel() noexcept { return *track_annotations_channel_; }
-
+            [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& objectDepthAnnotationsChannel() noexcept { return *object_depth_annotations_channel_; }
+            [[nodiscard]] foxglove::messages::SceneUpdateChannel& object3DSceneChannel() noexcept { return *object3d_scene_channel_; }
+            
+            [[nodiscard]] foxglove::RawChannel& detectionChannel() noexcept { return *detection_channel_; }
+            [[nodiscard]] foxglove::RawChannel& runtimeTelemetryChannel() noexcept { return *runtime_telemetry_channel_; }
+            [[nodiscard]] foxglove::RawChannel& markerDepthChannel() noexcept { return *marker_depth_channel_; }
+            [[nodiscard]] foxglove::RawChannel& requestStateChannel() noexcept { return *request_state_channel_; }
 
         private:
             bool initializeChannels();
@@ -129,18 +131,22 @@ namespace parallax::visualization {
             foxglove::Context context_{};
 
             std::unique_ptr<foxglove::WebSocketServer> server_;
-            std::optional<foxglove::RawChannel> runtime_telemetry_channel_;
-            std::optional<foxglove::RawChannel> request_state_channel_;
             std::optional<foxglove::messages::CompressedVideoChannel> left_image_channel_;
             std::optional<foxglove::messages::CameraCalibrationChannel> left_calibration_channel_;
-            std::optional<foxglove::messages::RawImageChannel> disparity_channel_;
-            std::optional<foxglove::messages::RawImageChannel> depth_channel_;
             std::optional<foxglove::messages::PoseInFrameChannel> marker_pose_channel_;
-            std::optional<foxglove::RawChannel> detection_channel_;
+            std::optional<foxglove::messages::SceneUpdateChannel> object3d_scene_channel_;
             std::optional<foxglove::messages::ImageAnnotationsChannel> detection_annotations_channel_;
             std::optional<foxglove::messages::ImageAnnotationsChannel> track_annotations_channel_;
+            std::optional<foxglove::messages::ImageAnnotationsChannel> object_depth_annotations_channel_;
+            
             std::optional<foxglove::messages::RawImageChannel> segmentation_mask_channel_;
-
+            std::optional<foxglove::messages::RawImageChannel> disparity_channel_;
+            std::optional<foxglove::messages::RawImageChannel> depth_channel_;
+            
+            std::optional<foxglove::RawChannel> runtime_telemetry_channel_;
+            std::optional<foxglove::RawChannel> request_state_channel_;
+            std::optional<foxglove::RawChannel> detection_channel_;
+          
             std::vector<std::byte> marker_depth_schema_;
             std::vector<std::byte> runtime_telemetry_schema_;
             std::vector<std::byte> request_state_schema_;

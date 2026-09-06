@@ -367,6 +367,27 @@ namespace parallax::visualization {
 
         track_annotations_channel_.emplace(std::move(track_annotations.value()));
         bindProduct(track_annotations_channel_->id(), ProductId::Track2D);
+
+        auto object_depth_annotations = foxglove::messages::ImageAnnotationsChannel::create("/perception/depth/annotations", context_);
+        if (!object_depth_annotations.has_value()) {
+            std::cerr << "Failed to create /perception/depth/annotations channel: "
+                << foxglove::strerror(object_depth_annotations.error()) << '\n';
+            return false;
+        }
+
+        object_depth_annotations_channel_.emplace(std::move(object_depth_annotations.value()));
+        bindProduct(object_depth_annotations_channel_->id(), ProductId::Object3D);
+
+        auto object3d_scene = foxglove::messages::SceneUpdateChannel::create("/perception/objects3d", context_);
+        if (!object3d_scene.has_value()) {
+            std::cerr << "Failed to create /perception/objects3d channel: "
+                << foxglove::strerror(object3d_scene.error()) << '\n';
+
+            return false;
+        }
+
+        object3d_scene_channel_.emplace(std::move(object3d_scene.value()));
+        bindProduct(object3d_scene_channel_->id(), ProductId::Object3D);
         // every graph backed channel gets bindProduct(...)
         
         return true;

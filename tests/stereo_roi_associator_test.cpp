@@ -144,7 +144,15 @@ TEST(StereoRoiAssociatorTest, ProducesObject3DFromCudaResidentDepthMedian) {
     EXPECT_NEAR(object.position_m[2], 2.0F, 1e-6F);
 
     EXPECT_EQ(object.method, perception::Object3DMethod::StereoRoi);
-    EXPECT_EQ(object.geometry, perception::Object3DGeometry::Point);
+    EXPECT_EQ(object.geometry, perception::Object3DGeometry::ImageSupportedGeometry);
+
+    EXPECT_FLOAT_EQ(object.depth_roi.width, 7.0F);
+    EXPECT_FLOAT_EQ(object.depth_roi.height, 7.0F);
+
+    EXPECT_NEAR(object.image_supported_corners_m[0][0], -0.02F, 1e-6F);
+    EXPECT_NEAR(object.image_supported_corners_m[0][1], -0.02F, 1e-6F);
+    EXPECT_NEAR(object.image_supported_corners_m[0][2], 2.0F, 1e-6F);
+    
     EXPECT_FALSE(object.persistent());
 
     context.shutdown();

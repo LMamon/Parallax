@@ -90,6 +90,13 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_object3d_visualization_test
+    object3d_visualization_test.cpp
+    parallax_visualization
+    parallax_core
+)
+
+parallax_add_gtest(
     parallax_image_space_mapper_test
     image_space_mapper_test.cpp
     parallax_core

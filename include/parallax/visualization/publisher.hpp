@@ -14,6 +14,7 @@
 #include <parallax/core/completion.hpp>
 #include <parallax/lidar/frame_types.hpp>
 #include <parallax/tracking/track.hpp>
+#include <parallax/perception/object3d.hpp>
 
 #include <functional>
 #include <foxglove/websocket.hpp>
@@ -26,6 +27,8 @@
 #include <vector>
 
 namespace parallax::visualization {
+    [[nodiscard]] std::string formatDepthForDisplay(float depth_m);
+
     class Publisher{ 
         public:
             Publisher() = default;
@@ -68,6 +71,8 @@ namespace parallax::visualization {
             bool publishDetectionAnnotations(const parallax::core::Product<parallax::perception::DetectionSet>& product);
             bool publishSegmentationMask(const parallax::core::Product<parallax::perception::SegmentationMask>& product);
             bool publishTrackAnnotations(const parallax::core::Product<parallax::tracking::Track2D>& product);
+            bool publishObjectDepthAnnotations(const parallax::core::Product<parallax::perception::Object3DSet>& product);
+            bool publishObject3DScene(const parallax::core::Product<parallax::perception::Object3DSet>& product);
 
             VideoEncoder video_encoder_;
             cudaStream_t stream_ = nullptr;
@@ -104,9 +109,15 @@ namespace parallax::visualization {
             std::uint64_t last_track_annotation_revision_ = 0;
             parallax::tracking::TrackLifecycle last_track_annotation_lifecycle_ = parallax::tracking::TrackLifecycle::Idle;
             bool has_published_track_annotation_ = false;
+
+            parallax::core::SourceObservation last_object_depth_annotation_observation_{};
+            std::uint64_t last_object_depth_annotation_revision_ = 0;
+            bool has_published_object_depth_annotation_ = false;
+
+            parallax::core::SourceObservation last_object_scene_observation_{};
+            std::uint64_t last_object_scene_revision_ = 0;
+            bool has_published_object_scene_ = false;
             /**
-             * Non-owning access to the native Foxglove capability surface.
-             *
              * Runtime owns FoxgloveServer and shuts Publisher down before the server.
              * Publisher performs serialization/logging only; it does not define channel
              * lifetime or subscription semantics.

@@ -225,13 +225,53 @@ namespace parallax::perception {
             if (roi.valid_samples < MinValidSamples ||
                 roi.sampled_pixels == 0 ||
                 !std::isfinite(roi.depth_m) || roi.depth_m <= 0.0F) {
+
                 continue;
             }
 
             std::array<float, 3> xyz{};
             if (!backProject(rectified_centers[request], roi.depth_m, xyz)) continue;
 
+            const auto& request_center = requests_host_[request];
+
+            const int x0 = std::max(0, request_center.center_x - static_cast<int>(RoiRadius));
+            const int y0 = std::max(0, request_center.center_y - static_cast<int>(RoiRadius));
+
+            const int x1 = std::min(static_cast<int>(image_width_) - 1, request_center.center_x + static_cast<int>(RoiRadius));
+            const int y1 = std::min(static_cast<int>(image_height_) - 1, request_center.center_y + static_cast<int>(RoiRadius));
+
             const std::size_t detection_index = detection_indices[request];
+
+            // A 2D detection box plus representative stereo depth supports a planar
+            // image-space rectangle in 3D. It does not establish physical object extent.
+            std::array<std::array<float, 3>, 4> image_supported_corners_m{};
+
+            const auto& source_box = detections.boxes[detection_index];
+
+            const cv::Point2f source_corners[4] = {
+                {source_box.x, source_box.y},
+                {source_box.x + source_box.width, source_box.y},
+                {source_box.x + source_box.width, source_box.y + source_box.height},
+                {source_box.x, source_box.y + source_box.height}
+            };
+
+            bool rectangle_valid = true;
+
+            for (std::size_t corner = 0; corner < 4; ++corner) {
+                cv::Point2f rectified_corner{};
+
+                if (!mapper_.mapPoint(source_corners[corner],
+                                    detections.image_space,
+                                    ImageSpace::RectifiedLeft,
+                                    rectified_corner) ||
+                            !backProject(rectified_corner,
+                                        roi.depth_m,
+                                        image_supported_corners_m[corner])) {
+
+                    rectangle_valid = false;
+                    break;
+                }
+            }
 
             Object3D object{};
             object.label = detections.query;
@@ -241,16 +281,25 @@ namespace parallax::perception {
             object.image_space = detections.image_space;
 
             object.position_m = xyz;
+            object.image_supported_corners_m = image_supported_corners_m;
             object.depth_m = roi.depth_m;
             object.coordinate_frame = camera_model_.coordinate_frame;
 
-            object.geometry = Object3DGeometry::Point;
+
+            object.geometry = rectangle_valid ? Object3DGeometry::ImageSupportedGeometry : Object3DGeometry::Point;
             object.method = Object3DMethod::StereoRoi;
 
             object.semantic_observation = semantic_metadata.observation;
             object.metric_observation = depth.metadata.observation;
             object.association_timestamp = association_timestamp;
             object.source_time_delta = source_delta;
+
+            object.depth_roi = {static_cast<float>(x0),
+                                static_cast<float>(y0),
+                                static_cast<float>(x1 - x0 + 1),
+                                static_cast<float>(y1 - y0 + 1)};
+
+            object.depth_image_space = ImageSpace::RectifiedLeft;
 
             // This is support density, not semantic confidence. Keep those
             // quality signals separate so downstream policy can reason about

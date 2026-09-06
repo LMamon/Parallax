@@ -51,9 +51,25 @@ namespace parallax::application {
                 state_.detection_target = command.target;
                 state_.detection_query_revision = next_detection_query_revision_++;
 
+                state_.detection_depth_requested = command.depth == DepthRequest::Yes;
+
                 acquire_once(core::ProductId::Detection, detection_demand_owned_);
-                return {RequestStatus::Applied, "detection requested"};
-            }
+
+                if (state_.detection_depth_requested) {
+                    acquire_once(core::ProductId::Object3D, object3d_demand_owned_);
+                } else {
+                    /*
+                    * Replacing "detect cup depth=yes" with ordinary detection or
+                    * depth=no must remove only this controller's Object3D demand.
+                    */
+                    release_if_owned(core::ProductId::Object3D, object3d_demand_owned_);
+                }
+
+                return {RequestStatus::Applied,
+                        state_.detection_depth_requested
+                        ? "detection with depth requested"
+                        : "detection requested"};
+            }   
 
             case CommandVerb::Track: {
                 if (command.target.empty()) {
@@ -93,6 +109,9 @@ namespace parallax::application {
                 state_.detection_requested = true;
                 state_.detection_target = command.target;
                 state_.detection_query_revision = next_detection_query_revision_++;
+                state_.detection_depth_requested = false;
+
+                release_if_owned(core::ProductId::Object3D, object3d_demand_owned_);
 
                 state_.segmentation_requested = true;
                 state_.segmentation_target = command.target;
@@ -122,6 +141,7 @@ namespace parallax::application {
         release_if_owned(core::ProductId::Detection, detection_demand_owned_);
         release_if_owned(core::ProductId::Segmentation, segmentation_demand_owned_);
         release_if_owned(core::ProductId::Track2D, tracking_demand_owned_);
+        release_if_owned(core::ProductId::Object3D, object3d_demand_owned_);
 
         state_ = {};
     }

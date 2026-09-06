@@ -47,6 +47,13 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_command_parser_test
+    command_parser_test.cpp
+    parallax_application
+    parallax_core
+)
+
+parallax_add_gtest(
     parallax_detection_test
     detection_test.cpp
     parallax_core

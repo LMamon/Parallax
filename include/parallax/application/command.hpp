@@ -21,10 +21,15 @@ namespace parallax::application {
         OneShot, Persistent
     };
 
+    enum class DepthRequest : std::uint8_t {
+        Unspecified, No, Yes
+    };
+
     struct Command {
         CommandVerb verb;
         CommandBehavior behavior;
         std::string target;
+        DepthRequest depth = DepthRequest::Unspecified;
     };
 
     enum class CommandParseError : std::uint8_t {

@@ -8,7 +8,6 @@
 
 namespace parallax::application {
     namespace {
-
         std::string normalize(std::string_view input) {
             std::string result(input);
 
@@ -44,6 +43,25 @@ namespace parallax::application {
             result.message = std::move(message);
             return result;
         }
+
+        bool parse_depth_option(const std::string& token, DepthRequest& depth) {
+            constexpr std::string_view prefix = "depth=";
+            if (token.rfind(prefix, 0) != 0) return false;
+
+            const auto value = token.substr(prefix.size());
+
+            if (value == "yes") {
+                depth = DepthRequest::Yes;
+                return true;
+            }
+
+            if (value == "no") {
+                depth = DepthRequest::No;
+                return true;
+            }
+
+            return false;
+        }
     }
 
     CommandParseResult parse_command(std::string_view input) {
@@ -72,11 +90,17 @@ namespace parallax::application {
                 return failure(CommandParseError::MissingTarget, "detect requires a target");
             }
 
-            if (tokens.size() > 2) {
-                return failure(CommandParseError::UnexpectedArgument, "detect accepts exactly one target");
+            if (tokens.size() > 3) {
+                return failure(CommandParseError::UnexpectedArgument, "detect accepts one target and optional depth=yes|no");
+            }
+            DepthRequest depth = DepthRequest::Unspecified;
+
+            if (tokens.size() == 3 && !parse_depth_option(tokens[2], depth)) {
+                return failure(CommandParseError::UnexpectedArgument, "detect accepts optional depth=yes|no");
             }
 
-            return {Command{CommandVerb::Detect, CommandBehavior::OneShot, tokens[1]}, CommandParseError::None, {}};
+            return {Command{CommandVerb::Detect, CommandBehavior::OneShot, tokens[1], depth}, CommandParseError::None, {}
+            };
         }
 
         if (tokens[0] == "segment") {
@@ -113,5 +137,4 @@ namespace parallax::application {
 
         return failure(CommandParseError::UnknownCommand, "unknown command");
     }
-
 }

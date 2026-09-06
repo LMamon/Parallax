@@ -40,7 +40,6 @@ namespace {
 
     TEST_F(RequestControllerTest, MarkerDepthDoesNotDisturbOtherDemandOwners) {
         resolver_.acquire(ProductId::MarkerDepth, DemandSource::RuntimeBaseline);
-
         resolver_.acquire(ProductId::MarkerDepth, DemandSource::FoxgloveSubscriber);
 
         const Command command{CommandVerb::MarkerDepth, CommandBehavior::OneShot, ""};
@@ -160,18 +159,24 @@ namespace {
 
         EXPECT_EQ(resolver_.demand(ProductId::MarkerDepth, DemandSource::Application), 0U);
         EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 0U);
+        EXPECT_EQ(resolver_.demand(ProductId::Object3D, DemandSource::Application), 0U);
         EXPECT_EQ(resolver_.demand(ProductId::Track2D, DemandSource::Application), 0U);
         EXPECT_EQ(resolver_.demand(ProductId::Segmentation, DemandSource::Application), 0U);
         
         const auto& state = controller_.state();
         
         EXPECT_FALSE(state.marker_depth_requested);
+
         EXPECT_FALSE(state.detection_requested);
         EXPECT_TRUE(state.detection_target.empty());
+        EXPECT_FALSE(state.detection_depth_requested);
+        
         EXPECT_FALSE(state.tracking_requested);
         EXPECT_TRUE(state.tracking_target.empty());
+        
         EXPECT_FALSE(state.segmentation_requested);
         EXPECT_TRUE(state.segmentation_target.empty());
+        
         EXPECT_EQ(state.tracking_query_revision, 0U);
     }
 
@@ -273,5 +278,63 @@ namespace {
         
         (void)controller_.apply(Command{CommandVerb::Track, CommandBehavior::Persistent, "person"});
         EXPECT_GT(controller_.state().tracking_query_revision, first_revision);
+    }
+
+    TEST_F(RequestControllerTest, DetectionWithoutDepthDoesNotAcquireObject3D) {
+        const auto result = controller_.apply(Command{CommandVerb::Detect, CommandBehavior::Persistent, "cup"});
+
+        ASSERT_EQ(result.status, RequestStatus::Applied);
+
+        const auto state = controller_.state();
+
+        EXPECT_TRUE(state.detection_requested);
+        EXPECT_FALSE(state.detection_depth_requested);
+
+        EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 1U);
+        EXPECT_EQ(resolver_.demand(ProductId::Object3D, DemandSource::Application), 0U);
+    }
+
+    TEST_F(RequestControllerTest, DetectionWithDepthAcquiresObject3D) {
+
+        const auto result = controller_.apply(Command{CommandVerb::Detect,
+                                                      CommandBehavior::Persistent,
+                                                      "cup", parallax::application::DepthRequest::Yes});
+
+        ASSERT_EQ(result.status, RequestStatus::Applied);
+
+        const auto state = controller_.state();
+
+        EXPECT_TRUE(state.detection_requested);
+        EXPECT_TRUE(state.detection_depth_requested);
+
+        EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 1U);
+        EXPECT_EQ(resolver_.demand(ProductId::Object3D, DemandSource::Application), 1U);
+    }
+
+    TEST_F(RequestControllerTest, DetectionWithoutDepthReleasesPreviousObject3DDemand) {
+        (void)controller_.apply(Command{CommandVerb::Detect,
+                                        CommandBehavior::Persistent,
+                                        "cup",
+                                        parallax::application::DepthRequest::Yes});
+
+        (void)controller_.apply(Command{CommandVerb::Detect, CommandBehavior::Persistent, "person"});
+
+        const auto state = controller_.state();
+
+        EXPECT_EQ(state.detection_target, "person");
+        EXPECT_FALSE(state.detection_depth_requested);
+
+        EXPECT_EQ(resolver_.demand(ProductId::Detection, DemandSource::Application), 1U);
+        EXPECT_EQ(resolver_.demand(ProductId::Object3D, DemandSource::Application), 0U);
+    }
+
+    TEST_F(RequestControllerTest, ExplicitDepthNoDoesNotAcquireObject3D) {
+        (void)controller_.apply(Command{CommandVerb::Detect,
+                                        CommandBehavior::Persistent,
+                                        "cup",
+                                        parallax::application::DepthRequest::No});
+
+        EXPECT_FALSE(controller_.state().detection_depth_requested);
+        EXPECT_EQ(resolver_.demand(ProductId::Object3D, DemandSource::Application), 0U);
     }
 }

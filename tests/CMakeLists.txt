@@ -75,6 +75,14 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_object3d_producer_test
+    object3d_producer_test.cpp
+    parallax_core
+    parallax_perception
+    parallax_cuda
+)
+
+parallax_add_gtest(
     parallax_image_space_mapper_test
     image_space_mapper_test.cpp
     parallax_core

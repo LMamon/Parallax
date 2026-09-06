@@ -28,6 +28,8 @@
 #include <parallax/perception/detection_producer.hpp>
 #include <parallax/perception/efficientvit_sam.hpp>
 #include <parallax/perception/segmentation_producer.hpp>
+#include <parallax/perception/object3d_producer.hpp>
+#include <parallax/perception/stereo_roi_associator.hpp>
 
 #include <parallax/pose/charuco_pose_producer.hpp>
 #include <parallax/pose/marker_depth_producer.hpp>
@@ -108,16 +110,19 @@ namespace parallax::core {
             std::unique_ptr<parallax::camera::CameraProducer> camera_producer_;
             std::unique_ptr<parallax::isp::IspProducer> isp_producer_;
 
-            std::unique_ptr<parallax::stereo::RectificationProducer>rectification_producer_;
+            std::unique_ptr<parallax::stereo::RectificationProducer> rectification_producer_;
 
             std::unique_ptr<parallax::stereo::StereoProducer> stereo_producer_;
             std::unique_ptr<parallax::stereo::DepthProducer> depth_producer_;
 
-            std::unique_ptr<parallax::pose::CharucoPoseProducer>charuco_pose_producer_;
-            std::unique_ptr<parallax::pose::MarkerDepthPoducer>marker_depth_producer_;
+            std::unique_ptr<parallax::pose::CharucoPoseProducer> charuco_pose_producer_;
+            std::unique_ptr<parallax::pose::MarkerDepthPoducer> marker_depth_producer_;
             std::unique_ptr<parallax::perception::NanoOwlBridge> nanoowl_;
             std::unique_ptr<parallax::perception::DetectionProducer> detection_producer_;
             std::unique_ptr<parallax::tracking::SingleTargetProducer> single_target_producer_;
+            std::unique_ptr<parallax::perception::StereoRoiAssociator> stereo_roi_associator_;
+            std::unique_ptr<parallax::perception::Object3DProducer> object3d_producer_;
+
             /**
             * LiDAR is Runtime-owned because its connection and scan lifecycle span the
             * full application runtime. Its producer is graph-visible but does not belong

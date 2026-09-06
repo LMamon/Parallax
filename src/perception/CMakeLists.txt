@@ -5,6 +5,7 @@ add_library(parallax_perception
     segmentation_producer.cpp
     image_space_mapper.cpp
     stereo_roi_associator.cpp
+    object3d_producer.cpp
 )
 
 find_library(

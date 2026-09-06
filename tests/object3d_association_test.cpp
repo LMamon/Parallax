@@ -51,8 +51,6 @@ TEST(Object3DAssociationTest, PrefersExactObservation) {
     const auto match = perception::find_metric_observation<int>(store,
                                                                 core::ProductId::Depth,
                                                                 semantic,
-                                                                perception::ImageSpace::RgbLeft,
-                                                                perception::ImageSpace::RgbLeft,
                                                                 {});
 
     ASSERT_TRUE(match.matched());
@@ -79,8 +77,6 @@ TEST(Object3DAssociationTest, SelectsNearestCompatibleTimestamp) {
     const auto match = perception::find_metric_observation<int>(store,
                                                                 core::ProductId::Depth,
                                                                 semantic,
-                                                                perception::ImageSpace::RgbLeft,
-                                                                perception::ImageSpace::RgbLeft,
                                                                 policy);
 
     ASSERT_TRUE(match.matched());
@@ -102,29 +98,10 @@ TEST(Object3DAssociationTest, RejectsWrongSource) {
     const auto match = perception::find_metric_observation<int>(store,
                                                                 core::ProductId::Depth,
                                                                 semantic,
-                                                                perception::ImageSpace::RgbLeft,
-                                                                perception::ImageSpace::RgbLeft,
                                                                 {});
 
     EXPECT_FALSE(match.matched());
     EXPECT_EQ(match.rejection, perception::Object3DRejectReason::WrongSource);
-}
-
-TEST(Object3DAssociationTest, RejectsWrongImageSpace) {
-    core::ProductStore store;
-    const auto now = Clock::now();
-    store.publish(make_metric_product(70, now));
-
-    const auto semantic = make_semantic_metadata(70, now);
-    const auto match = perception::find_metric_observation<int>(store,
-                                                                core::ProductId::Depth,
-                                                                semantic,
-                                                                perception::ImageSpace::RgbLeft,
-                                                                perception::ImageSpace::RectifiedLeft,
-                                                                {});
-
-    EXPECT_FALSE(match.matched());
-    EXPECT_EQ(match.rejection, perception::Object3DRejectReason::WrongImageSpace);
 }
 
 TEST(Object3DAssociationTest, RejectsObservationOutsideTimeBound) {
@@ -142,8 +119,6 @@ TEST(Object3DAssociationTest, RejectsObservationOutsideTimeBound) {
     const auto match = perception::find_metric_observation<int>(store,
                                                                 core::ProductId::Depth,
                                                                 semantic,
-                                                                perception::ImageSpace::RgbLeft,
-                                                                perception::ImageSpace::RgbLeft,
                                                                 policy);
 
     EXPECT_FALSE(match.matched());
@@ -159,11 +134,8 @@ TEST(Object3DAssociationTest, RejectsWhenNoMetricObservationExists) {
     const auto match = perception::find_metric_observation<int>(store,
                                                                 core::ProductId::Depth,
                                                                 semantic,
-                                                                perception::ImageSpace::RgbLeft,
-                                                                perception::ImageSpace::RgbLeft,
                                                                 {});
 
     EXPECT_FALSE(match.matched());
-
     EXPECT_EQ(match.rejection, perception::Object3DRejectReason::InvalidMetricObservation);
 }

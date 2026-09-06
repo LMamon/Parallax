@@ -2,7 +2,6 @@
 
 #include <parallax/core/product.hpp>
 #include <parallax/core/product_store.hpp>
-#include <parallax/perception/image_space.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -43,8 +42,6 @@ namespace parallax::perception {
     template <typename T> [[nodiscard]] Object3DMatch<T> find_metric_observation(const core::ProductStore& products,
                                                                                  core::ProductId metric_product,
                                                                                  const core::ProductMetadata& semantic_metadata,
-                                                                                 ImageSpace semantic_image_space,
-                                                                                 ImageSpace required_image_space,
                                                                                  const Object3DAssociationPolicy& policy) {
 
         Object3DMatch<T> result{};
@@ -54,13 +51,7 @@ namespace parallax::perception {
             return result;
         }
 
-        if (semantic_image_space != required_image_space) {
-            result.rejection = Object3DRejectReason::WrongImageSpace;
-            return result;
-        }
-
         const auto exact = products.find_observation<T>(metric_product, semantic_metadata.observation);
-
         if (exact && exact->valid()) {
             result.product = exact;
             result.method = Object3DMatchMethod::ExactObservation;

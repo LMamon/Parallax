@@ -55,7 +55,6 @@ namespace parallax::core {
             return false;
         }
         /**
-         * Pipeline still owns the proven processing resources during Phase 5:
          * ISP allocations, VPI stream, rectifier, matcher, depth storage, and pose
          * estimator. Runtime now takes over orchestration through graph producers.
          */
@@ -68,6 +67,14 @@ namespace parallax::core {
         nanoowl_ = std::make_unique<parallax::perception::NanoOwlBridge>();
         if (!nanoowl_->initialize(nanoowl_engine_path)) {
             std::cerr << "Runtime: failed to initialize NanoOWL\n";
+            shutdown();
+            return false;
+        }
+
+
+        stereo_roi_associator_ = std::make_unique<parallax::perception::StereoRoiAssociator>(pipeline_.calibration(), sensor_extrinsics_.left_camera.child_frame);
+        if (!stereo_roi_associator_->initialize()) {
+            std::cerr << "Runtime: failed to initialize stereo ROI associator\n";
             shutdown();
             return false;
         }
@@ -100,6 +107,7 @@ namespace parallax::core {
 
         marker_depth_producer_ = std::make_unique<parallax::pose::MarkerDepthPoducer>(context_.products());
         detection_producer_ = std::make_unique<parallax::perception::DetectionProducer>(*nanoowl_, context_.products());
+        object3d_producer_ = std::make_unique<parallax::perception::Object3DProducer>(*stereo_roi_associator_, context_.products());
 
         segmentation_producer_ = std::make_unique<parallax::perception::SegmentationProducer>(
                                                 *efficientvit_sam_,
@@ -123,6 +131,7 @@ namespace parallax::core {
         graph_.register_producer(*detection_producer_);
         graph_.register_producer(*single_target_producer_);
         graph_.register_producer(*lidar_producer_);
+        graph_.register_producer(*object3d_producer_);
         graph_.register_producer(*segmentation_producer_);
 
         graph_.finalize();
@@ -204,9 +213,9 @@ namespace parallax::core {
                                   << foxglove::strerror(error) << '\n';
                     }
                 }
-                nlohmann::json response{{"accepted", true}, {"status",
-                                                            result.applied() ? "applied" : "unavailable"},
-                                                            {"message", result.message}};
+                nlohmann::json response{{"accepted", true}, 
+                                        {"status", result.applied() ? "applied" : "unavailable"},
+                                        {"message", result.message}};
 
                 const std::string serialized = response.dump();
 
@@ -229,8 +238,7 @@ namespace parallax::core {
 
             shutdown();
             return false;
-        }
-        
+        }        
         initialized_ = true;
         return true;
     }
@@ -292,7 +300,6 @@ namespace parallax::core {
             if (single_target_producer_) {
                 if (request_state.tracking_requested) {
                     if (!single_target_producer_->setTarget(request_state.tracking_target, request_state.tracking_query_revision)) {
-
                         std::cerr << "Runtime: failed to apply tracking target\n";
                         break;
                     }
@@ -316,7 +323,6 @@ namespace parallax::core {
             */
             if (detection_producer_) {
                 if (tracker_needs_detection && !segmentation_conflicts) {
-
                     if (!detection_producer_->setQuery(request_state.tracking_target, request_state.tracking_query_revision)) {
                         std::cerr << "Runtime: failed to apply tracking detection query\n";
                         break;

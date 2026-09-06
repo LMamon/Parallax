@@ -35,8 +35,7 @@ namespace parallax::perception {
             static constexpr std::uint32_t RoiRadius = 3;
             static constexpr std::uint32_t MinValidSamples = 5;
 
-            explicit StereoRoiAssociator(const stereo::StereoCalibration& calibration,
-                                         std::string coordinate_frame = "camera_left_optical");
+            explicit StereoRoiAssociator(const stereo::StereoCalibration& calibration, std::string coordinate_frame);
 
             // Production initialization uses the exact calibration maps and P1
             // consumed by the rectified stereo/depth path.

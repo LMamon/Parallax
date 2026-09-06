@@ -34,7 +34,10 @@ namespace parallax::perception {
         std::string label;
         std::uint64_t query_revision = 0;
         float semantic_confidence = 0.0F;
-
+        
+        std::uint32_t semantic_index = 0;
+        std::vector<std::array<float, 3>> surface_points_m;
+        
         cv::Rect2f image_box{};
         ImageSpace image_space = ImageSpace::Unknown;
 

@@ -20,6 +20,8 @@
 #include <foxglove/websocket.hpp>
 #include <cuda_runtime.h>
 
+
+#include <array>
 #include <string>
 #include <cstddef>
 #include <cstdint>

@@ -3,6 +3,7 @@ add_library(parallax_cuda
     depth.cu
     depth_roi.cu
     efficientvit_sam.cu
+    masked_depth_samples.cu
 )
 
 target_include_directories(parallax_cuda

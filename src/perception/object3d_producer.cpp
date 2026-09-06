@@ -5,7 +5,9 @@
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/perception/detection.hpp>
 #include <parallax/perception/object3d.hpp>
+#include <parallax/perception/segmentation.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <utility>
@@ -66,7 +68,58 @@ namespace parallax::perception {
                                    *depth_match.product,
                                    context,
                                    *objects)) {
+
             return core::SubmitResult::Failed;
+        }
+
+        /*
+        * Segmentation is optional enrichment. Do not make it a graph dependency:
+        * Object3D demand alone must never activate EfficientViT-SAM.
+        */
+        const auto segmentation = products_.latest<SegmentationMask>( core::ProductId::Segmentation);
+
+        if (segmentation &&
+            segmentation->valid() &&
+            segmentation->payload &&
+            segmentation->payload->valid() &&
+            segmentation->metadata.observation == detections->metadata.observation &&
+            segmentation->payload->query_revision == detections->payload->query_revision &&
+            segmentation->payload->source_observation == detections->metadata.observation) {
+
+            /*
+            * Preserve the segments highest-confidence detection 
+            * exact selection policy here rather than guessing which
+            * Object3D the mask belongs to.
+            */
+            std::size_t selected = 0;
+
+            if (!detections->payload->empty()) {
+                for (std::size_t i = 1; i < detections->payload->scores.size(); ++i) {
+
+                    if (detections->payload->scores[i] > detections->payload->scores[selected]) {
+                        selected = i;
+                    }
+                }
+
+                auto object_it = std::find_if(objects->objects.begin(),
+                                              objects->objects.end(),
+                                              [selected](const Object3D& object) {
+
+                            return object.semantic_index == selected;
+                        });
+
+                if (object_it != objects->objects.end()) {
+                    auto& lane = context.stereoLane();
+
+                    if (!context.waitFor(segmentation->completion, lane)) return core::SubmitResult::Failed;
+
+                    /*
+                    * Failure to obtain enough stereo support under the mask is not an
+                    * Object3D failure. Keep the already-valid StereoRoi result.
+                    */
+                    (void)associator_.refineWithMask(*segmentation->payload, segmentation->metadata, *depth_match.product, context, *object_it);
+                }
+            }
         }
 
         /*

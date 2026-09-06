@@ -7,9 +7,10 @@
 #include <parallax/perception/object3d_producer.hpp>
 #include <parallax/perception/stereo_roi_associator.hpp>
 #include <parallax/stereo/calibration.hpp>
+#include <parallax/perception/segmentation.hpp>
 
+#include <cuda_runtime.h>
 #include <gtest/gtest.h>
-
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -113,6 +114,66 @@ namespace {
                                                    metadata(sequence, timestamp),
                                                    std::move(const_payload),
                                                    std::move(completion));
+    }
+
+    core::Product<perception::SegmentationMask> make_segmentation(core::ExecutionContext& context,
+                                                                  std::uint64_t sequence,
+                                                                  std::uint64_t query_revision,
+                                                                  Clock::time_point timestamp) {
+
+        constexpr std::size_t Bytes = static_cast<std::size_t>(Width) * Height;
+
+        std::vector<std::uint8_t> host_mask(Bytes, 0);
+
+        /*
+        * Cover the central region with enough valid pixels for StereoMask
+        * refinement while leaving the rest of the image unsupported.
+        */
+        for (std::uint32_t y = 1; y < Height - 1; ++y) {
+            for (std::uint32_t x = 1; x < Width - 1; ++x) {
+                host_mask[static_cast<std::size_t>(y) * Width + x] = 255;
+            }
+        }
+
+        std::uint8_t* device_mask = nullptr;
+        EXPECT_EQ(cudaMalloc(reinterpret_cast<void**>(&device_mask), Bytes), cudaSuccess);
+
+        auto& lane = context.stereoLane();
+        EXPECT_EQ(cudaMemcpyAsync(device_mask, host_mask.data(), Bytes, cudaMemcpyHostToDevice, lane.cudaHandle()),
+                                cudaSuccess);
+
+        auto completion = context.recordCudaCompletion(lane.cudaHandle());
+        EXPECT_TRUE(completion.valid());
+
+        auto payload = std::make_shared<perception::SegmentationMask>();
+        payload->width = Width;
+        payload->height = Height;
+        payload->pitch_bytes = Width;
+
+        payload->image_space =perception::ImageSpace::RgbLeft;
+        payload->representation = perception::MaskRepresentation::CudaDevice;
+        payload->layout = perception::MaskLayout::RowMajor;
+
+        payload->confidence = 0.95F;
+        payload->mask_valid = true;
+
+        payload->source_observation = {core::SourceId::StereoCamera, sequence};
+        payload->query_revision = query_revision;
+
+        /*
+        * SegmentationMask owns CUDA storage through shared lifetime rather than
+        * exposing an independently managed raw allocation.
+        */
+        payload->storage = std::shared_ptr<const void>(device_mask, [](const void* pointer) {
+                                            if (pointer != nullptr) cudaFree(const_cast<void*>(pointer));
+                });
+
+        std::shared_ptr<const perception::SegmentationMask> const_payload = payload;
+
+        return core::make_product<perception::SegmentationMask>(core::ProductId::Segmentation,
+                                                                metadata(sequence, timestamp),
+                                                                std::move(const_payload),
+                                                                std::move(completion));
     }
 
     void initialize_associator(perception::StereoRoiAssociator& associator) {
@@ -257,6 +318,97 @@ TEST(Object3DProducerTest, PublishesValidEmptySetWhenDetectionHasNoObjects) {
     ASSERT_NE(output, nullptr);
     EXPECT_TRUE(output->payload->valid());
     EXPECT_TRUE(output->payload->empty());
+
+    context.shutdown();
+}
+
+TEST(Object3DProducerTest, MatchingSegmentationRefinesStereoRoiObjectToSurface) {
+    core::ExecutionContext context;
+    ASSERT_TRUE(context.initialize());
+
+    auto& store = context.products();
+
+    stereo::StereoCalibration calibration;
+    perception::StereoRoiAssociator associator{calibration, "camera_left_optical"};
+
+    initialize_associator(associator);
+
+    perception::Object3DProducer producer{associator, store};
+
+    const auto now = Clock::now();
+
+    store.publish(core::make_product<perception::DetectionSet>(core::ProductId::Detection, 
+                                                                metadata(50, now),
+                                                                detection_payload()));
+
+    store.publish(make_depth(context, 2.0F, 50, now)); 
+    store.publish(make_segmentation(context, 50, 3, now));
+
+    ASSERT_EQ(producer.submit(context), core::SubmitResult::Submitted);
+
+    const auto output = store.latest<perception::Object3DSet>(core::ProductId::Object3D);
+
+    ASSERT_NE(output, nullptr);
+    ASSERT_TRUE(output->valid());
+    ASSERT_EQ(output->payload->size(), 1U);
+
+    const auto& object = output->payload->objects.front();
+
+    EXPECT_EQ(object.method, perception::Object3DMethod::StereoMask);
+    EXPECT_EQ(object.geometry, perception::Object3DGeometry::Surface);
+    EXPECT_FALSE(object.surface_points_m.empty());
+
+    EXPECT_GE(object.surface_points_m.size(), perception::StereoRoiAssociator::MinSurfaceSamples);
+    EXPECT_FLOAT_EQ(object.depth_m, 2.0F);
+    EXPECT_EQ(object.semantic_observation.sequence, 50U);
+    EXPECT_EQ(object.metric_observation.sequence, 50U);
+
+    context.shutdown();
+}
+
+TEST(Object3DProducerTest, StaleSegmentationLeavesStereoRoiObjectUnchanged) {
+    core::ExecutionContext context;
+    ASSERT_TRUE(context.initialize());
+
+    auto& store = context.products();
+
+    stereo::StereoCalibration calibration;
+    perception::StereoRoiAssociator associator{calibration, "camera_left_optical"};
+
+    initialize_associator(associator);
+    perception::Object3DProducer producer{associator, store};
+
+    const auto now = Clock::now();
+
+    store.publish(core::make_product<perception::DetectionSet>(core::ProductId::Detection,
+                                                                metadata(60, now),
+                                                                detection_payload()));
+
+    store.publish(make_depth( context, 2.0F, 60, now));
+
+    /*
+     * Same query revision but wrong source observation. It must never refine
+     * the current detection's Object3D.
+     */
+    store.publish(make_segmentation(context, 59, 3, now - std::chrono::milliseconds{20}));
+
+    ASSERT_EQ(producer.submit(context), core::SubmitResult::Submitted);
+
+    const auto output = store.latest<perception::Object3DSet>(core::ProductId::Object3D);
+
+    ASSERT_NE(output, nullptr);
+    ASSERT_TRUE(output->valid());
+    ASSERT_EQ(output->payload->size(), 1U);
+
+    const auto& object = output->payload->objects.front();
+
+    EXPECT_EQ(object.method, perception::Object3DMethod::StereoRoi);
+    EXPECT_EQ(object.geometry, perception::Object3DGeometry::ImageSupportedGeometry);
+
+    EXPECT_TRUE(object.surface_points_m.empty());
+    EXPECT_FLOAT_EQ(object.depth_m, 2.0F);
+    EXPECT_EQ(object.semantic_observation.sequence, 60U);
+    EXPECT_EQ(object.metric_observation.sequence, 60U);
 
     context.shutdown();
 }

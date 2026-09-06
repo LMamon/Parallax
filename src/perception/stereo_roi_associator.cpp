@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 namespace parallax::perception {
 
@@ -60,6 +61,38 @@ namespace parallax::perception {
         if (!mapper_.initialize(width, height, rectified_to_rgb_x, rectified_to_rgb_y)) {
             return false;
         }
+
+        /*
+        * Mask-supported Object3D refinement operates in rectified depth space
+        * while segmentation remains in the source RGB image space. Preserve the
+        * calibration's rectified->source maps on device so mask/depth association
+        * does not require a per-frame host mapping pass.
+        */
+        if (!rectified_to_rgb_x_device_.allocate(width, height, 1, sizeof(float)) ||
+            !rectified_to_rgb_y_device_.allocate( width, height, 1, sizeof(float))) {
+            return false;
+        }
+        if (!surface_samples_device_.allocate(static_cast<std::uint32_t>(MaxSurfaceSamples), 1, 1, sizeof(cuda::MaskedDepthPoint)) ||
+            !surface_sample_count_device_.allocate(1, 1, 1, sizeof(std::uint32_t))) {
+
+            return false;
+        }
+        
+        cudaStream_t upload_stream = nullptr;
+        if (cudaStreamCreate(&upload_stream) != cudaSuccess) return false;
+
+        const std::size_t host_pitch = static_cast<std::size_t>(width) * sizeof(float);
+        const bool uploaded = rectified_to_rgb_x_device_.uploadAsync(rectified_to_rgb_x.data(),
+                                                                    host_pitch,
+                                                                    upload_stream) &&
+                            rectified_to_rgb_y_device_.uploadAsync(rectified_to_rgb_y.data(),
+                                                                    host_pitch,
+                                                                    upload_stream);
+
+        const bool synchronized = uploaded && cudaStreamSynchronize(upload_stream) == cudaSuccess;
+
+        cudaStreamDestroy(upload_stream);
+        if (!synchronized) return false;
 
         /*
          * Scratch storage is allocated once for the maximum bounded batch.
@@ -277,6 +310,7 @@ namespace parallax::perception {
             object.label = detections.query;
             object.query_revision = detections.query_revision;
             object.semantic_confidence = detections.scores[detection_index];
+            object.semantic_index = static_cast<std::uint32_t>(detection_index);
             object.image_box = detections.boxes[detection_index];
             object.image_space = detections.image_space;
 
@@ -308,6 +342,135 @@ namespace parallax::perception {
 
             output.objects.push_back(std::move(object));
         }
+        return true;
+    }
+
+    bool StereoRoiAssociator::refineWithMask(const SegmentationMask& mask,
+                                             const core::ProductMetadata& mask_metadata,
+                                             const core::Product<isp::DepthFrame>& depth,
+                                             core::ExecutionContext& context,
+                                             Object3D& object) {
+
+        if (!initialized_ ||
+            !object.valid() ||
+            !mask.valid() ||
+            !mask_metadata.valid ||
+            !depth.valid() ||
+            !depth.payload ||
+            mask.representation != MaskRepresentation::CudaDevice ||
+            mask.layout != MaskLayout::RowMajor ||
+            mask.image_space != ImageSpace::RgbLeft ||
+            mask.source_observation != object.semantic_observation ||
+            mask.query_revision != object.query_revision) {
+
+            return false;
+        }
+
+        /*
+        * Segmentation and depth are independently asynchronous CUDA products.
+        * Chain both generations onto the stereo lane before reading either.
+        */
+        auto& lane = context.stereoLane();
+        const cudaStream_t stream = lane.cudaHandle();
+
+        if (stream == nullptr || !context.waitFor(depth.completion, lane)) {
+            return false;
+        }
+
+        /*
+        * The producer supplies mask metadata separately because the mask payload
+        * intentionally stores only source/query identity, not its completion.
+        */
+        (void)mask_metadata;
+        const auto* mask_device = static_cast<const std::uint8_t*>(mask.storage.get());
+
+        if (!cuda::sampleMaskedDepth(mask_device,
+                                     mask.pitch_bytes,
+                                     mask.width,
+                                     mask.height,
+                                     depth.payload->depth,
+                                     rectified_to_rgb_x_device_,
+                                     rectified_to_rgb_y_device_,
+                                     camera_model_.fx_px,
+                                     camera_model_.fy_px,
+                                     camera_model_.cx_px,
+                                     camera_model_.cy_px,
+                                     SurfaceSampleStride,
+                                     static_cast<std::uint32_t>(MaxSurfaceSamples),
+                                     surface_samples_device_,
+                                     surface_sample_count_device_,
+                                     stream)) {
+
+            return false;
+        }
+
+        if (!surface_samples_device_.downloadAsync(surface_samples_host_.data(),
+                                                    MaxSurfaceSamples * sizeof(cuda::MaskedDepthPoint),
+                                                    stream) ||
+            !surface_sample_count_device_.downloadAsync(&surface_sample_count_host_,
+                                                        sizeof(std::uint32_t), 
+                                                        stream)) {
+
+            return false;
+        }
+
+        auto completion = context.recordCudaCompletion(stream);
+        if (!completion.valid() || !context.waitForHost(completion)) return false;
+
+        const std::size_t count = std::min<std::size_t>(surface_sample_count_host_, MaxSurfaceSamples);
+        if (count < MinSurfaceSamples) return false;
+
+        object.surface_points_m.clear();
+        object.surface_points_m.reserve(count);
+
+        std::vector<float> depths;
+        depths.reserve(count);
+
+        std::array<float, 3> centroid{};
+
+        for (std::size_t i = 0; i < count; ++i) {
+            const auto& sample = surface_samples_host_[i];
+
+            if (!std::isfinite(sample.x) || !std::isfinite(sample.y) || !std::isfinite(sample.z) || sample.z <= 0.0F) {
+                continue;
+            }
+
+            object.surface_points_m.push_back({sample.x, sample.y, sample.z});
+
+            centroid[0] += sample.x;
+            centroid[1] += sample.y;
+            centroid[2] += sample.z;
+
+            depths.push_back(sample.z);
+        }
+
+        if (object.surface_points_m.size() < MinSurfaceSamples) {
+            object.surface_points_m.clear();
+            return false;
+        }
+
+        const float reciprocal = 1.0F / static_cast<float>(object.surface_points_m.size());
+
+        centroid[0] *= reciprocal;
+        centroid[1] *= reciprocal;
+        centroid[2] *= reciprocal;
+
+        std::sort(depths.begin(), depths.end());
+
+        const std::size_t middle = depths.size() / 2;
+        const float median_depth = (depths.size() & 1U) ? depths[middle] : 0.5F * (depths[middle - 1] + depths[middle]);
+
+        /*
+        * The mask-supported sample refines the representative object position
+        * without claiming a watertight surface or physical object dimensions.
+        */
+        object.position_m = centroid;
+        object.depth_m = median_depth;
+        object.geometry = Object3DGeometry::Surface;
+        object.method = Object3DMethod::StereoMask;
+
+        object.support_quality = static_cast<float>(object.surface_points_m.size()) / static_cast<float>(MaxSurfaceSamples);
+
         return true;
     }
 

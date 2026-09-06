@@ -1048,7 +1048,6 @@ namespace parallax::visualization {
 
         for (std::size_t i = 0; i < product.payload->objects.size(); ++i) {
             const auto& object = product.payload->objects[i];
-
             if (!object.valid()) continue;
 
             foxglove::messages::SceneEntity entity;
@@ -1062,8 +1061,7 @@ namespace parallax::visualization {
             if (object.persistent()) {
                 entity.id = "track_" + std::to_string(object.track_id);
             } else {
-                entity.id = "object_" + std::to_string(object.semantic_observation.sequence) +
-                            "_" + std::to_string(i);
+                entity.id = "object_" + std::to_string(object.semantic_observation.sequence) + "_" + std::to_string(i);
             }
 
             entity.frame_locked = true;
@@ -1102,7 +1100,6 @@ namespace parallax::visualization {
             marker_color.a = 1.0;
 
             marker.color = marker_color;
-
             entity.spheres.push_back(std::move(marker));
 
             /*
@@ -1134,8 +1131,47 @@ namespace parallax::visualization {
                 line_color.a = 1.0;
 
                 rectangle.color = line_color;
-
                 entity.lines.push_back(std::move(rectangle));
+            }
+
+            if (object.geometry == parallax::perception::Object3DGeometry::Surface && !object.surface_points_m.empty()) {
+                constexpr std::size_t MaxVisibleSurfacePoints = 64;
+                const std::size_t visible = std::min(object.surface_points_m.size(), MaxVisibleSurfacePoints);
+                
+                entity.spheres.reserve(entity.spheres.size() + visible);
+
+                for (std::size_t point_index = 0; point_index < visible; ++point_index) {
+                    const auto& sample = object.surface_points_m[point_index];
+                    
+                    foxglove::messages::SpherePrimitive point;
+                    foxglove::messages::Pose pose;
+                    
+                    foxglove::messages::Vector3 position;
+                    position.x = sample[0];
+                    position.y = sample[1];
+                    position.z = sample[2];
+                    pose.position = position;
+                    
+                    foxglove::messages::Quaternion orientation;
+                    orientation.w = 1.0;
+                    pose.orientation = orientation;
+                    point.pose = pose;
+                    
+                    foxglove::messages::Vector3 size;
+                    size.x = 0.012;
+                    size.y = 0.012;
+                    size.z = 0.012;
+                    point.size = size;
+                    
+                    foxglove::messages::Color color;
+                    color.r = 0.0;
+                    color.g = 0.75;
+                    color.b = 1.0;
+                    color.a = 0.8;
+
+                    point.color = color;
+                    entity.spheres.push_back(std::move(point));
+                }
             }
 
             const std::string distance = formatDepthForDisplay(object.depth_m);

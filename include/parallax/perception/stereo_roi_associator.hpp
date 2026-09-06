@@ -9,6 +9,8 @@
 #include <parallax/perception/image_space_mapper.hpp>
 #include <parallax/perception/object3d.hpp>
 #include <parallax/stereo/calibration.hpp>
+#include <parallax/cuda/masked_depth_samples.cuh>
+#include <parallax/perception/segmentation.hpp>
 
 #include <array>
 #include <cstddef>
@@ -34,6 +36,9 @@ namespace parallax::perception {
             static constexpr std::size_t MaxObjects = 64;
             static constexpr std::uint32_t RoiRadius = 3;
             static constexpr std::uint32_t MinValidSamples = 5;
+            static constexpr std::size_t MaxSurfaceSamples = 128;
+            static constexpr std::uint32_t SurfaceSampleStride = 1;
+            static constexpr std::uint32_t MinSurfaceSamples = 8;
 
             explicit StereoRoiAssociator(const stereo::StereoCalibration& calibration, std::string coordinate_frame);
 
@@ -57,11 +62,16 @@ namespace parallax::perception {
                            core::ExecutionContext& context,
                            Object3DSet& output);
 
+            bool refineWithMask(const SegmentationMask& mask,
+                                const core::ProductMetadata& mask_metadata,
+                                const core::Product<isp::DepthFrame>& depth,
+                                core::ExecutionContext& context,
+                                Object3D& object);
+
         private:
-            [[nodiscard]] bool backProject(
-                const cv::Point2f& rectified_point,
-                float depth_m,
-                std::array<float, 3>& xyz) const noexcept;
+            [[nodiscard]] bool backProject(const cv::Point2f& rectified_point,
+                                           float depth_m,
+                                           std::array<float, 3>& xyz) const noexcept;
 
             const stereo::StereoCalibration& calibration_;
             std::string coordinate_frame_;
@@ -76,6 +86,15 @@ namespace parallax::perception {
             std::array<cuda::DepthRoiRequest, MaxObjects> requests_host_{};
             std::array<cuda::DepthRoiResult, MaxObjects> results_host_{};
 
+            cuda::CudaBuffer rectified_to_rgb_x_device_;
+            cuda::CudaBuffer rectified_to_rgb_y_device_;
+
+            cuda::CudaBuffer surface_samples_device_;
+            cuda::CudaBuffer surface_sample_count_device_;
+
+            std::array<cuda::MaskedDepthPoint, MaxSurfaceSamples> surface_samples_host_{};
+
+            std::uint32_t surface_sample_count_host_ = 0;
             std::uint32_t image_width_ = 0;
             std::uint32_t image_height_ = 0;
 

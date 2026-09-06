@@ -97,6 +97,13 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_masked_depth_samples_test
+    masked_depth_samples_test.cpp
+    parallax_cuda
+    CUDA::cudart
+)
+
+parallax_add_gtest(
     parallax_image_space_mapper_test
     image_space_mapper_test.cpp
     parallax_core

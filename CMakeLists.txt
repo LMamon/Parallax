@@ -93,6 +93,35 @@ set_target_properties(VPI::VPI PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${VPI_INCLUDE_DIR}"
 )
 
+option(PARALLAX_ENABLE_CUVSLAM "Enable cuVSLAM localization support" OFF)
+
+if(PARALLAX_ENABLE_CUVSLAM)
+    set(CUVSLAM_ROOT "${CMAKE_SOURCE_DIR}/.deps/cuvslam")
+
+    find_path(
+        CUVSLAM_INCLUDE_DIR
+        NAMES cuvslam/cuvslam2.h
+        PATHS "${CUVSLAM_ROOT}/include"
+        REQUIRED
+        NO_DEFAULT_PATH
+    )
+
+    find_library(
+        CUVSLAM_LIBRARY
+        NAMES cuvslam
+        PATHS "${CUVSLAM_ROOT}/bin"
+        REQUIRED
+        NO_DEFAULT_PATH
+    )
+
+    add_library(cuVSLAM::cuVSLAM SHARED IMPORTED)
+
+    set_target_properties(cuVSLAM::cuVSLAM PROPERTIES
+        IMPORTED_LOCATION "${CUVSLAM_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${CUVSLAM_INCLUDE_DIR}"
+    )
+endif()
+
 add_subdirectory(src/application)
 add_subdirectory(src/camera)
 add_subdirectory(src/core)
@@ -107,7 +136,6 @@ add_subdirectory(src/perception)
 add_subdirectory(src/tracking)
 add_subdirectory(src/core/runtime)
 
-# Add these when their CMakeLists.txt files exist.
 # add_subdirectory(src/bindings)
 
 if(BUILD_TESTING)
@@ -132,3 +160,11 @@ target_link_libraries(parallax
         parallax_runtime
         ${OpenCV_LIBS}
 )
+
+if(PARALLAX_ENABLE_CUVSLAM)
+    target_link_libraries(
+        parallax
+        PRIVATE
+            cuVSLAM::cuVSLAM
+    )
+endif()

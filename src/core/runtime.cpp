@@ -149,7 +149,7 @@ namespace parallax::core {
          */
         resolver_.acquire(ProductId::RectifiedRgb, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::Disparity, DemandSource::RuntimeBaseline);
-        resolver_.acquire(ProductId::MarkerDepth, DemandSource::RuntimeBaseline);
+        // resolver_.acquire(ProductId::MarkerDepth, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::LidarScan, DemandSource::RuntimeBaseline);
 
 
@@ -355,6 +355,7 @@ namespace parallax::core {
                 if (!producer->inputs().empty()) {
                     if (!input) {
                         ++stats.missing_or_incompatible_input;
+                        std::cerr << "Runtime: missing/incompatible input: " << producer->name() << '\n';
                         frame_failed = true;
                         break;
                     }

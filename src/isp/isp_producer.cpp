@@ -54,20 +54,16 @@ namespace parallax::isp {
         }
 
 
-        if (cudaStreamSynchronize(isp_.stream()) != cudaSuccess) {
-            return parallax::core::SubmitResult::Failed;
-        }
-        /**
+        // if (cudaStreamSynchronize(isp_.stream()) != cudaSuccess) {
+        //     return parallax::core::SubmitResult::Failed;
+        // }
 
-        * SYNCHRONIZATION INVENTORY — ORDERING ONLY
+       /**
+        * ISP submits upload/demosaic work on its CUDA stream.
+        * ISP work remains asynchronous on its CUDA stream.
         *
-        * ISP submits upload/demosaic work to its CUDA stream while rectification
-        * executes through the downstream VPI stream. This host synchronization
-        * currently prevents VPI from consuming incomplete ISP-owned buffers.
-        *
-        * ISP output remains CUDA-resident. Record completion on the ISP-owned CUDA
-        * stream so downstream accelerator work can depend on these pixels without
-        * blocking the host thread.
+        * Record completion after upload/demosaic submission so downstream accelerator
+        * lanes wait for this generation before consuming the device-resident output.
         */
         auto completion = context.recordCudaCompletion(isp_.stream());
         if (!completion.valid()) {

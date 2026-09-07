@@ -14,10 +14,7 @@ namespace parallax::stereo {
             char buffer[VPI_MAX_STATUS_MESSAGE_LENGTH]{};
             vpiGetLastStatusMessage(buffer, sizeof(buffer));
 
-            std::cerr 
-                << message << ": "
-                << vpiStatusGetName(status) << " - "
-                << buffer << '\n';
+            std::cerr << message << ": " << vpiStatusGetName(status) << " - " << buffer << '\n';
         }
 
         bool populateWarpMap(VPIWarpMap& warp, 
@@ -26,16 +23,14 @@ namespace parallax::stereo {
                             const std::vector<float>& map_x,
                             const std::vector<float>& map_y) {
 
-            const std::size_t expected_elements = static_cast<std::size_t>(width) * 
-                                                static_cast<std::size_t>(height);
+            const std::size_t expected_elements = static_cast<std::size_t>(width) *  static_cast<std::size_t>(height);
 
             if (map_x.size() != expected_elements || map_y.size() != expected_elements) {
-                std::cerr
-                    << "Invalid rectification map dimensions\n"
-                    << "Expected elements: " << expected_elements
-                    << "\nmap_x: " << map_x.size()
-                    << "\nmap_y: " << map_y.size()
-                    << '\n';
+                std::cerr << "Invalid rectification map dimensions\n"
+                          << "Expected elements: " << expected_elements
+                          << "\nmap_x: " << map_x.size()
+                          << "\nmap_y: " << map_y.size()
+                          << '\n';
 
                 return false;
             }
@@ -92,22 +87,20 @@ namespace parallax::stereo {
         const auto& metadata = calibration.metadata();
 
         if (rgb_input.width != metadata.image_width || rgb_input.height != metadata.image_height) {
-            std::cerr
-                << "Stereo input dimensions do not match calibration\nInput: "
-                << rgb_input.width << 'x' << rgb_input.height
-                << "\nCalibration: "
-                << metadata.image_width << 'x'
-                << metadata.image_height << '\n';
+            std::cerr << "Stereo input dimensions do not match calibration\nInput: "
+                      << rgb_input.width << 'x' << rgb_input.height
+                      << "\nCalibration: "
+                      << metadata.image_width << 'x'
+                      << metadata.image_height << '\n';
 
             return false;
         }
         if (gray_input.width != metadata.image_width || gray_input.height != metadata.image_height) {
-            std::cerr
-                << "Stereo grayscale input dimensions do not match calibration\nInput: "
-                << gray_input.width << 'x' << gray_input.height
-                << "\nCalibration: "
-                << metadata.image_width << 'x'
-                << metadata.image_height << '\n';
+            std::cerr << "Stereo grayscale input dimensions do not match calibration\nInput: "
+                      << gray_input.width << 'x' << gray_input.height
+                      << "\nCalibration: "
+                      << metadata.image_width << 'x'
+                      << metadata.image_height << '\n';
 
             return false;
         }

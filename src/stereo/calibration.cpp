@@ -17,17 +17,14 @@ bool loadBinaryMap(const std::filesystem::path& path, std::vector<float>& map, s
     const std::uintmax_t actual_bytes = std::filesystem::file_size(path, ec);
 
     if (ec) {
-        std::cerr << "Failed to read calibration map size: "
-                  << path << '\n';
+        std::cerr << "Failed to read calibration map size: " << path << '\n';
         return false;
     }
 
     if (actual_bytes != expected_bytes) {
-        std::cerr
-            << "Invalid calibration map size: " << path
-            << "\nExpected: " << expected_bytes
-            << " bytes\nActual: " << actual_bytes
-            << " bytes\n";
+        std::cerr << "Invalid calibration map size: " << path
+                  << "\nExpected: " << expected_bytes
+                  << " bytes\nActual: " << actual_bytes << " bytes\n";
         return false;
     }
 
@@ -36,16 +33,14 @@ bool loadBinaryMap(const std::filesystem::path& path, std::vector<float>& map, s
     std::ifstream file(path, std::ios::binary);
 
     if (!file) {
-        std::cerr << "Failed to open calibration map: "
-                  << path << '\n';
+        std::cerr << "Failed to open calibration map: " << path << '\n';
         return false;
     }
 
     file.read(reinterpret_cast<char*>(map.data()), static_cast<std::streamsize>(expected_bytes));
 
     if (!file) {
-        std::cerr << "Failed to read calibration map: "
-                  << path << '\n';
+        std::cerr << "Failed to read calibration map: " << path << '\n';
         return false;
     }
 
@@ -55,8 +50,7 @@ bool loadBinaryMap(const std::filesystem::path& path, std::vector<float>& map, s
 template <std::size_t N>
 bool loadMatrix(const nlohmann::json& json, const char* name, std::array<double, N>& output) {
     if (!json.contains(name) || !json[name].is_array()) {
-        std::cerr << "Missing calibration matrix: "
-                  << name << '\n';
+        std::cerr << "Missing calibration matrix: " << name << '\n';
         return false;
     }
 
@@ -64,15 +58,13 @@ bool loadMatrix(const nlohmann::json& json, const char* name, std::array<double,
 
     for (const auto& row : json[name]) {
         if (!row.is_array()) {
-            std::cerr << "Invalid calibration matrix: "
-                      << name << '\n';
+            std::cerr << "Invalid calibration matrix: " << name << '\n';
             return false;
         }
 
         for (const auto& value : row) {
             if (index >= N || !value.is_number()) {
-                std::cerr << "Invalid calibration matrix: "
-                          << name << '\n';
+                std::cerr << "Invalid calibration matrix: " << name << '\n';
                 return false;
             }
 
@@ -81,12 +73,9 @@ bool loadMatrix(const nlohmann::json& json, const char* name, std::array<double,
     }
 
     if (index != N) {
-        std::cerr
-            << "Invalid calibration matrix element count: "
-            << name
-            << "\nExpected: " << N
-            << "\nActual: " << index
-            << '\n';
+        std::cerr << "Invalid calibration matrix element count: " << name
+                  << "\nExpected: " << N
+                  << "\nActual: " << index << '\n';
         return false;
     }
 
@@ -103,8 +92,7 @@ bool StereoCalibration::load(const std::filesystem::path& directory) {
     std::ifstream file(json_path);
 
     if (!file) {
-        std::cerr << "Failed to open calibration file: "
-                  << json_path << '\n';
+        std::cerr << "Failed to open calibration file: " << json_path << '\n';
         return false;
     }
 
@@ -127,8 +115,7 @@ bool StereoCalibration::load(const std::filesystem::path& directory) {
         metadata_.extrinsics_convention = json.at("extrinsics_convention").get<std::string>();
 
     } catch (const nlohmann::json::exception& e) {
-        std::cerr << "Invalid calibration JSON: "
-                  << e.what() << '\n';
+        std::cerr << "Invalid calibration JSON: " << e.what() << '\n';
         return false;
     }
 

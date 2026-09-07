@@ -38,7 +38,7 @@ namespace parallax::camera {
             return false;
         }
         
-             // NOTE:
+        // NOTE:
         // The Jetson/Arducam driver resets several sensor controls during
         // VIDIOC_STREAMON, so controls are applied after startStreaming().
         // Do not move configureControls() before STREAMON unless the driver
@@ -157,13 +157,9 @@ namespace parallax::camera {
                         static_cast<char>((actual_format >> 24) & 0xff),
                         '\0'};
 
-        std::cout
-            << "Camera: "
-            << config_.width << "x" << config_.height
-            << "  Pixel Format: "
-            << fourcc
-            << " (0x"
-            << std::hex << actual_format << std::dec << ")\n";
+        std::cout << "Camera: " << config_.width << "x" << config_.height
+                  << "  Pixel Format: " << fourcc << " (0x"
+                  << std::hex << actual_format << std::dec << ")\n";
 
         // return format != 0;
         return actual_format == V4L2_PIX_FMT_BA10;
@@ -203,12 +199,8 @@ namespace parallax::camera {
             }
             int32_t actual{};
             if (device_->getControl(setting.id, actual)) {
-
-                std::cout
-                    << setting.name
-                    << ": requested " << setting.value
-                    << " actual " << actual
-                    << '\n';
+                std::cout << setting.name << ": requested " << setting.value
+                          << " actual " << actual << '\n';
             }
         }
         return true;

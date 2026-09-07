@@ -30,11 +30,7 @@ namespace parallax::camera {
             return true;
         }
         catch (const YAML::Exception& e) {
-            std::cerr
-                << "Failed to load camera configuration: "
-                << e.what()
-                << '\n';
-
+            std::cerr << "Failed to load camera configuration: " << e.what() << '\n';
             return false;
         }
     }

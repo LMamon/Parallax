@@ -36,7 +36,7 @@ namespace parallax::camera {
             bool setControl(std::uint32_t id, std::int32_t value);
             bool getControl(std::uint32_t id, std::int32_t& value);
 
-            bool initializeStreaming(std::uint32_t buffer_count = 2);
+            bool initializeStreaming(std::uint32_t buffer_count = 4);
             void shutdownStreaming();
 
             bool startStreaming();

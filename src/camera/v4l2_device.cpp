@@ -323,8 +323,8 @@ namespace parallax::camera {
         
         if (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) {
             std::cout << "  POLLERR: " << bool(descriptor.revents & POLLERR)
-                    << " POLLHUP: " << bool(descriptor.revents & POLLHUP)
-                    << " POLLNVAL: " << bool(descriptor.revents & POLLNVAL) << "\n";
+                      << " POLLHUP: " << bool(descriptor.revents & POLLHUP)
+                      << " POLLNVAL: " << bool(descriptor.revents & POLLNVAL) << "\n";
             logMessage("poll: camera device reported a stream error");
             return false;
         }

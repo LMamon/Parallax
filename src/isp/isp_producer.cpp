@@ -53,11 +53,6 @@ namespace parallax::isp {
             return parallax::core::SubmitResult::Failed;
         }
 
-
-        // if (cudaStreamSynchronize(isp_.stream()) != cudaSuccess) {
-        //     return parallax::core::SubmitResult::Failed;
-        // }
-
        /**
         * ISP submits upload/demosaic work on its CUDA stream.
         * ISP work remains asynchronous on its CUDA stream.

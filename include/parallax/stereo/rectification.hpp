@@ -9,6 +9,9 @@
 #include <vpi/Stream.h>
 #include <vpi/WarpMap.h>
 #include <vpi/algo/Remap.h>
+#include <array>
+#include <cstddef>
+
 
 namespace parallax::stereo {
     
@@ -31,6 +34,13 @@ namespace parallax::stereo {
             struct OutputSlot {
                 parallax::isp::RectifiedStereoFrame rgb{};
                 parallax::isp::RectifiedStereoGrayFrame gray{};
+
+                // VPI container identity belongs to the storage generation.
+                // These wrappers remain permanently paired with this slot's CUDA buffers.
+                parallax::vpi::ImageWrapper rgb_left_wrapper;
+                parallax::vpi::ImageWrapper rgb_right_wrapper;
+                parallax::vpi::ImageWrapper gray_left_wrapper;
+                parallax::vpi::ImageWrapper gray_right_wrapper;
             };
 
             [[nodiscard]] std::shared_ptr<OutputSlot> acquireOutput() {
@@ -44,9 +54,7 @@ namespace parallax::stereo {
 
 
             const parallax::isp::RectifiedStereoFrame& rgb() const noexcept {
-                if (latest_output_ != nullptr) {
-                    return latest_output_->rgb;
-                }
+                if (latest_output_ != nullptr) return latest_output_->rgb;
 
                 return output_pool_.prototype()->rgb;
             }
@@ -59,6 +67,28 @@ namespace parallax::stereo {
             [[nodiscard]] bool initialized() const noexcept { return initialized_; }
         
         private:
+            struct InputWrapperSet {
+                parallax::vpi::ImageWrapper rgb_left;
+                parallax::vpi::ImageWrapper rgb_right;
+                parallax::vpi::ImageWrapper gray_left;
+                parallax::vpi::ImageWrapper gray_right;
+
+                [[nodiscard]] bool valid() const noexcept {
+                    return rgb_left.valid() && rgb_right.valid() && gray_left.valid() && gray_right.valid();
+                }
+
+                void release() noexcept {
+                    rgb_left.release();
+                    rgb_right.release();
+                    gray_left.release();
+                    gray_right.release();
+                }
+            };
+
+            bool ensureInputWrappers(const parallax::isp::StereoRgbFrame& rgb_input,
+                                     const parallax::isp::StereoGrayFrame& gray_input);
+
+            std::array<InputWrapperSet, OutputSlotCount> input_wrappers_{};
             /**
              * Non-owning pointer to the most recently submitted output slot.
              *
@@ -67,30 +97,13 @@ namespace parallax::stereo {
              * output ownership becomes generation-specific.
              */
             const OutputSlot* latest_output_ = nullptr;
-            // Current rectified outputs are CUDA-owned, pitch-linear
-            // CudaBuffers. The VPI ImageWrapper members below are non-owning
-            // views over these allocations.
-            //
-            // Phase 7 will reconsider this boundary independently for RGB and
-            // grayscale: RGB remains CUDA-friendly for appearance consumers,
-            // while rectified grayscale is a candidate for VPI ownership.
+
+            /*
+            * Rectification storage and VPI container identity are generation-specific.
+            * Input wrappers are indexed by the ISP storage slot; output wrappers are owned
+            * directly by each fixed rectification output slot.
+            */
             parallax::core::FixedPayloadPool<OutputSlot, OutputSlotCount> output_pool_;
-
-            // Non-owning VPI wrappers over CUDA-owned RGB storage.
-            // Inputs are owned by ISP; outputs are owned by StereoRectifier.
-            parallax::vpi::ImageWrapper rgb_left_input_;
-            parallax::vpi::ImageWrapper rgb_right_input_;
-            parallax::vpi::ImageWrapper rgb_left_output_;
-            parallax::vpi::ImageWrapper rgb_right_output_;
-
-            // Non-owning VPI wrappers over CUDA-owned pitch-linear Y8 storage.
-            // Inputs are owned by ISP; outputs are currently owned by
-            // StereoRectifier. Rectified gray ownership is a Phase 7
-            // migration target.
-            parallax::vpi::ImageWrapper gray_left_input_;
-            parallax::vpi::ImageWrapper gray_right_input_;
-            parallax::vpi::ImageWrapper gray_left_output_;
-            parallax::vpi::ImageWrapper gray_right_output_;
 
             // CPU-resident VPI warp-map data allocated/freed through the VPI
             // warp-map API. Used to construct the persistent remap payloads.

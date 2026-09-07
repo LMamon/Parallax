@@ -68,6 +68,42 @@ namespace parallax::stereo {
 
     StereoRectifier::~StereoRectifier() { shutdown(); }
 
+    bool StereoRectifier::ensureInputWrappers(const parallax::isp::StereoRgbFrame& rgb_input,
+                                              const parallax::isp::StereoGrayFrame& gray_input) {
+
+        if (rgb_input.storage_slot != gray_input.storage_slot) {
+            std::cerr << "Rectification input storage slots do not match\n";
+            return false;
+        }
+
+        const std::size_t slot = rgb_input.storage_slot;
+        if (slot >= input_wrappers_.size()) {
+            std::cerr << "Rectification input storage slot is out of range\n";
+            return false;
+        }
+
+        auto& wrappers = input_wrappers_[slot];
+
+        if (wrappers.valid()) return true;
+
+        /*
+        * ISP generations are preallocated and stable. Bind one VPI container set
+        * to each storage slot once rather than rebinding a shared container while
+        * previous VPI work may still reference it.
+        */
+        wrappers.release();
+
+        if (!wrappers.rgb_left.create(rgb_input.left, VPI_IMAGE_FORMAT_RGB8) ||
+            !wrappers.rgb_right.create(rgb_input.right, VPI_IMAGE_FORMAT_RGB8) ||
+            !wrappers.gray_left.create(gray_input.left, VPI_IMAGE_FORMAT_Y8_ER) ||
+            !wrappers.gray_right.create(gray_input.right, VPI_IMAGE_FORMAT_Y8_ER)) {
+
+            wrappers.release();
+            return false;
+        }
+        return true;
+    }
+
     bool StereoRectifier::initialize(const StereoCalibration& calibration, 
                                     const parallax::isp::StereoRgbFrame& rgb_input,
                                     const parallax::isp::StereoGrayFrame& gray_input,
@@ -148,6 +184,14 @@ namespace parallax::stereo {
                         return false;
                     }
 
+                    if (!slot.rgb_left_wrapper.create(slot.rgb.left, VPI_IMAGE_FORMAT_RGB8) ||
+                        !slot.rgb_right_wrapper.create(slot.rgb.right, VPI_IMAGE_FORMAT_RGB8) ||
+                        !slot.gray_left_wrapper.create(slot.gray.left, VPI_IMAGE_FORMAT_Y8_ER) ||
+                        !slot.gray_right_wrapper.create(slot.gray.right, VPI_IMAGE_FORMAT_Y8_ER)) {
+
+                        return false;
+                    }
+
                     return true;
                 })) {
 
@@ -159,12 +203,8 @@ namespace parallax::stereo {
         // Input buffers are owned by ISP.
         // Rectified output buffers are owned by slots in output_pool_.
         // The VPI wrappers are non-owning views over the currently acquired slot.
-        if (!rgb_left_input_.create(rgb_input.left, VPI_IMAGE_FORMAT_RGB8) ||
-            !rgb_right_input_.create(rgb_input.right, VPI_IMAGE_FORMAT_RGB8) ||
-            !gray_left_input_.create(gray_input.left, VPI_IMAGE_FORMAT_Y8_ER) ||
-            !gray_right_input_.create(gray_input.right, VPI_IMAGE_FORMAT_Y8_ER)) {
-
-            std::cerr << "Failed to create RGB input wrappers\n";
+        if (!ensureInputWrappers(rgb_input, gray_input)) {
+            std::cerr << "Failed to create rectification input wrappers\n";
             shutdown();
             return false;
         }
@@ -208,29 +248,16 @@ namespace parallax::stereo {
 
         if (!initialized_ || stream == nullptr) return false;
 
-        /*
-        * ISP and rectification both use bounded rotating storage. Rebind the
-        * persistent VPI views to the exact input/output generation selected for
-        * this submission. Rebinding changes only the external-memory view; it
-        * does not allocate or copy image data.
-        */
-        if (!rgb_left_input_.rebind(rgb_input.left, VPI_IMAGE_FORMAT_RGB8) ||
-            !rgb_right_input_.rebind(rgb_input.right, VPI_IMAGE_FORMAT_RGB8) ||
-            !gray_left_input_.rebind(gray_input.left, VPI_IMAGE_FORMAT_Y8_ER) ||
-            !gray_right_input_.rebind(gray_input.right, VPI_IMAGE_FORMAT_Y8_ER) ||
-            !rgb_left_output_.rebind(output.rgb.left, VPI_IMAGE_FORMAT_RGB8) ||
-            !rgb_right_output_.rebind(output.rgb.right, VPI_IMAGE_FORMAT_RGB8) ||
-            !gray_left_output_.rebind(output.gray.left, VPI_IMAGE_FORMAT_Y8_ER) ||
-            !gray_right_output_.rebind(output.gray.right, VPI_IMAGE_FORMAT_Y8_ER)) {
+        if (!ensureInputWrappers(rgb_input, gray_input)) return false;
 
-            return false;
-        }
+        const std::size_t input_slot = rgb_input.storage_slot;
+        auto& input = input_wrappers_[input_slot];
 
         VPIStatus status = vpiSubmitRemap(stream,
                                          VPI_BACKEND_CUDA,
                                          left_remap_,
-                                         rgb_left_input_.handle(),
-                                         rgb_left_output_.handle(),
+                                         input.rgb_left.handle(),
+                                         output.rgb_left_wrapper.handle(),
                                          VPI_INTERP_LINEAR,
                                          VPI_BORDER_ZERO,
                                          0);
@@ -243,8 +270,8 @@ namespace parallax::stereo {
         status = vpiSubmitRemap(stream,
                                 VPI_BACKEND_CUDA,
                                 right_remap_,
-                                rgb_right_input_.handle(),
-                                rgb_right_output_.handle(),
+                                input.rgb_right.handle(),
+                                output.rgb_right_wrapper.handle(),
                                 VPI_INTERP_LINEAR,
                                 VPI_BORDER_ZERO,
                                 0);
@@ -257,8 +284,8 @@ namespace parallax::stereo {
         status = vpiSubmitRemap(stream,
                                 VPI_BACKEND_CUDA,
                                 left_remap_,
-                                gray_left_input_.handle(),
-                                gray_left_output_.handle(),
+                                input.gray_left.handle(),
+                                output.gray_left_wrapper.handle(),
                                 VPI_INTERP_LINEAR,
                                 VPI_BORDER_ZERO,
                                 0);
@@ -271,8 +298,8 @@ namespace parallax::stereo {
         status = vpiSubmitRemap(stream,
                                 VPI_BACKEND_CUDA,
                                 right_remap_,
-                                gray_right_input_.handle(),
-                                gray_right_output_.handle(),
+                                input.gray_right.handle(),
+                                output.gray_right_wrapper.handle(),
                                 VPI_INTERP_LINEAR,
                                 VPI_BORDER_ZERO,
                                 0);
@@ -307,15 +334,9 @@ namespace parallax::stereo {
             right_warp_allocated_ = false;
         }
 
-        rgb_left_input_.release();
-        rgb_right_input_.release();
-        rgb_left_output_.release();
-        rgb_right_output_.release();
-
-        gray_left_input_.release();
-        gray_right_input_.release();
-        gray_left_output_.release();
-        gray_right_output_.release();
+        for (auto& wrappers : input_wrappers_) {
+            wrappers.release();
+        }
 
         latest_output_ = nullptr;
         output_pool_.reset();

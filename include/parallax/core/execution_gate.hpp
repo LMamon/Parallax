@@ -24,22 +24,29 @@ namespace parallax::core {
         Submit, StaleInput, RateLimited, Superseded
     };
 
+    [[nodiscard]] inline bool is_compatible_input(const Producer& producer, ProductId product) noexcept {
+        for (const auto& requirement : producer.compatible_inputs()) {
+            if (requirement.product == product) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Returns the single source observation described by all producer inputs.
      *
      * Source producers have no input observation and return nullopt.
      * Missing, invalid, or mutually incompatible inputs also return nullopt.
      */
-    [[nodiscard]] inline std::optional<SourceObservation> input_observation(const Producer& producer,
-                                                                            const ProductStore& products) {
-
+    [[nodiscard]] inline std::optional<SourceObservation> input_observation(const Producer& producer, const ProductStore& products) {
         const auto& inputs = producer.inputs();
+        if (inputs.empty()) return std::nullopt;
 
-        if (inputs.empty()) {
-            return std::nullopt;
-        }
+        std::optional<SourceObservation> strict_observation;
+        std::optional<SourceObservation> fallback_observation;
 
-        std::optional<SourceObservation> observation;
         for (const ProductId input : inputs) {
             const auto metadata = products.metadata(input);
 
@@ -47,26 +54,35 @@ namespace parallax::core {
                 return std::nullopt;
             }
 
-            if (!observation) {
-                observation = metadata->observation;
+            if (!fallback_observation) fallback_observation = metadata->observation;
+
+            /*
+            * Compatible inputs are selected by the producer from bounded history.
+            * Their latest generation therefore does not have to match the strict
+            * scheduling observation.
+            */
+            if (is_compatible_input(producer, input)) continue;
+
+            if (!strict_observation) {
+                strict_observation = metadata->observation;
                 continue;
             }
 
-            if (*observation != metadata->observation) {
-                return std::nullopt;
-            }
+            if (*strict_observation != metadata->observation) return std::nullopt;
         }
-        return observation;
+
+        return strict_observation ? strict_observation : fallback_observation;
     }
 
     [[nodiscard]] inline std::optional<InputObservation> input_observation_with_timestamp(const Producer& producer,
                                                                                           const ProductStore& products) {
 
         const auto& inputs = producer.inputs();
-
         if (inputs.empty()) return std::nullopt;
 
-        std::optional<InputObservation> result;
+        std::optional<InputObservation> strict_result;
+        std::optional<InputObservation> fallback_result;
+
         for (const ProductId input : inputs) {
             const auto metadata = products.metadata(input);
 
@@ -74,24 +90,29 @@ namespace parallax::core {
                 return std::nullopt;
             }
 
-            if (!result) {
-                result = InputObservation{metadata->observation, metadata->timestamp};
-                continue;
-            }
-
-            if (result->observation != metadata->observation) {
-                return std::nullopt;
+            if (!fallback_result) {
+                fallback_result = InputObservation{metadata->observation, metadata->timestamp};
             }
 
             /*
-            * For a compatible multi-input observation, scheduling freshness is
-            * constrained by the oldest required input.
+            * Compatible generations are selected inside the producer. The latest
+            * compatible input must neither reject the strict observation nor make
+            * its scheduling timestamp artificially older.
             */
-            if (metadata->timestamp < result->timestamp) {
-                result->timestamp = metadata->timestamp;
+            if (is_compatible_input(producer, input)) continue;
+
+            if (!strict_result) {
+                strict_result = InputObservation{metadata->observation, metadata->timestamp};
+                continue;
+            }
+
+            if (strict_result->observation != metadata->observation) return std::nullopt;
+
+            if (metadata->timestamp < strict_result->timestamp) {
+                strict_result->timestamp = metadata->timestamp;
             }
         }
-        return result;
+        return strict_result ? strict_result : fallback_result;
     }
 
 

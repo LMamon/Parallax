@@ -601,6 +601,83 @@ namespace parallax::core {
             EXPECT_EQ(next->metadata.observation, (SourceObservation{SourceId::StereoCamera, 11}));
         }
 
+        TEST(ExecutionGateTest, StrictInputsRequireSameObservation) {
+            ProductStore store;
+            TestProducer producer{"strict", {ProductId::Detection, ProductId::Depth}, {ProductId::Object3D}};
+
+            publish_test_product(store, ProductId::Detection, SourceObservation{SourceId::StereoCamera, 10});
+            publish_test_product(store, ProductId::Depth, SourceObservation{SourceId::StereoCamera, 12});
+
+            EXPECT_FALSE(input_observation_with_timestamp(producer, store).has_value());
+        }
+
+        TEST(ExecutionGateTest, CompatibleLatestInputMayUseDifferentObservation) {
+            ProductStore store;
+            TestProducer producer{"compatible",
+                                 {ProductId::Detection, ProductId::Depth},
+                                 {ProductId::Object3D},
+                                 {},
+                                 {CompatibleInputRequirement{ProductId::Depth, 4}}};
+
+            publish_test_product(store, ProductId::Detection, SourceObservation{SourceId::StereoCamera, 10});
+            publish_test_product(store, ProductId::Depth, SourceObservation{SourceId::StereoCamera, 12});
+
+            const auto input = input_observation_with_timestamp(producer, store);
+
+            ASSERT_TRUE(input.has_value());
+            EXPECT_EQ(input->observation, (SourceObservation{SourceId::StereoCamera, 10}));
+        }
+
+        TEST(ExecutionGateTest, CompatibleInputMustStillExist) {
+            ProductStore store;
+            TestProducer producer{"compatible",
+                                 {ProductId::Detection, ProductId::Depth},
+                                 {ProductId::Object3D},
+                                 {},
+                                 {CompatibleInputRequirement{ProductId::Depth, 4}}};
+
+            publish_test_product(store, ProductId::Detection, SourceObservation{SourceId::StereoCamera, 10});
+
+            EXPECT_FALSE(input_observation_with_timestamp(producer, store).has_value());
+        }
+
+        TEST(ExecutionGateTest, CompatibleLatestTimestampDoesNotConstrainStrictInput) {
+            ProductStore store;
+
+            TestProducer producer{"compatible",
+                                 {ProductId::Detection, ProductId::Depth},
+                                 {ProductId::Object3D},
+                                 {},
+                                 {CompatibleInputRequirement{ProductId::Depth, 4}}};
+
+            const auto now = std::chrono::steady_clock::now();
+            const auto detection_time = now - std::chrono::milliseconds(5);
+            const auto depth_time = now - std::chrono::milliseconds(500);
+
+            ProductMetadata detection_metadata{};
+            detection_metadata.observation = SourceObservation{SourceId::StereoCamera, 10};
+            detection_metadata.timestamp = detection_time;
+            detection_metadata.production_timestamp = detection_time;
+            detection_metadata.valid = true;
+
+            store.publish(make_product<int>(ProductId::Detection, detection_metadata, std::make_shared<const int>(1)));
+
+            ProductMetadata depth_metadata{};
+            depth_metadata.observation = SourceObservation{SourceId::StereoCamera, 12};
+            depth_metadata.timestamp = depth_time;
+            depth_metadata.production_timestamp = depth_time;
+            depth_metadata.valid = true;
+
+            store.publish(make_product<int>(ProductId::Depth, depth_metadata, std::make_shared<const int>(1)));
+
+            const auto input = input_observation_with_timestamp(producer, store);
+
+            ASSERT_TRUE(input.has_value());
+            EXPECT_EQ(input->observation, (SourceObservation{SourceId::StereoCamera, 10}));
+            EXPECT_EQ(input->timestamp, detection_time);
+        }
+
+
         TEST(ExecutionGateTest, RateLimitedProducerDoesNotThrottleIndependentProducer) {
             const auto now = std::chrono::steady_clock::now();
 

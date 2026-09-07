@@ -297,10 +297,8 @@ namespace parallax::core {
             // it records intent/demand and never calls NanoOWL directly.
             const auto request_state = request_controller_.state();
 
-            /*
-            * RequestController owns intent; the producer owns DCF state.
-            * Repeating the same revision is intentionally a no-op.
-            */
+            // RequestController owns intent; the producer owns DCF state.
+            // Repeating the same revision is intentionally a no-op.
             if (single_target_producer_) {
                 if (request_state.tracking_requested) {
                     if (!single_target_producer_->setTarget(request_state.tracking_target, request_state.tracking_query_revision)) {
@@ -355,9 +353,10 @@ namespace parallax::core {
                 if (!producer->inputs().empty()) {
                     if (!input) {
                         ++stats.missing_or_incompatible_input;
-                        std::cerr << "Runtime: missing/incompatible input: " << producer->name() << '\n';
-                        frame_failed = true;
-                        break;
+
+                        // Dynamic demand may activate a producer before a usable generation
+                        // exists. That is a scheduling miss, not a runtime failure.        
+                        continue;
                     }
 
                     auto& state = producer_execution_state_[producer];
@@ -552,7 +551,6 @@ namespace parallax::core {
                     ++stats.failed;
 
                     std::cerr << "Runtime: lidar producer failed: " << producer->name() << '\n';
-
                     return;
                 }
 

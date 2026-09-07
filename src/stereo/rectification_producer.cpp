@@ -80,16 +80,27 @@ namespace parallax::stereo {
          */
         std::shared_ptr<const parallax::isp::RectifiedStereoFrame> rectified_rgb(output, &output->rgb);
         std::shared_ptr<const parallax::isp::RectifiedStereoGrayFrame> rectified_gray(output, &output->gray);
+        
+        /*
+        * Rectification is asynchronous. Keep the selected ISP storage generation
+        * alive while either rectified product survives
+        *
+        * RGB and gray alias the same ISP OutputSlot, so one payload reference retains
+        * the complete source generation without extending RawStereo's V4L2 lifetime.
+        */
+        std::shared_ptr<const void> input_lifetime = rgb->payload;
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::RectifiedRgb,
                                                     rgb->metadata,
                                                     std::move(rectified_rgb),
-                                                    completion));
+                                                    completion,
+                                                    input_lifetime));
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::RectifiedGray,
                                                     gray->metadata,
                                                     std::move(rectified_gray),
-                                                    std::move(completion)));
+                                                    std::move(completion),
+                                                    std::move(input_lifetime)));
 
         return parallax::core::SubmitResult::Submitted;
     }

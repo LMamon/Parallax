@@ -10,13 +10,11 @@
 namespace parallax::localization {
 
     namespace {
-        std::int64_t timestampNs(
-            const parallax::core::ProductMetadata& metadata) {
+        std::int64_t timestampNs(const parallax::core::ProductMetadata& metadata) {
             return std::chrono::duration_cast<std::chrono::nanoseconds>(metadata.timestamp.time_since_epoch()).count();
         }
 
         LocalizationPose makeLocalizationPose(const CuVslamPoseEstimate& estimate, std::uint64_t epoch) {
-
             LocalizationPose result{};
             result.timestamp_ns = estimate.timestamp_ns;
             result.epoch = epoch;
@@ -33,6 +31,23 @@ namespace parallax::localization {
                                     pose.rotation[3]};
 
             return result;
+        }
+
+        [[nodiscard]] LocalizationPose makeSlamPose(const cuvslam::Pose& pose, std::int64_t timestamp_ns, std::uint64_t epoch) {
+            LocalizationPose output{};
+            output.timestamp_ns = timestamp_ns;
+            output.epoch = epoch;
+
+            output.translation_m = {pose.translation[0],
+                                    pose.translation[1],
+                                    pose.translation[2]};
+
+            output.rotation_xyzw = {pose.rotation[0],
+                                    pose.rotation[1],
+                                    pose.rotation[2],
+                                    pose.rotation[3]};
+
+            return output;
         }
     }
 
@@ -56,7 +71,6 @@ namespace parallax::localization {
     }
 
     parallax::core::ExecutionPolicy CuVslamProducer::execution_policy() const noexcept {
-
         parallax::core::ExecutionPolicy policy{};
         policy.target_hz = 0.0;
         policy.max_input_age_ms = 0.0;
@@ -74,14 +88,12 @@ namespace parallax::localization {
         }
 
         const auto history = store_.history<parallax::isp::RectifiedStereoGrayFrame>(parallax::core::ProductId::RectifiedGray);
-
         if (history.empty()) return {};
 
         return history.front();
     }
 
     void CuVslamProducer::publishState(const parallax::core::ProductMetadata& input_metadata, LocalizationTrackingState tracking) {
-
         auto metadata = input_metadata;
         metadata.production_timestamp = parallax::core::ExecutionContext::now();
         metadata.valid = true;
@@ -177,6 +189,13 @@ namespace parallax::localization {
         odometry.pose = makeLocalizationPose(estimate, epoch_);
 
         const LocalizationPose pose = odometry.pose;
+        if (estimate.slam_world_from_rig) {
+            auto slam_pose = makeSlamPose(*estimate.slam_world_from_rig, estimate.timestamp_ns, epoch_);
+
+            store_.publish(parallax::core::make_product(parallax::core::ProductId::LocalizationPose,
+                                                        metadata,
+                                                        std::make_shared<const LocalizationPose>(std::move(slam_pose))));
+        }
 
         store_.publish(parallax::core::make_product(parallax::core::ProductId::LocalizationOdometry,
                                                     metadata,
@@ -184,6 +203,7 @@ namespace parallax::localization {
 
         publishState(input->metadata, LocalizationTrackingState::Tracking);
         publishTrajectory(input->metadata, pose);
+
         return parallax::core::SubmitResult::Submitted;
     }
 

@@ -344,14 +344,13 @@ namespace parallax::localization {
 
         try {
             auto rig = makeRig(calibration, extrinsics);
-
             auto config = cuvslam::Odometry::GetDefaultConfig();
 
             // We have a synchronized overlapping stereo pair and no IMU in the
             // Phase 17 scope, so Multicamera is the correct visual mode.
             config.odometry_mode = cuvslam::Odometry::OdometryMode::Multicamera;
             config.multicam_mode = cuvslam::Odometry::MulticameraMode::Precision;
-
+            config.enable_observations_export = true;
             config.use_gpu = true;
 
             // The submitted frames are already the P1/P2 rectified pair.
@@ -371,12 +370,23 @@ namespace parallax::localization {
 
             auto odometry = std::make_unique<cuvslam::Odometry>(rig, config);
 
+            auto slam_config = cuvslam::Slam::GetDefaultConfig();
+
+            slam_config.use_gpu = true;
+            // Keep SLAM asynchronous so VO submission stays the main real-time path.
+            slam_config.sync_mode = false;
+
+            std::vector<std::uint8_t> primary_cameras{0, 1};
+            auto slam = std::make_unique<cuvslam::Slam>(rig, primary_cameras, slam_config);
+
             image_width_ = static_cast<std::int32_t>(calibration.metadata().image_width);
             image_height_ = static_cast<std::int32_t>(calibration.metadata().image_height);
 
             rig_ = std::move(rig);
             config_ = std::move(config);
+            slam_config_ = std::move(slam_config);
             odometry_ = std::move(odometry);
+            slam_ = std::move(slam);
 
             last_timestamp_ns_ = -1;
 
@@ -412,12 +422,10 @@ namespace parallax::localization {
         }
 
         if (frame.gpu_memory && (frame.left_pitch < frame.width ||frame.right_pitch < frame.width)) {
-
             throw std::invalid_argument("cuVSLAM GPU image pitch is smaller than image width");
         }
 
         cuvslam::Image left{};
-
         left.pixels = frame.left;
         left.width = frame.width;
         left.height = frame.height;
@@ -429,7 +437,6 @@ namespace parallax::localization {
         left.camera_index = 0;
 
         cuvslam::Image right{};
-
         right.pixels = frame.right;
         right.width = frame.width;
         right.height = frame.height;
@@ -453,6 +460,17 @@ namespace parallax::localization {
          */
         const cuvslam::PoseEstimate estimate = odometry_->Track(images);
 
+        std::optional<cuvslam::Pose> slam_pose;
+
+        if (estimate.world_from_rig) {
+            cuvslam::Odometry::State state{};
+            odometry_->GetState(state);
+
+            // SLAM only accepts successful odometry states; VO loss stays a VO result.
+            slam_->Track(state);
+            slam_pose = slam_->GetPose();
+        }
+
         /*
          * Even a tracking-loss result consumed this timestamp. Advancing the
          * cursor prevents a failed pose from making a later frame look like a
@@ -463,22 +481,24 @@ namespace parallax::localization {
         CuVslamPoseEstimate result{};
         result.timestamp_ns = estimate.timestamp_ns;
         result.world_from_rig = estimate.world_from_rig;
+        result.slam_world_from_rig = std::move(slam_pose);
 
         return result;
     }
 
     bool CuVslamLocalizer::reset() {
-        if (!rig_ || !config_) return false;
+        if (!rig_ || !config_ || !slam_config_) return false;
 
         try {
-            /*
-             * Construct the replacement before discarding the old tracker. A
-             * failed reset therefore does not leave us pretending a new world
-             * epoch exists when construction actually failed.
-             */
-            auto replacement = std::make_unique<cuvslam::Odometry>(*rig_, *config_);
+            auto replacement_odometry = std::make_unique<cuvslam::Odometry>(*rig_, *config_);
 
-            odometry_ = std::move(replacement);
+            std::vector<std::uint8_t> primary_cameras{0, 1};
+            auto replacement_slam = std::make_unique<cuvslam::Slam>(*rig_, primary_cameras, *slam_config_);
+
+            // Both estimators belong to the same localization epoch.
+            odometry_ = std::move(replacement_odometry);
+            slam_ = std::move(replacement_slam);
+
             last_timestamp_ns_ = -1;
 
             return true;
@@ -491,8 +511,10 @@ namespace parallax::localization {
     void CuVslamLocalizer::shutdown() noexcept {
         // Destroy the stateful tracker first; its destructor may release
         // internal CUDA/cuVSLAM resources that were configured from rig_.
+        slam_.reset();
         odometry_.reset();
 
+        slam_config_.reset();
         rig_.reset();
         config_.reset();
 
@@ -500,4 +522,5 @@ namespace parallax::localization {
         image_height_ = 0;
         last_timestamp_ns_ = -1;
     }
+
 }

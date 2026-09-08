@@ -58,10 +58,11 @@ namespace parallax::localization {
             const std::vector<parallax::core::ProductId> inputs_{parallax::core::ProductId::RectifiedGray};
 
             const std::vector<parallax::core::ProductId> outputs_{parallax::core::ProductId::LocalizationOdometry,
+                                                                  parallax::core::ProductId::LocalizationPose,
                                                                   parallax::core::ProductId::LocalizationTrajectory,
                                                                   parallax::core::ProductId::LocalizationState};
 
-            const std::vector<parallax::core::OrderedInputRequirement>
-            ordered_inputs_{{parallax::core::ProductId::RectifiedGray, InputHistoryCapacity}};
+            const std::vector<parallax::core::OrderedInputRequirement> ordered_inputs_{{parallax::core::ProductId::RectifiedGray, 
+                                                                                        InputHistoryCapacity}};
     };
 }

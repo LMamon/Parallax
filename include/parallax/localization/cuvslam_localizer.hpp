@@ -47,10 +47,10 @@ namespace parallax::localization {
     struct CuVslamPoseEstimate {
         std::int64_t timestamp_ns = 0;
         std::optional<cuvslam::PoseWithCovariance> world_from_rig;
+        std::optional<cuvslam::Pose> slam_world_from_rig;
 
         [[nodiscard]] bool valid() const noexcept { return world_from_rig.has_value(); }
     };
-
 
     /**
      * Owns the persistent cuVSLAM odometry session.
@@ -100,11 +100,13 @@ namespace parallax::localization {
 
         private:
             std::unique_ptr<cuvslam::Odometry> odometry_;
+            std::unique_ptr<cuvslam::Slam> slam_;
 
             // Retaining these lightweight configuration objects allows reset()
             // to restart the stateful estimator without rereading calibration.
             std::optional<cuvslam::Rig> rig_;
             std::optional<cuvslam::Odometry::Config> config_;
+            std::optional<cuvslam::Slam::Config> slam_config_;
 
             std::int32_t image_width_ = 0;
             std::int32_t image_height_ = 0;

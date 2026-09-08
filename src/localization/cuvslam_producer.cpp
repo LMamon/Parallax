@@ -110,7 +110,6 @@ namespace parallax::localization {
         }
 
         if (last_consumed_ && observation.sequence > last_consumed_->sequence + 1) {
-
             ++input_gaps_;
 
             // If ordered history rolled past us, this is a new local world.
@@ -125,7 +124,6 @@ namespace parallax::localization {
         const std::int64_t timestamp_ns = timestampNs(input->metadata);
 
         if (last_timestamp_ns_ >= 0 && timestamp_ns <= last_timestamp_ns_) {
-
             ++input_gaps_;
 
             if (!localizer_.reset()) return parallax::core::SubmitResult::Failed;

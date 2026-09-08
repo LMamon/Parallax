@@ -20,6 +20,7 @@ target_link_libraries(parallax_runtime
         parallax_tracking
         parallax_visualization
         parallax_vpi
+        parallax_localization
 )
 
 target_compile_features(parallax_runtime

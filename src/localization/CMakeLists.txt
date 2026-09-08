@@ -1,7 +1,3 @@
-if(NOT PARALLAX_ENABLE_CUVSLAM)
-    return()
-endif()
-
 add_library(parallax_localization
     cuvslam_localizer.cpp
     cuvslam_producer.cpp

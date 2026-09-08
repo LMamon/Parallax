@@ -1,5 +1,7 @@
 #pragma once
 
+#include <parallax/localization/cuvslam_localizer.hpp>
+#include <parallax/localization/cuvslam_producer.hpp>
 
 #include <parallax/camera/camera_producer.hpp>
 #include <parallax/camera/camera_config.hpp>
@@ -136,6 +138,12 @@ namespace parallax::core {
             
             parallax::application::RequestController request_controller_{resolver_};
             Pipeline pipeline_;
+
+            // Localization keeps one cuVSLAM session alive for the runtime.
+            // Demand controls its products, not the lifetime of the estimator.
+            std::unique_ptr<parallax::localization::CuVslamLocalizer> cuvslam_localizer_;
+            std::unique_ptr<parallax::localization::CuVslamProducer> cuvslam_producer_;
+
             
             bool initialized_ = false;
             

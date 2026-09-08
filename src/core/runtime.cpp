@@ -64,13 +64,19 @@ namespace parallax::core {
             return false;
         }
 
+        cuvslam_localizer_ = std::make_unique<parallax::localization::CuVslamLocalizer>();
+        if (!cuvslam_localizer_->initialize(pipeline_.calibration(), sensor_extrinsics_)) {
+            std::cerr << "Runtime: failed to initialize cuVSLAM\n";
+            shutdown();
+            return false;
+        }
+
         nanoowl_ = std::make_unique<parallax::perception::NanoOwlBridge>();
         if (!nanoowl_->initialize(nanoowl_engine_path)) {
             std::cerr << "Runtime: failed to initialize NanoOWL\n";
             shutdown();
             return false;
         }
-
 
         stereo_roi_associator_ = std::make_unique<parallax::perception::StereoRoiAssociator>(pipeline_.calibration(), sensor_extrinsics_.left_camera.child_frame);
         if (!stereo_roi_associator_->initialize()) {
@@ -90,10 +96,9 @@ namespace parallax::core {
         lidar_producer_ = std::make_unique<parallax::lidar::RplidarSourceProducer>(*lidar_, context_.products());
         isp_producer_ = std::make_unique<parallax::isp::IspProducer>(pipeline_.isp(), context_.products());
 
-        rectification_producer_ = std::make_unique<parallax::stereo::RectificationProducer>(
-                                                   pipeline_.rectifier(),
-                                                   pipeline_.calibration(),
-                                                   context_.products());
+        rectification_producer_ = std::make_unique<parallax::stereo::RectificationProducer>(pipeline_.rectifier(),
+                                                                                            pipeline_.calibration(),
+                                                                                            context_.products());
 
         stereo_producer_ = std::make_unique<parallax::stereo::StereoProducer>(pipeline_.matcher(), context_.products());
 
@@ -116,6 +121,8 @@ namespace parallax::core {
                                                 "models/efficientvit-sam/engines/l0_decoder_fp16.engine");
 
         single_target_producer_ = std::make_unique<parallax::tracking::SingleTargetProducer>(context_.products(), resolver_);
+        
+        cuvslam_producer_ = std::make_unique<parallax::localization::CuVslamProducer>(*cuvslam_localizer_, context_.products());
 
         /**
          * Registration describes the complete concrete dependency graph.
@@ -133,6 +140,7 @@ namespace parallax::core {
         graph_.register_producer(*lidar_producer_);
         graph_.register_producer(*object3d_producer_);
         graph_.register_producer(*segmentation_producer_);
+        graph_.register_producer(*cuvslam_producer_);
 
         graph_.finalize();
 
@@ -149,7 +157,7 @@ namespace parallax::core {
          */
         resolver_.acquire(ProductId::RectifiedRgb, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::Disparity, DemandSource::RuntimeBaseline);
-        // resolver_.acquire(ProductId::MarkerDepth, DemandSource::RuntimeBaseline);
+        resolver_.acquire(ProductId::LocalizationOdometry, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::LidarScan, DemandSource::RuntimeBaseline);
 
 
@@ -599,8 +607,13 @@ namespace parallax::core {
 
         if (efficientvit_sam_) efficientvit_sam_->shutdown();
         efficientvit_sam_.reset();
-
         detection_producer_.reset();
+        cuvslam_producer_.reset();
+
+        if (cuvslam_localizer_) {
+            cuvslam_localizer_->shutdown();
+            cuvslam_localizer_.reset();
+        }
 
         // Do NOT explicitly shutdown/reset nanoowl_ here.
         // Its lifetime remains owned by Runtime.

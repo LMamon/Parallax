@@ -13,7 +13,6 @@ namespace parallax::core {
     // using explicit vocab rather than deriving IDs from C++ types.
     // Multiple products may eventually share the same payload type while having
     // different semantic meaning in the graph.
-
     enum class ProductId : std::uint8_t {
         RawStereo, 
         RgbLeft,
@@ -34,6 +33,7 @@ namespace parallax::core {
         Segmentation,
         Track2D,
         Object3D,
+        LocalizedSpatialObservation,
         LidarScan
     };
 }

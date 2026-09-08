@@ -6,6 +6,7 @@ add_library(parallax_perception
     image_space_mapper.cpp
     stereo_roi_associator.cpp
     object3d_producer.cpp
+    localized_spatial_producer.cpp
 )
 
 find_library(
@@ -31,6 +32,7 @@ target_link_libraries(parallax_perception
         parallax_isp
         parallax_cuda
         parallax_stereo
+        parallax_localization
         CUDA::cudart
         ${OpenCV_LIBS}
 

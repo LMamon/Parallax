@@ -123,6 +123,9 @@ namespace parallax::core {
         single_target_producer_ = std::make_unique<parallax::tracking::SingleTargetProducer>(context_.products(), resolver_);
         
         cuvslam_producer_ = std::make_unique<parallax::localization::CuVslamProducer>(*cuvslam_localizer_, context_.products());
+        localized_spatial_producer_ = std::make_unique<parallax::perception::LocalizedSpatialProducer>(pipeline_.calibration(),
+                                                                                                       sensor_extrinsics_,
+                                                                                                       context_.products());
 
         /**
          * Registration describes the complete concrete dependency graph.
@@ -139,6 +142,9 @@ namespace parallax::core {
         graph_.register_producer(*single_target_producer_);
         graph_.register_producer(*lidar_producer_);
         graph_.register_producer(*object3d_producer_);
+        graph_.register_producer(*object3d_producer_);
+        graph_.register_producer(*localized_spatial_producer_);
+        graph_.register_producer(*segmentation_producer_);
         graph_.register_producer(*segmentation_producer_);
         graph_.register_producer(*cuvslam_producer_);
 

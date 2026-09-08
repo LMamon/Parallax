@@ -136,6 +136,14 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_localized_spatial_producer_test
+    localized_spatial_producer_test.cpp
+    parallax_core
+    parallax_perception
+    parallax_localization
+)
+
+parallax_add_gtest(
     parallax_marker_depth_producer_test
     marker_depth_producer_test.cpp
     parallax_core

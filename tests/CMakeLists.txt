@@ -129,6 +129,12 @@ if(PARALLAX_ENABLE_CUVSLAM)
         PRIVATE
             PARALLAX_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     )
+    parallax_add_gtest(
+        parallax_cuvslam_producer_test
+        cuvslam_producer_test.cpp
+        parallax_localization
+        parallax_core
+    )
 endif()
 
 parallax_add_gtest(

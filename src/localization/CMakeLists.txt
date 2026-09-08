@@ -4,6 +4,7 @@ endif()
 
 add_library(parallax_localization
     cuvslam_localizer.cpp
+    cuvslam_producer.cpp
 )
 
 target_include_directories(parallax_localization

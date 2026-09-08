@@ -134,6 +134,7 @@ add_subdirectory(src/visualization)
 add_subdirectory(src/vpi)
 add_subdirectory(src/perception)
 add_subdirectory(src/tracking)
+add_subdirectory(src/localization)
 add_subdirectory(src/core/runtime)
 
 # add_subdirectory(src/bindings)
@@ -155,16 +156,9 @@ target_include_directories(parallax
     PRIVATE
         ${OpenCV_INCLUDE_DIRS}
 )
+
 target_link_libraries(parallax
     PRIVATE
         parallax_runtime
         ${OpenCV_LIBS}
 )
-
-if(PARALLAX_ENABLE_CUVSLAM)
-    target_link_libraries(
-        parallax
-        PRIVATE
-            cuVSLAM::cuVSLAM
-    )
-endif()

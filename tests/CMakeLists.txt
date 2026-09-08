@@ -118,6 +118,19 @@ parallax_add_gtest(
     parallax_cuda
 )
 
+if(PARALLAX_ENABLE_CUVSLAM)
+    parallax_add_gtest(
+        parallax_cuvslam_localizer_test
+        cuvslam_localizer_test.cpp
+        parallax_localization
+    )
+    target_compile_definitions(
+        parallax_cuvslam_localizer_test
+        PRIVATE
+            PARALLAX_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+    )
+endif()
+
 parallax_add_gtest(
     parallax_marker_depth_producer_test
     marker_depth_producer_test.cpp

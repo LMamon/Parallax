@@ -23,7 +23,10 @@ docker exec \
         set -euo pipefail
         cd "'"$REPO"'"
 
-        cmake -S . -B build
+        cmake -S . -B build \
+            -DPARALLAX_ENABLE_CUVSLAM=ON \
+            -DCUVSLAM_ROOT=/workspace/Parallax/.deps/cuvslam
+
         cmake --build build -j"${PARALLAX_JOBS}"
         ctest --test-dir build --output-on-failure
     '

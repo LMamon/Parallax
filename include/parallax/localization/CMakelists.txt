@@ -1,0 +1,25 @@
+if(NOT PARALLAX_ENABLE_CUVSLAM)
+    return()
+endif()
+
+add_library(parallax_localization
+    cuvslam_localizer.cpp
+)
+
+target_include_directories(parallax_localization
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(parallax_localization
+    PUBLIC
+        parallax_stereo
+
+    PRIVATE
+        cuVSLAM::cuVSLAM
+)
+
+target_compile_features(parallax_localization
+    PUBLIC
+        cxx_std_17
+)

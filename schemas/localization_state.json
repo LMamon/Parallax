@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LocalizationState",
+  "type": "object",
+  "properties": {
+    "tracking": {
+      "type": "string",
+      "enum": [
+        "uninitialized",
+        "tracking",
+        "lost"
+      ]
+    },
+    "epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "consumed_frames": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "input_gaps": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "session_resets": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "tracking",
+    "epoch",
+    "consumed_frames",
+    "input_gaps",
+    "session_resets"
+  ],
+  "additionalProperties": false
+}

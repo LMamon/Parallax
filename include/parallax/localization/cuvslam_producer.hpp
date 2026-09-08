@@ -17,6 +17,7 @@ namespace parallax::localization {
     class CuVslamProducer final : public parallax::core::Producer {
         public:
             static constexpr std::size_t InputHistoryCapacity = 8;
+            static constexpr std::size_t TrajectoryCapacity = 4096;
 
             CuVslamProducer(CuVslamLocalizer& localizer, parallax::core::ProductStore& store);
 
@@ -37,6 +38,7 @@ namespace parallax::localization {
             [[nodiscard]] std::shared_ptr<const GrayProduct> nextInput() const;
 
             void publishState(const parallax::core::ProductMetadata& metadata, LocalizationTrackingState tracking);
+            void publishTrajectory(const parallax::core::ProductMetadata& metadata, const LocalizationPose& pose);
 
             CuVslamLocalizer& localizer_;
             parallax::core::ProductStore& store_;
@@ -44,6 +46,7 @@ namespace parallax::localization {
             // Localization is the exception to the normal latest-frame path.
             // This cursor keeps cuVSLAM moving through retained camera generations in order.
             std::optional<parallax::core::SourceObservation> last_consumed_;
+            std::vector<LocalizationPose> trajectory_;
 
             std::int64_t last_timestamp_ns_ = -1;
 
@@ -55,6 +58,7 @@ namespace parallax::localization {
             const std::vector<parallax::core::ProductId> inputs_{parallax::core::ProductId::RectifiedGray};
 
             const std::vector<parallax::core::ProductId> outputs_{parallax::core::ProductId::LocalizationOdometry,
+                                                                  parallax::core::ProductId::LocalizationTrajectory,
                                                                   parallax::core::ProductId::LocalizationState};
 
             const std::vector<parallax::core::OrderedInputRequirement>

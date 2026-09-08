@@ -176,12 +176,38 @@ namespace parallax::localization {
         LocalizationOdometry odometry{};
         odometry.pose = makeLocalizationPose(estimate, epoch_);
 
+        const LocalizationPose pose = odometry.pose;
+
         store_.publish(parallax::core::make_product(parallax::core::ProductId::LocalizationOdometry,
                                                     metadata,
                                                     std::make_shared<const LocalizationOdometry>(std::move(odometry))));
 
         publishState(input->metadata, LocalizationTrackingState::Tracking);
-
+        publishTrajectory(input->metadata, pose);
         return parallax::core::SubmitResult::Submitted;
+    }
+
+    void CuVslamProducer::publishTrajectory(const parallax::core::ProductMetadata& input_metadata, const LocalizationPose& pose) {
+        // A reset starts a new local world, so the old path cannot be drawn
+        // as though it were continuous with this localization epoch.
+        if (!trajectory_.empty() && trajectory_.back().epoch != pose.epoch) {
+            trajectory_.clear();
+        }
+
+        if (trajectory_.size() == TrajectoryCapacity) trajectory_.erase(trajectory_.begin());
+
+        trajectory_.push_back(pose);
+
+        LocalizationTrajectory trajectory{};
+        trajectory.epoch = epoch_;
+        trajectory.poses = trajectory_;
+
+        auto metadata = input_metadata;
+        metadata.production_timestamp = parallax::core::ExecutionContext::now();
+        metadata.valid = true;
+
+        store_.publish(parallax::core::make_product(parallax::core::ProductId::LocalizationTrajectory,
+                                                    metadata,
+                                                    std::make_shared<const LocalizationTrajectory>(std::move(trajectory))));
     }
 }

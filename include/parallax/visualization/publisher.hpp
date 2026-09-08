@@ -15,6 +15,7 @@
 #include <parallax/lidar/frame_types.hpp>
 #include <parallax/tracking/track.hpp>
 #include <parallax/perception/object3d.hpp>
+#include <parallax/localization/localization.hpp>
 
 #include <functional>
 #include <foxglove/websocket.hpp>
@@ -63,9 +64,7 @@ namespace parallax::visualization {
             [[nodiscard]] bool initialized() const noexcept { return initialized_; }
 
         private:
-            bool publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame, 
-                                  const parallax::pose::CharucoPoseResult* pose);
-            
+            bool publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame, const parallax::pose::CharucoPoseResult* pose);
             bool publishDepth(const parallax::isp::DepthFrame& frame);
             bool publishDisparity(const parallax::isp::StereoMatchFrame& frame);
             bool publishLidarScan(const parallax::lidar::LidarScan& scan);
@@ -75,6 +74,10 @@ namespace parallax::visualization {
             bool publishTrackAnnotations(const parallax::core::Product<parallax::tracking::Track2D>& product);
             bool publishObjectDepthAnnotations(const parallax::core::Product<parallax::perception::Object3DSet>& product);
             bool publishObject3DScene(const parallax::core::Product<parallax::perception::Object3DSet>& product);
+            bool publishLocalizationTransform(const parallax::localization::LocalizationOdometry& odometry);
+            bool publishLocalizationPose(const parallax::localization::LocalizationOdometry& odometry);
+            bool publishLocalizationTrajectory(const parallax::localization::LocalizationTrajectory& trajectory);
+            bool publishLocalizationState(const parallax::localization::LocalizationState& state);
 
             VideoEncoder video_encoder_;
             cudaStream_t stream_ = nullptr;
@@ -119,6 +122,15 @@ namespace parallax::visualization {
             parallax::core::SourceObservation last_object_scene_observation_{};
             std::uint64_t last_object_scene_revision_ = 0;
             bool has_published_object_scene_ = false;
+
+            std::int64_t last_localization_transform_timestamp_ns_ = -1;
+            std::int64_t last_localization_pose_timestamp_ns_ = -1;
+            std::int64_t last_localization_trajectory_timestamp_ns_ = -1;
+
+            std::uint64_t last_localization_state_consumed_frames_ = 0;
+            std::uint64_t last_localization_state_epoch_ = 0;
+            bool has_published_localization_state_ = false;
+            
             /**
              * Runtime owns FoxgloveServer and shuts Publisher down before the server.
              * Publisher performs serialization/logging only; it does not define channel

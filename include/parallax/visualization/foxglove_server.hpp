@@ -102,6 +102,11 @@ namespace parallax::visualization {
             [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& objectDepthAnnotationsChannel() noexcept { return *object_depth_annotations_channel_; }
             [[nodiscard]] foxglove::messages::SceneUpdateChannel& object3DSceneChannel() noexcept { return *object3d_scene_channel_; }
             
+            [[nodiscard]] foxglove::messages::FrameTransformChannel& localizationTransformChannel() noexcept { return *localization_transform_channel_; }
+            [[nodiscard]] foxglove::messages::PoseInFrameChannel& localizationPoseChannel() noexcept { return *localization_pose_channel_; }
+            [[nodiscard]] foxglove::messages::SceneUpdateChannel& localizationTrajectoryChannel() noexcept { return *localization_trajectory_channel_; }
+            [[nodiscard]] foxglove::RawChannel& localizationStateChannel() noexcept { return *localization_state_channel_; }
+
             [[nodiscard]] foxglove::RawChannel& detectionChannel() noexcept { return *detection_channel_; }
             [[nodiscard]] foxglove::RawChannel& runtimeTelemetryChannel() noexcept { return *runtime_telemetry_channel_; }
             [[nodiscard]] foxglove::RawChannel& markerDepthChannel() noexcept { return *marker_depth_channel_; }
@@ -139,14 +144,22 @@ namespace parallax::visualization {
             std::optional<foxglove::messages::ImageAnnotationsChannel> track_annotations_channel_;
             std::optional<foxglove::messages::ImageAnnotationsChannel> object_depth_annotations_channel_;
             
+
+            std::optional<foxglove::messages::FrameTransformChannel> localization_transform_channel_;
+            std::optional<foxglove::messages::PoseInFrameChannel> localization_pose_channel_;
+            std::optional<foxglove::messages::SceneUpdateChannel> localization_trajectory_channel_;
+
+            
             std::optional<foxglove::messages::RawImageChannel> segmentation_mask_channel_;
             std::optional<foxglove::messages::RawImageChannel> disparity_channel_;
             std::optional<foxglove::messages::RawImageChannel> depth_channel_;
             
+            std::optional<foxglove::RawChannel> localization_state_channel_;
             std::optional<foxglove::RawChannel> runtime_telemetry_channel_;
             std::optional<foxglove::RawChannel> request_state_channel_;
             std::optional<foxglove::RawChannel> detection_channel_;
-          
+    
+            std::vector<std::byte> localization_state_schema_;
             std::vector<std::byte> marker_depth_schema_;
             std::vector<std::byte> runtime_telemetry_schema_;
             std::vector<std::byte> request_state_schema_;

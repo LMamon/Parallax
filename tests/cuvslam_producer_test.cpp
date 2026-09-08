@@ -39,7 +39,7 @@ namespace {
         EXPECT_TRUE(policy.stateful);
     }
 
-    TEST(CuVslamProducerTest, PublishesOnlyInitialLocalizationProducts) {
+    TEST(CuVslamProducerTest, PublishesOdometryTrajectoryAndState) {
         parallax::core::ProductStore store;
         parallax::localization::CuVslamLocalizer localizer;
 
@@ -48,8 +48,8 @@ namespace {
         const auto& outputs = producer.outputs();
 
         EXPECT_NE(std::find(outputs.begin(), outputs.end(), parallax::core::ProductId::LocalizationOdometry), outputs.end());
+        EXPECT_NE(std::find(outputs.begin(), outputs.end(), parallax::core::ProductId::LocalizationTrajectory), outputs.end());
         EXPECT_NE(std::find(outputs.begin(), outputs.end(), parallax::core::ProductId::LocalizationState), outputs.end());
         EXPECT_EQ(std::find(outputs.begin(), outputs.end(), parallax::core::ProductId::LocalizationPose), outputs.end());
-        EXPECT_EQ(std::find(outputs.begin(), outputs.end(), parallax::core::ProductId::LocalizationTrajectory), outputs.end());
     }
 }

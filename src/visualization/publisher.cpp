@@ -20,9 +20,7 @@ namespace parallax::visualization {
     namespace {
         bool checkFoxglove(const foxglove::FoxgloveError& error, const char* message) {
             if (error != foxglove::FoxgloveError::Ok) {
-                std::cerr << message << ": "
-                          << foxglove::strerror(error) << '\n';
-
+                std::cerr << message << ": " << foxglove::strerror(error) << '\n';
                 return false;
             }
             return true;
@@ -30,8 +28,7 @@ namespace parallax::visualization {
 
         foxglove::messages::Timestamp nowTimestamp() {
             const auto now = std::chrono::system_clock::now();
-            const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                now.time_since_epoch()).count();
+            const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
 
             foxglove::messages::Timestamp timestamp;
             timestamp.sec = static_cast<std::int32_t>(ns / 1'000'000'000LL);
@@ -96,6 +93,7 @@ namespace parallax::visualization {
 
             return stream.str();
         }
+
     }
 
     Publisher::~Publisher() { shutdown(); }
@@ -429,13 +427,68 @@ namespace parallax::visualization {
             }
         }
 
+        if (foxglove_->localizationTransformChannel().hasSinks() || foxglove_->localizationPoseChannel().hasSinks()) {
+            const auto odometry = store.latest<parallax::localization::LocalizationOdometry>(parallax::core::ProductId::LocalizationOdometry);
+
+            if (odometry && odometry->valid()) {
+                const auto timestamp_ns = odometry->payload->pose.timestamp_ns;
+                if (foxglove_->localizationTransformChannel().hasSinks() && timestamp_ns != last_localization_transform_timestamp_ns_) {
+
+                    if (!publishLocalizationTransform(*odometry->payload)) return false;
+                    last_localization_transform_timestamp_ns_ = timestamp_ns;
+                }
+
+                if (foxglove_->localizationPoseChannel().hasSinks() && timestamp_ns != last_localization_pose_timestamp_ns_) {
+
+                    if (!publishLocalizationPose(*odometry->payload)) return false;
+                    last_localization_pose_timestamp_ns_ = timestamp_ns;
+                }
+            }
+        }
+
+
+        if (foxglove_->localizationTrajectoryChannel().hasSinks()) {
+            const auto trajectory = store.latest<parallax::localization::LocalizationTrajectory>(parallax::core::ProductId::LocalizationTrajectory);
+
+            if (trajectory && trajectory->valid() && !trajectory->payload->poses.empty()) {
+
+                const auto timestamp_ns = trajectory->payload->poses.back().timestamp_ns;
+
+                if (timestamp_ns != last_localization_trajectory_timestamp_ns_) {
+
+                    if (!publishLocalizationTrajectory(*trajectory->payload)) {
+                        return false;
+                    }
+
+                    last_localization_trajectory_timestamp_ns_ = timestamp_ns;
+                }
+            }
+        }
+
+
+        if (foxglove_->localizationStateChannel().hasSinks()) {
+            const auto state = store.latest<parallax::localization::LocalizationState>(parallax::core::ProductId::LocalizationState);
+
+            if (state && state->valid()) {
+                const bool changed = !has_published_localization_state_ ||
+                                      state->payload->epoch != last_localization_state_epoch_ ||
+                                      state->payload->consumed_frames != last_localization_state_consumed_frames_;
+
+                if (changed) {
+                    if (!publishLocalizationState(*state->payload)) return false;
+
+                    last_localization_state_epoch_ = state->payload->epoch;
+                    last_localization_state_consumed_frames_ = state->payload->consumed_frames;
+
+                    has_published_localization_state_ = true;
+                }
+            }
+        }
+
         return true;
     }
 
-
-    bool Publisher::publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame,
-                                     const parallax::pose::CharucoPoseResult* pose) {
-
+    bool Publisher::publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame, const parallax::pose::CharucoPoseResult* pose) {
         if (!initialized_ || foxglove_ == nullptr || !frame.left.isAllocated()) {
             return false;
         }
@@ -466,8 +519,7 @@ namespace parallax::visualization {
             polygon.reserve(4);
 
             for (const auto& p : pose->projected_plane) {
-                polygon.emplace_back(static_cast<int>(std::lround(p.x)),
-                                     static_cast<int>(std::lround(p.y)));
+                polygon.emplace_back(static_cast<int>(std::lround(p.x)), static_cast<int>(std::lround(p.y)));
             }
             cv::polylines(image, polygon, true, cv::Scalar(0, 255, 0), 5, cv::LINE_AA);
 
@@ -481,10 +533,7 @@ namespace parallax::visualization {
     
 
         const std::size_t rgb_bytes = host_pitch * height_;
-
-        if (!video_encoder_.encode(host_rgb_, rgb_bytes, encoded_video_)) {
-            return false;
-        }
+        if (!video_encoder_.encode(host_rgb_, rgb_bytes, encoded_video_)) return false;
 
         foxglove::messages::CompressedVideo message;
 
@@ -507,7 +556,6 @@ namespace parallax::visualization {
         }
 
         const std::size_t host_pitch = static_cast<std::size_t>(width_) * sizeof(float);
-
         if (!frame.depth.downloadAsync(host_depth_, host_pitch, stream_)) {
             std::cerr << "Failed to download depth frame\n";
             return false;
@@ -553,7 +601,6 @@ namespace parallax::visualization {
         }
 
         const std::size_t host_pitch = static_cast<std::size_t>(frame.width) * sizeof(std::int16_t);
-
         if (!frame.disparity.downloadAsync(host_disparity_, host_pitch, stream_)) {
             std::cerr << "Failed to download disparity\n";
             return false;
@@ -562,10 +609,8 @@ namespace parallax::visualization {
         if (cudaStreamSynchronize(stream_) != cudaSuccess) { return false; }
 
         const std::size_t pixels = static_cast<std::size_t>(frame.width) * frame.height;
-
         for (std::size_t i = 0; i < pixels; ++i) {
-            disparity_float_[i] = static_cast<float>(host_disparity_[i]) /
-                                    parallax::isp::StereoMatchFrame::DisparityScale;
+            disparity_float_[i] = static_cast<float>(host_disparity_[i]) / parallax::isp::StereoMatchFrame::DisparityScale;
         }
 
         foxglove::messages::RawImage message;
@@ -1248,6 +1293,141 @@ namespace parallax::visualization {
         return stream.str();
     }
 
+    const char* localizationStateName(parallax::localization::LocalizationTrackingState state) noexcept {
+        using State = parallax::localization::LocalizationTrackingState;
+
+        switch (state) {
+            case State::Tracking:
+                return "tracking";
+
+            case State::Lost:
+                return "lost";
+
+            case State::Uninitialized:
+            default:
+                return "uninitialized";
+        }
+    }
+
+
+    bool Publisher::publishLocalizationTransform(const parallax::localization::LocalizationOdometry& odometry) {
+        if (!initialized_ || foxglove_ == nullptr) return false;
+
+        const auto& pose = odometry.pose;
+
+        foxglove::messages::FrameTransform message;
+        message.timestamp = nowTimestamp();
+        message.parent_frame_id = "localization_world";
+        message.child_frame_id = "stereo_body";
+
+        foxglove::messages::Vector3 translation;
+        translation.x = pose.translation_m[0];
+        translation.y = pose.translation_m[1];
+        translation.z = pose.translation_m[2];
+        message.translation = translation;
+
+        foxglove::messages::Quaternion rotation;
+        rotation.x = pose.rotation_xyzw[0];
+        rotation.y = pose.rotation_xyzw[1];
+        rotation.z = pose.rotation_xyzw[2];
+        rotation.w = pose.rotation_xyzw[3];
+        message.rotation = rotation;
+
+        return checkFoxglove(foxglove_->localizationTransformChannel().log(message), "Failed to publish /localization/transform");
+    }
+
+    bool Publisher::publishLocalizationPose(const parallax::localization::LocalizationOdometry& odometry) {
+        if (!initialized_ || foxglove_ == nullptr) return false;
+
+        const auto& localization = odometry.pose;
+
+        foxglove::messages::PoseInFrame message;
+        message.timestamp = nowTimestamp();
+        message.frame_id = "localization_world";
+
+        foxglove::messages::Pose pose;
+
+        foxglove::messages::Vector3 position;
+        position.x = localization.translation_m[0];
+        position.y = localization.translation_m[1];
+        position.z = localization.translation_m[2];
+        pose.position = position;
+
+        foxglove::messages::Quaternion orientation;
+        orientation.x = localization.rotation_xyzw[0];
+        orientation.y = localization.rotation_xyzw[1];
+        orientation.z = localization.rotation_xyzw[2];
+        orientation.w = localization.rotation_xyzw[3];
+        pose.orientation = orientation;
+
+        message.pose = pose;
+
+        return checkFoxglove(foxglove_->localizationPoseChannel().log(message), "Failed to publish /localization/pose");
+    }
+
+    bool Publisher::publishLocalizationTrajectory(const parallax::localization::LocalizationTrajectory& trajectory) {
+        if (!initialized_ || foxglove_ == nullptr) return false;
+
+        foxglove::messages::SceneUpdate update;
+        foxglove::messages::SceneEntity entity;
+
+        entity.timestamp = nowTimestamp();
+        entity.frame_id = "localization_world";
+        entity.id = "localization_trajectory_" + std::to_string(trajectory.epoch);
+
+        entity.frame_locked = true;
+
+        if (trajectory.poses.size() >= 2) {
+            foxglove::messages::LinePrimitive path;
+            path.type = foxglove::messages::LinePrimitive::LineType::LINE_STRIP;
+
+            path.thickness = 3.0;
+            path.scale_invariant = true;
+            path.points.reserve(trajectory.poses.size());
+
+            for (const auto& pose : trajectory.poses) {
+                foxglove::messages::Point3 point;
+                point.x = pose.translation_m[0];
+                point.y = pose.translation_m[1];
+                point.z = pose.translation_m[2];
+
+                path.points.push_back(point);
+            }
+
+            foxglove::messages::Color color;
+            color.r = 0.0;
+            color.g = 0.8;
+            color.b = 1.0;
+            color.a = 1.0;
+
+            path.color = color;
+            entity.lines.push_back(std::move(path));
+        }
+
+        foxglove::messages::KeyValuePair epoch;
+        epoch.key = "localization_epoch";
+        epoch.value = std::to_string(trajectory.epoch);
+        entity.metadata.push_back(std::move(epoch));
+
+        update.entities.push_back(std::move(entity));
+
+        return checkFoxglove(foxglove_->localizationTrajectoryChannel().log(update), "Failed to publish /localization/trajectory");
+    }
+
+    bool Publisher::publishLocalizationState(const parallax::localization::LocalizationState& state) {
+        if (!initialized_ || foxglove_ == nullptr) return false;
+
+        nlohmann::json json{{"tracking", localizationStateName(state.tracking)},
+                            {"epoch", state.epoch},
+                            {"consumed_frames", state.consumed_frames},
+                            {"input_gaps", state.input_gaps},
+                            {"session_resets", state.session_resets}};
+
+        const std::string serialized = json.dump();
+        return checkFoxglove(foxglove_->localizationStateChannel().log(reinterpret_cast<const std::byte*>(serialized.data()),
+                                                                                                            serialized.size()),
+                                                                                                            "Failed to publish /localization/state");
+    }
 
     void Publisher::shutdown() {
         video_encoder_.shutdown();

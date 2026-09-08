@@ -388,6 +388,50 @@ namespace parallax::visualization {
 
         object3d_scene_channel_.emplace(std::move(object3d_scene.value()));
         bindProduct(object3d_scene_channel_->id(), ProductId::Object3D);
+
+        auto localization_transform = foxglove::messages::FrameTransformChannel::create("/localization/transform", context_);
+        if (!localization_transform.has_value()) {
+            std::cerr << "Failed to create /localization/transform channel: " << foxglove::strerror(localization_transform.error()) << '\n';
+            return false;
+        }
+
+        localization_transform_channel_.emplace(std::move(localization_transform.value()));
+        bindProduct(localization_transform_channel_->id(), ProductId::LocalizationOdometry);
+
+        auto localization_pose = foxglove::messages::PoseInFrameChannel::create("/localization/pose", context_);
+        if (!localization_pose.has_value()) {
+            std::cerr << "Failed to create /localization/pose channel: " << foxglove::strerror(localization_pose.error()) << '\n';
+            return false;
+        }
+
+        localization_pose_channel_.emplace(std::move(localization_pose.value()));
+        bindProduct(localization_pose_channel_->id(), ProductId::LocalizationOdometry);
+
+
+        auto localization_trajectory = foxglove::messages::SceneUpdateChannel::create("/localization/trajectory", context_);
+        if (!localization_trajectory.has_value()) {
+            std::cerr << "Failed to create /localization/trajectory channel: " << foxglove::strerror(localization_trajectory.error()) << '\n';
+            return false;
+        }
+
+        localization_trajectory_channel_.emplace(std::move(localization_trajectory.value()));
+        bindProduct(localization_trajectory_channel_->id(), ProductId::LocalizationTrajectory);
+
+        auto localization_state = foxglove::RawChannel::create("/localization/state",
+                                                                "json",
+                                                                foxglove::Schema{"parallax.LocalizationState",
+                                                                    "jsonschema",
+                                                                    localization_state_schema_.data(),
+                                                                    localization_state_schema_.size()},
+                                                                context_);
+
+        if (!localization_state.has_value()) {
+            std::cerr << "Failed to create /localization/state channel: " << foxglove::strerror(localization_state.error()) << '\n';
+            return false;
+        }
+
+        localization_state_channel_.emplace(std::move(localization_state.value()));
+        bindProduct(localization_state_channel_->id(), ProductId::LocalizationState);
         // every graph backed channel gets bindProduct(...)
         
         return true;
@@ -416,6 +460,7 @@ namespace parallax::visualization {
             command_response_schema_ = loadSchemaFile("command_response.json");
             request_state_schema_ = loadSchemaFile("request_state.json");
             detection_schema_ = loadSchemaFile("detections.json");
+            localization_state_schema_ = loadSchemaFile("localization_state.json");
         } catch (const std::exception& error) {
             std::cerr << error.what() << '\n';
 

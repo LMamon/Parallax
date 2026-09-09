@@ -20,8 +20,11 @@ namespace parallax::isp {
 
             ISP(ISP&&) = delete;
             ISP& operator=(ISP&&) = delete;
-
-            static constexpr std::size_t OutputSlotCount = 3;
+            
+            // RectifiedGray history retains its upstream ISP generation while
+            // asynchronous rectification ownership is alive. Match the 8-generation
+            // localization history plus one writable generation
+            static constexpr std::size_t OutputSlotCount = 9;
 
             struct OutputSlot {
                 StereoRgbFrame rgb{};

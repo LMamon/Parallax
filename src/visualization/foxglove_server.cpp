@@ -389,6 +389,17 @@ namespace parallax::visualization {
         object3d_scene_channel_.emplace(std::move(object3d_scene.value()));
         bindProduct(object3d_scene_channel_->id(), ProductId::Object3D);
 
+        auto localized_object3d_scene = foxglove::messages::SceneUpdateChannel::create("/localization/objects3d", context_);
+        if (!localized_object3d_scene.has_value()) {
+            std::cerr << "Failed to create /localization/objects3d channel: "
+                      << foxglove::strerror(localized_object3d_scene.error()) << '\n';
+
+            return false;
+        }
+
+        localized_object3d_scene_channel_.emplace(std::move(localized_object3d_scene.value()));
+        bindProduct(localized_object3d_scene_channel_->id(), ProductId::LocalizedSpatialObservation);
+
         auto localization_transform = foxglove::messages::FrameTransformChannel::create("/localization/transform", context_);
         if (!localization_transform.has_value()) {
             std::cerr << "Failed to create /localization/transform channel: " << foxglove::strerror(localization_transform.error()) << '\n';
@@ -621,6 +632,10 @@ namespace parallax::visualization {
             detection_channel_.reset();
         }
 
+        if (localized_object3d_scene_channel_) {
+            localized_object3d_scene_channel_->close();
+            localized_object3d_scene_channel_.reset();
+        }
         if (server_) {
             server_->stop();
             server_.reset();

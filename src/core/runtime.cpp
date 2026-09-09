@@ -142,9 +142,7 @@ namespace parallax::core {
         graph_.register_producer(*single_target_producer_);
         graph_.register_producer(*lidar_producer_);
         graph_.register_producer(*object3d_producer_);
-        graph_.register_producer(*object3d_producer_);
         graph_.register_producer(*localized_spatial_producer_);
-        graph_.register_producer(*segmentation_producer_);
         graph_.register_producer(*segmentation_producer_);
         graph_.register_producer(*cuvslam_producer_);
 

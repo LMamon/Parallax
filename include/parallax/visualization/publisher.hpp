@@ -10,6 +10,7 @@
 
 #include <parallax/perception/detection.hpp>
 #include <parallax/perception/segmentation.hpp>
+#include <parallax/perception/localized_spatial_observation.hpp>
 
 #include <parallax/core/completion.hpp>
 #include <parallax/lidar/frame_types.hpp>
@@ -78,6 +79,11 @@ namespace parallax::visualization {
             bool publishLocalizationPose(const parallax::localization::LocalizationOdometry& odometry);
             bool publishLocalizationTrajectory(const parallax::localization::LocalizationTrajectory& trajectory);
             bool publishLocalizationState(const parallax::localization::LocalizationState& state);
+            bool publishLocalizedObject3DScene(const parallax::core::Product<parallax::perception::LocalizedSpatialObservation>& product);
+
+            bool publishObject3DScene(const parallax::perception::Object3DSet& objects, 
+                                      foxglove::messages::SceneUpdateChannel& channel, 
+                                      const char* error_message);
 
             VideoEncoder video_encoder_;
             cudaStream_t stream_ = nullptr;
@@ -96,6 +102,14 @@ namespace parallax::visualization {
             std::uint32_t width_ = 0;
             std::uint32_t height_ = 0;
             std::uint32_t fps_ = 0;
+
+            parallax::core::SourceObservation last_localized_object_scene_observation_{};
+            parallax::core::SourceObservation last_localized_object_scene_pose_observation_{};
+
+            std::uint64_t last_localized_object_scene_revision_ = 0;
+            std::uint64_t last_localized_object_scene_epoch_ = 0;
+
+            bool has_published_localized_object_scene_ = false;
 
             parallax::core::SourceObservation last_detection_annotation_observation_{};
             std::uint64_t last_detection_annotation_query_revision_ = 0;

@@ -427,6 +427,33 @@ namespace parallax::visualization {
             }
         }
 
+
+        if (foxglove_->localizedObject3DSceneChannel().hasSinks()) {
+            const auto localized = store.latest<parallax::perception::LocalizedSpatialObservation>(
+                                                parallax::core::ProductId::LocalizedSpatialObservation);
+
+            if (localized && localized->valid() && localized->payload && localized->payload->valid()) {
+
+                const bool new_scene = !has_published_localized_object_scene_ ||
+                                        localized->metadata.observation != last_localized_object_scene_observation_ ||
+                                        localized->payload->localization_observation != last_localized_object_scene_pose_observation_ ||
+                                        localized->payload->objects.query_revision != last_localized_object_scene_revision_ ||
+                                        localized->payload->localization_epoch != last_localized_object_scene_epoch_;
+
+                if (new_scene) {
+                    if (!publishLocalizedObject3DScene(*localized)) return false;
+
+                    last_localized_object_scene_observation_ = localized->metadata.observation;
+                    last_localized_object_scene_pose_observation_ = localized->payload->localization_observation;
+                    last_localized_object_scene_revision_ = localized->payload->objects.query_revision;
+                    last_localized_object_scene_epoch_ = localized->payload->localization_epoch;
+
+                    has_published_localized_object_scene_ = true;
+                }
+            }
+        }
+
+
         if (foxglove_->localizationTransformChannel().hasSinks() || foxglove_->localizationPoseChannel().hasSinks()) {
             const auto odometry = store.latest<parallax::localization::LocalizationOdometry>(parallax::core::ProductId::LocalizationOdometry);
 
@@ -1088,11 +1115,25 @@ namespace parallax::visualization {
             return false;
         }
 
-        foxglove::messages::SceneUpdate update;
-        update.entities.reserve(product.payload->objects.size());
+        return publishObject3DScene(*product.payload, foxglove_->object3DSceneChannel(), "Failed to publish /perception/objects3d");
+    }
 
-        for (std::size_t i = 0; i < product.payload->objects.size(); ++i) {
-            const auto& object = product.payload->objects[i];
+    bool Publisher::publishLocalizedObject3DScene(const parallax::core::Product<parallax::perception::LocalizedSpatialObservation>& product) {
+        if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload || !product.payload->valid()) {
+            return false;
+        }
+
+        return publishObject3DScene(product.payload->objects, foxglove_->localizedObject3DSceneChannel(), "Failed to publish /localization/objects3d");
+    }
+
+    bool Publisher::publishObject3DScene(const parallax::perception::Object3DSet& objects, foxglove::messages::SceneUpdateChannel& channel, const char* error_message) {
+        if (!initialized_ || foxglove_ == nullptr || !objects.valid()) return false;
+
+        foxglove::messages::SceneUpdate update;
+        update.entities.reserve(objects.objects.size());
+
+        for (std::size_t i = 0; i < objects.objects.size(); ++i) {
+            const auto& object = objects.objects[i];
             if (!object.valid()) continue;
 
             foxglove::messages::SceneEntity entity;
@@ -1269,7 +1310,7 @@ namespace parallax::visualization {
             update.entities.push_back(std::move(entity));
         }
 
-        return checkFoxglove(foxglove_->object3DSceneChannel().log(update), "Failed to publish /perception/objects3d");
+        return checkFoxglove(channel.log(update), error_message);
     }
 
     std::string formatDepthForDisplay(float depth_m) {
@@ -1308,7 +1349,6 @@ namespace parallax::visualization {
                 return "uninitialized";
         }
     }
-
 
     bool Publisher::publishLocalizationTransform(const parallax::localization::LocalizationOdometry& odometry) {
         if (!initialized_ || foxglove_ == nullptr) return false;

@@ -29,7 +29,10 @@ namespace parallax::stereo {
                             VPIStream stream);
             
             bool process(VPIStream stream);
-            static constexpr std::size_t OutputSlotCount = 3;
+            // cuVSLAM retains up to 8 ordered rectified generations.
+            // One additional slot is required so the next generation can be
+            // produced before ProductStore evicts the oldest retained generation.
+            static constexpr std::size_t OutputSlotCount = 9;
 
             struct OutputSlot {
                 parallax::isp::RectifiedStereoFrame rgb{};

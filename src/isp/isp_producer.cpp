@@ -4,7 +4,7 @@
 #include <parallax/core/execution_context.hpp>
 #include <cuda_runtime.h>
 #include <memory>
-
+#include <iostream>
 
 namespace parallax::isp {
     IspProducer::IspProducer(ISP& isp, parallax::core::ProductStore& store) : isp_(isp), store_(store) {}

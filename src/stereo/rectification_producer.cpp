@@ -4,6 +4,7 @@
 
 #include <cuda_runtime.h>
 #include <memory>
+#include <iostream>
 
 namespace parallax::stereo {
     RectificationProducer::RectificationProducer(StereoRectifier& rectifier,

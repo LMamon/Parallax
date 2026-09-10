@@ -3,6 +3,7 @@
 #include <parallax/core/execution_context.hpp>
 
 #include <memory>
+#include <iostream>
 
 namespace parallax::stereo {
     StereoProducer::StereoProducer(StereoMatcher& matcher, parallax::core::ProductStore& store) :

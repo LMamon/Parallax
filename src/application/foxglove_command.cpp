@@ -32,7 +32,7 @@ namespace parallax::application {
                 return {{}, CommandParseError::UnexpectedArgument, "marker_depth does not accept a target"};
             }
 
-            return {Command{CommandVerb::MarkerDepth, CommandBehavior::OneShot, {}},
+            return {Command{CommandVerb::MarkerDepth, CommandBehavior::Persistent, {}},
                             CommandParseError::None, {}};
         }
 

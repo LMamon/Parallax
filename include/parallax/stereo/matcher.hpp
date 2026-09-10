@@ -27,7 +27,7 @@ namespace parallax::stereo {
             StereoMatcher& operator=(const StereoMatcher&) = delete;
 
             bool initialize(const parallax::isp::RectifiedStereoGrayFrame& input, VPIStream stream);
-            static constexpr std::size_t OutputSlotCount = 3;
+            static constexpr std::size_t OutputSlotCount = 5;
 
             struct OutputSlot {
                 parallax::isp::StereoMatchFrame output{};

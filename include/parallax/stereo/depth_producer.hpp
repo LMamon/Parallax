@@ -43,7 +43,7 @@ namespace parallax::stereo {
             // calibration lifetime is owned outside the producer.
             const StereoCalibration& calibration_;
             
-            static constexpr std::size_t OutputSlotCount = 3;
+            static constexpr std::size_t OutputSlotCount = 5;
 
             /**
              * Published depth uses bounded generation-specific storage.

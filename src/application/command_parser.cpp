@@ -82,7 +82,7 @@ namespace parallax::application {
                 return failure(CommandParseError::UnexpectedArgument, "expected 'marker depth'");
             }
 
-            return {Command{CommandVerb::MarkerDepth,CommandBehavior::OneShot, {}}, CommandParseError::None, {}};
+            return {Command{CommandVerb::MarkerDepth, CommandBehavior::Persistent, {}}, CommandParseError::None, {}};
         }
 
         if (tokens[0] == "detect") {

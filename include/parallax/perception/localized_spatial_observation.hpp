@@ -17,9 +17,7 @@ namespace parallax::perception {
         std::chrono::steady_clock::duration localization_time_delta{};
 
         [[nodiscard]] bool valid() const noexcept {
-            return objects.valid() &&
-                   localization_observation.valid() &&
-                   localization_epoch != 0;
+            return objects.valid() && localization_observation.valid();
         }
     };
 }

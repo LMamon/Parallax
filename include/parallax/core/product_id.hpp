@@ -34,6 +34,8 @@ namespace parallax::core {
         Track2D,
         Object3D,
         LocalizedSpatialObservation,
+        LocalizationObservations,
+        LocalizationLandmarks,
         LidarScan
     };
 }

@@ -39,6 +39,8 @@ namespace parallax::localization {
 
             void publishState(const parallax::core::ProductMetadata& metadata, LocalizationTrackingState tracking);
             void publishTrajectory(const parallax::core::ProductMetadata& metadata, const LocalizationPose& pose);
+            void publishObservations(const parallax::core::ProductMetadata& metadata, const CuVslamPoseEstimate& estimate);
+            void publishLandmarks(const parallax::core::ProductMetadata& metadata, const CuVslamPoseEstimate& estimate);
 
             CuVslamLocalizer& localizer_;
             parallax::core::ProductStore& store_;
@@ -60,7 +62,9 @@ namespace parallax::localization {
             const std::vector<parallax::core::ProductId> outputs_{parallax::core::ProductId::LocalizationOdometry,
                                                                   parallax::core::ProductId::LocalizationPose,
                                                                   parallax::core::ProductId::LocalizationTrajectory,
-                                                                  parallax::core::ProductId::LocalizationState};
+                                                                  parallax::core::ProductId::LocalizationState,
+                                                                  parallax::core::ProductId::LocalizationObservations,
+                                                                  parallax::core::ProductId::LocalizationLandmarks};
 
             const std::vector<parallax::core::OrderedInputRequirement> ordered_inputs_{{parallax::core::ProductId::RectifiedGray, 
                                                                                         InputHistoryCapacity}};

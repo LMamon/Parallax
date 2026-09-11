@@ -203,6 +203,8 @@ namespace parallax::localization {
 
         publishState(input->metadata, LocalizationTrackingState::Tracking);
         publishTrajectory(input->metadata, pose);
+        publishObservations(input->metadata, estimate);
+        publishLandmarks(input->metadata, estimate);
 
         return parallax::core::SubmitResult::Submitted;
     }
@@ -230,4 +232,44 @@ namespace parallax::localization {
                                                     metadata,
                                                     std::make_shared<const LocalizationTrajectory>(std::move(trajectory))));
     }
+
+    void CuVslamProducer::publishObservations(const parallax::core::ProductMetadata& input_metadata, const CuVslamPoseEstimate& estimate) {
+        VisualObservationSet output{};
+        output.timestamp_ns = estimate.timestamp_ns;
+        output.epoch = epoch_;
+        output.observations.reserve(estimate.observations.size());
+
+        for (const auto& observation : estimate.observations) {
+            output.observations.push_back(VisualObservation{observation.id, observation.u, observation.v});
+        }
+
+        auto metadata = input_metadata;
+        metadata.production_timestamp = parallax::core::ExecutionContext::now();
+        metadata.valid = true;
+
+        store_.publish(parallax::core::make_product(parallax::core::ProductId::LocalizationObservations,
+                                                    metadata, 
+                                                    std::make_shared<const VisualObservationSet>(std::move(output))));
+    }
+
+    void CuVslamProducer::publishLandmarks(const parallax::core::ProductMetadata& input_metadata, const CuVslamPoseEstimate& estimate) {
+
+        VisualLandmarkSet output{};
+        output.timestamp_ns = estimate.timestamp_ns;
+        output.epoch = epoch_;
+        output.landmarks.reserve(estimate.landmarks.size());
+
+        for (const auto& landmark : estimate.landmarks) {
+            output.landmarks.push_back(VisualLandmark{landmark.id, {landmark.coords[0], landmark.coords[1], landmark.coords[2]}});
+        }
+
+        auto metadata = input_metadata;
+        metadata.production_timestamp = parallax::core::ExecutionContext::now();
+        metadata.valid = true;
+
+        store_.publish(parallax::core::make_product(parallax::core::ProductId::LocalizationLandmarks,
+                                                    metadata,
+                                                    std::make_shared<const VisualLandmarkSet>(std::move(output))));
+    }
+    
 }

@@ -13,6 +13,7 @@
 #include <memory>
 #include <stdexcept>
 #include <utility>
+#include <iostream>
 
 namespace parallax::perception {
     namespace {
@@ -205,7 +206,16 @@ namespace parallax::perception {
             object.coordinate_frame = "localization_world";
         }
 
-        if (!localized->valid()) return core::SubmitResult::Failed;
+        // if (!localized->valid()) return core::SubmitResult::Failed;
+        if (!localized->valid()) {
+            std::cerr << "[LocalizedSpatial] invalid output"
+                    << " object_obs=" << objects->metadata.observation.sequence
+                    << " pose_obs=" << selected_pose->metadata.observation.sequence
+                    << " epoch=" << localization_pose.epoch
+                    << " objects=" << localized->objects.objects.size() << '\n';
+
+            return core::SubmitResult::Failed;
+        }
 
         auto metadata = objects->metadata;
         metadata.production_timestamp = std::chrono::steady_clock::now();

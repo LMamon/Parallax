@@ -85,6 +85,8 @@ namespace parallax::visualization {
                                       foxglove::messages::SceneUpdateChannel& channel, 
                                       const char* error_message);
 
+            bool publishLocalizationLandmarks(const parallax::localization::VisualLandmarkSet& landmarks);
+
             VideoEncoder video_encoder_;
             cudaStream_t stream_ = nullptr;
             

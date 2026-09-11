@@ -49,6 +49,8 @@ namespace parallax::localization {
         std::optional<cuvslam::PoseWithCovariance> world_from_rig;
         std::optional<cuvslam::Pose> slam_world_from_rig;
 
+        std::vector<cuvslam::Observation> observations;
+        std::vector<cuvslam::Landmark> landmarks;
         [[nodiscard]] bool valid() const noexcept { return world_from_rig.has_value(); }
     };
 

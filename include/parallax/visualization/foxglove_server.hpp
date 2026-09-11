@@ -91,19 +91,26 @@ namespace parallax::visualization {
 
             [[nodiscard]] foxglove::messages::CompressedVideoChannel& leftImageChannel() noexcept { return *left_image_channel_; }
             [[nodiscard]] foxglove::messages::CameraCalibrationChannel& leftCalibrationChannel() noexcept { return *left_calibration_channel_; }
+            
             [[nodiscard]] foxglove::messages::RawImageChannel& disparityChannel() noexcept { return *disparity_channel_; }
             [[nodiscard]] foxglove::messages::RawImageChannel& depthChannel() noexcept { return *depth_channel_; }
-            [[nodiscard]] foxglove::messages::PoseInFrameChannel& markerPoseChannel() noexcept { return *marker_pose_channel_; }
-            [[nodiscard]] foxglove::messages::LaserScanChannel& lidarScanChannel() noexcept { return *lidar_scan_channel_; }
-            [[nodiscard]] foxglove::messages::FrameTransformChannel& transformChannel() noexcept { return *transform_channel_; }
-            [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& detectionAnnotationsChannel() noexcept { return *detection_annotations_channel_; }
             [[nodiscard]] foxglove::messages::RawImageChannel& segmentationMaskChannel() noexcept { return *segmentation_mask_channel_; }
+            
+            [[nodiscard]] foxglove::messages::FrameTransformChannel& localizationTransformChannel() noexcept { return *localization_transform_channel_; }
+            [[nodiscard]] foxglove::messages::FrameTransformChannel& transformChannel() noexcept { return *transform_channel_; }
+            [[nodiscard]] foxglove::messages::LaserScanChannel& lidarScanChannel() noexcept { return *lidar_scan_channel_; }
+            
+            [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& detectionAnnotationsChannel() noexcept { return *detection_annotations_channel_; }
             [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& trackAnnotationsChannel() noexcept { return *track_annotations_channel_; }
             [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& objectDepthAnnotationsChannel() noexcept { return *object_depth_annotations_channel_; }
+            [[nodiscard]] foxglove::messages::ImageAnnotationsChannel& localizationObservationsChannel() noexcept { return *localization_observations_channel_; }
+            
             [[nodiscard]] foxglove::messages::SceneUpdateChannel& object3DSceneChannel() noexcept { return *object3d_scene_channel_; }
             [[nodiscard]] foxglove::messages::SceneUpdateChannel& localizedObject3DSceneChannel() noexcept { return *localized_object3d_scene_channel_; }
-
-            [[nodiscard]] foxglove::messages::FrameTransformChannel& localizationTransformChannel() noexcept { return *localization_transform_channel_; }
+            [[nodiscard]] foxglove::messages::SceneUpdateChannel& localizationLandmarksChannel() noexcept { return *localization_landmarks_channel_; }
+            
+            
+            [[nodiscard]] foxglove::messages::PoseInFrameChannel& markerPoseChannel() noexcept { return *marker_pose_channel_; }
             [[nodiscard]] foxglove::messages::PoseInFrameChannel& localizationPoseChannel() noexcept { return *localization_pose_channel_; }
             [[nodiscard]] foxglove::messages::SceneUpdateChannel& localizationTrajectoryChannel() noexcept { return *localization_trajectory_channel_; }
             [[nodiscard]] foxglove::RawChannel& localizationStateChannel() noexcept { return *localization_state_channel_; }
@@ -144,11 +151,13 @@ namespace parallax::visualization {
             std::optional<foxglove::messages::ImageAnnotationsChannel> detection_annotations_channel_;
             std::optional<foxglove::messages::ImageAnnotationsChannel> track_annotations_channel_;
             std::optional<foxglove::messages::ImageAnnotationsChannel> object_depth_annotations_channel_;
+            std::optional<foxglove::messages::ImageAnnotationsChannel> localization_observations_channel_;
             
             std::optional<foxglove::messages::FrameTransformChannel> localization_transform_channel_;
             std::optional<foxglove::messages::PoseInFrameChannel> localization_pose_channel_;
             std::optional<foxglove::messages::SceneUpdateChannel> localization_trajectory_channel_;
             std::optional<foxglove::messages::SceneUpdateChannel> localized_object3d_scene_channel_;
+            std::optional<foxglove::messages::SceneUpdateChannel> localization_landmarks_channel_;
 
             
             std::optional<foxglove::messages::RawImageChannel> segmentation_mask_channel_;

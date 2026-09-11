@@ -352,6 +352,7 @@ namespace parallax::localization {
             config.multicam_mode = cuvslam::Odometry::MulticameraMode::Precision;
             config.enable_observations_export = true;
             config.use_gpu = true;
+            config.enable_landmarks_export = true;
 
             // The submitted frames are already the P1/P2 rectified pair.
             config.rectified_stereo_camera = true;
@@ -482,6 +483,8 @@ namespace parallax::localization {
         result.timestamp_ns = estimate.timestamp_ns;
         result.world_from_rig = estimate.world_from_rig;
         result.slam_world_from_rig = std::move(slam_pose);
+        result.observations = odometry_->GetLastObservations(0);
+        result.landmarks = odometry_->GetLastLandmarks();
 
         return result;
     }

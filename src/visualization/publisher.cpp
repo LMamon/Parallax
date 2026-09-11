@@ -512,6 +512,16 @@ namespace parallax::visualization {
             }
         }
 
+        if (foxglove_->localizationLandmarksChannel().hasSinks()) {
+            const auto landmarks = store.latest<parallax::localization::VisualLandmarkSet>(parallax::core::ProductId::LocalizationLandmarks);
+
+            if (landmarks && landmarks->valid()) {
+                if (!publishLocalizationLandmarks(*landmarks->payload)) {
+                    return false;
+                }
+            }
+        }
+
         return true;
     }
 
@@ -1141,13 +1151,14 @@ namespace parallax::visualization {
             entity.frame_id = object.coordinate_frame;
 
             /*
-            * One-shot detections use observation-derived identity.
-            * Persistent tracking may later use its stable track_id.
+            * Persistent tracks use stable track identity.
+            * Frame-local detections use stable slot identity so each SceneUpdate
+            * replaces the previous visualization instead of accumulating history.
             */
             if (object.persistent()) {
                 entity.id = "track_" + std::to_string(object.track_id);
             } else {
-                entity.id = "object_" + std::to_string(object.semantic_observation.sequence) + "_" + std::to_string(i);
+                entity.id = "object_" + std::to_string(i);
             }
 
             entity.frame_locked = true;
@@ -1467,6 +1478,57 @@ namespace parallax::visualization {
         return checkFoxglove(foxglove_->localizationStateChannel().log(reinterpret_cast<const std::byte*>(serialized.data()),
                                                                                                             serialized.size()),
                                                                                                             "Failed to publish /localization/state");
+    }
+
+    bool Publisher::publishLocalizationLandmarks(const parallax::localization::VisualLandmarkSet& landmarks) {
+        if (!initialized_ || foxglove_ == nullptr) return false;
+
+        foxglove::messages::SceneUpdate update;
+
+        foxglove::messages::SceneEntity entity;
+        entity.timestamp = nowTimestamp();
+        entity.frame_id = "localization_world";
+        entity.id = "cuvslam_landmarks";
+        entity.frame_locked = true;
+
+        entity.spheres.reserve(landmarks.landmarks.size());
+
+        for (const auto& landmark : landmarks.landmarks) {
+            foxglove::messages::SpherePrimitive point;
+            foxglove::messages::Pose pose;
+
+            foxglove::messages::Vector3 position;
+            position.x = landmark.position_m[0];
+            position.y = landmark.position_m[1];
+            position.z = landmark.position_m[2];
+
+            pose.position = position;
+
+            foxglove::messages::Quaternion orientation;
+            orientation.w = 1.0;
+            pose.orientation = orientation;
+
+            point.pose = pose;
+
+            foxglove::messages::Vector3 size;
+            size.x = 0.01;
+            size.y = 0.01;
+            size.z = 0.01;
+            point.size = size;
+
+            foxglove::messages::Color color;
+            color.r = 0.8;
+            color.g = 0.2;
+            color.b = 0.8;
+            color.a = 1.0;
+            point.color = color;
+
+            entity.spheres.push_back(std::move(point));
+        }
+
+        update.entities.push_back(std::move(entity));
+
+        return checkFoxglove(foxglove_->localizationLandmarksChannel().log(update), "Failed to publish /localization/landmarks");
     }
 
     void Publisher::shutdown() {

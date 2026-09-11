@@ -443,6 +443,27 @@ namespace parallax::visualization {
 
         localization_state_channel_.emplace(std::move(localization_state.value()));
         bindProduct(localization_state_channel_->id(), ProductId::LocalizationState);
+
+        auto localization_observations = foxglove::messages::ImageAnnotationsChannel::create("/localization/observations", context_);
+        if (!localization_observations.has_value()) {
+            std::cerr << "Failed to create /localization/observations channel: "
+                      << foxglove::strerror(localization_observations.error()) << '\n';
+            return false;
+        }
+
+        localization_observations_channel_.emplace(std::move(localization_observations.value()));
+        bindProduct(localization_observations_channel_->id(), ProductId::LocalizationObservations);
+
+
+        auto localization_landmarks =foxglove::messages::SceneUpdateChannel::create("/localization/landmarks", context_);
+        if (!localization_landmarks.has_value()) {
+            std::cerr << "Failed to create /localization/landmarks channel: "
+                      << foxglove::strerror(localization_landmarks.error()) << '\n';
+            return false;
+        }
+
+        localization_landmarks_channel_.emplace(std::move(localization_landmarks.value()));
+        bindProduct(localization_landmarks_channel_->id(), ProductId::LocalizationLandmarks);
         // every graph backed channel gets bindProduct(...)
         
         return true;

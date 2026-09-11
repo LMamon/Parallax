@@ -35,4 +35,27 @@ namespace parallax::localization {
         std::uint64_t input_gaps = 0;
         std::uint64_t session_resets = 0;
     };
+
+    struct VisualObservation {
+        std::uint64_t id = 0;
+        float u = 0.0F;
+        float v = 0.0F;
+    };
+
+    struct VisualObservationSet {
+        std::int64_t timestamp_ns = 0;
+        std::uint64_t epoch = 0;
+        std::vector<VisualObservation> observations;
+    };
+
+    struct VisualLandmark {
+        std::uint64_t id = 0;
+        std::array<float, 3> position_m{};
+    };
+
+    struct VisualLandmarkSet {
+        std::int64_t timestamp_ns = 0;
+        std::uint64_t epoch = 0;
+        std::vector<VisualLandmark> landmarks;
+    };
 }

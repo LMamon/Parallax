@@ -1,48 +1,85 @@
 # Parallax
 
-Active tracking infrastructure for spatial reasoning systems
+An unmanned system needs more than a camera feed. It needs to turn
+sensor data into useful spatial information: what is visible, where it
+is, whether it is moving, and how those observations relate to the
+vehicle as it moves through the environment.
 
-GPU-accelerated perception system built around stereo vision on NVIDIA Jetson. The `2.0` baseline establishes the native camera-to-stereo pipeline without ROS 2.
+Parallax is my implementation of that perception and localization layer
+on a Jetson Orin Nano. It uses calibrated stereo cameras and a 2D LiDAR
+to produce depth and geometric observations, adds open-vocabulary
+detection and optional segmentation, can maintain a selected visual
+target, and uses cuVSLAM to place the sensor and observed objects in a
+local world frame.
 
-## Current Pipeline
+The runtime is built around explicit product dependencies rather than
+one fixed processing pipeline. Camera, stereo, neural perception,
+tracking, spatial association, localization, and visualization can run
+at different rates, and optional work only runs when something actually
+requires it. This keeps slower inference and visualization work from
+defining the rate of unrelated sensor processing.
 
-![](docs/imgs/pipeline2.0.png)
+## Current capabilities
 
-The current implementation keeps image processing GPU-resident through ISP, rectification, and stereo matching. The ISP produces both RGB and grayscale outputs so downstream consumers can use the appropriate representation without redundant conversion.
+-   stereo capture, ISP, rectification, disparity, confidence, and
+    metric depth;
+-   RPLIDAR C1 acquisition with calibrated sensor extrinsics;
+-   NanoOWL open-vocabulary object detection;
+-   EfficientViT-SAM segmentation when a mask is requested;
+-   VPI DCF tracking for a selected target;
+-   2D semantic observations associated with stereo/LiDAR measurements
+    to produce 3D object positions;
+-   NVIDIA cuVSLAM pose estimation, trajectory history, visual
+    observations, and landmarks;
+-   localized semantic observations in a common world frame;
+-   command and subscription-driven execution through Foxglove;
+-   bounded product history, source provenance, execution policies, and
+    producer-level runtime metrics.
 
-## Components
+## Next step
 
-```text
-camera/     V4L2 capture, Arducam control, configuration
-cuda/       CUDA memory and processing utilities
-isp/        Bayer demosaic and RGB/grayscale output
-vpi/        CUDA image wrappers and stream management
-stereo/     calibration, rectification, disparity
-visualization/ foxglove visualizaiton of topics
-```
+Add pathfinding and planning to the existing perception and localization system.
 
-The stereo runtime consumes offline calibration artifacts including rectification maps, `R1`, `R2`, `P1`, `P2`, and `Q`.
+This work remains on the navigation side of the autonomy stack. Vehicle control and actuation are outside the current scope.
 
-## Build
+## Hardware and software
 
-```bash
-cmake -S . -B build
-cmake --build build -j"$(nproc)"
-./build/parallax
-```
+The current system runs on an NVIDIA Jetson Orin Nano 8 GB with an
+Arducam AR0234 global-shutter stereo pair and an RPLIDAR C1.
 
-Current native dependencies include C++17, CUDA, NVIDIA VPI, OpenCV, yaml-cpp, CMake, GTest, Foxglove C++ sdk.
+The runtime is primarily C++17 and uses NVIDIA VPI, CUDA, TensorRT, and
+cuVSLAM for the hardware-accelerated portions of the system. Python is
+used at the NanoOWL boundary. Foxglove provides the remote command,
+debugging, and 2D/3D visualization surface.
 
-## Engineering Documentation
+## Design
 
-The current stereo implementation represents a verified baseline before the runtime pipeline refactor.
+The main design constraint is straightforward: expensive or stateful
+perception work should not force the entire system into one lockstep
+frame loop.
 
-- [`docs/architecture/stereo_pipeline.md`](docs/stereo_arch.md) — design decisions and component boundaries
-- [`docs/verification/stereo_pipeline.md`](docs/stereo_verification.md) — verification evidence, constraints, and known failure modes
-- [`docs/roadmap.md`](docs/roadmap.md) — current architectural direction
+Products and their dependencies are declared ahead of time. At runtime,
+active commands and consumers determine which parts of the graph are
+needed. Most realtime edges prefer the newest compatible observation,
+while consumers that require temporal continuity, such as cuVSLAM, use
+bounded ordered history.
 
-## Direction
+This also keeps the sensor and algorithm boundaries useful. Detection
+does not require segmentation. A detection does not need to become a
+persistent track before it can be placed in 3D. Foxglove can request or
+display a product without owning the computation that creates it.
 
-The next stage moves orchestration out of `main.cpp` into a runtime pipeline capable of managing independently enabled processing modules.
+The current architecture and the reasoning behind the dependency-graph
+refactor are documented in
+[`docs/architecture.md`](docs/architecture.md) and
+[`docs/dependency_graph_refactor.md`](docs/dependency_graph_refactor.md).
 
-Planned downstream work includes depth and 3D geometry, Foxglove integration, nanobind bindings, object detection and tracking, VIO/VSLAM, LiDAR integration, and exploring shared spatial representation.
+## Scope
+
+Parallax currently ends at perception and localization. It does not
+contain vehicle actuation.
+
+The output is the part those systems need first: calibrated sensor data,
+metric depth, semantic observations, target state, and a local spatial
+reference that higher-level autonomy can use to reason about the
+environment.

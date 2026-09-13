@@ -17,7 +17,6 @@ services:
 
     volumes:
       - .:/workspace/Parallax
-      - /home/rr-vzn/rplidar_sdk:/root/rplidar_sdk:ro
       - /tmp/argus_socket:/tmp/argus_socket
 
     working_dir: /workspace/Parallax

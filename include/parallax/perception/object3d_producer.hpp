@@ -2,6 +2,7 @@
 
 #include <parallax/core/producer.hpp>
 #include <parallax/core/product_store.hpp>
+#include <parallax/perception/lidar_detection_associator.hpp>
 #include <parallax/perception/object3d_association.hpp>
 #include <parallax/perception/stereo_roi_associator.hpp>
 
@@ -22,6 +23,10 @@ namespace parallax::perception {
         public:
             Object3DProducer(StereoRoiAssociator& associator, core::ProductStore& products) noexcept;
 
+            Object3DProducer(StereoRoiAssociator& stereo_associator,
+                             LidarDetectionAssociator& lidar_associator,
+                             core::ProductStore& products) noexcept;
+
             [[nodiscard]] std::string_view name() const noexcept override;
             [[nodiscard]] const std::vector<core::ProductId>& inputs() const noexcept override;
             [[nodiscard]] const std::vector<core::ProductId>& outputs() const noexcept override;
@@ -33,16 +38,24 @@ namespace parallax::perception {
 
         private:
             static constexpr std::size_t DepthHistoryCapacity = 4;
+            static constexpr std::size_t LidarHistoryCapacity = 4;
 
             StereoRoiAssociator& associator_;
+            LidarDetectionAssociator* lidar_associator_ = nullptr;
             core::ProductStore& products_;
 
-            Object3DAssociationPolicy policy_{};
+            Object3DAssociationPolicy depth_policy_{};
+
+            // RPLIDAR C1 completes a revolution at roughly 8-12 Hz. Its scan
+            // timestamp marks the completed scan boundary, so use a bounded
+            // 150 ms cross-sensor window without waiting for a future scan.
+            Object3DAssociationPolicy lidar_policy_{std::chrono::milliseconds{150}};
 
             const std::vector<core::ProductId> inputs_{core::ProductId::Detection, core::ProductId::Depth};
             const std::vector<core::ProductId> outputs_{core::ProductId::Object3D};
 
             const std::vector<core::CompatibleInputRequirement>
-                compatible_inputs_{{core::ProductId::Depth, DepthHistoryCapacity}};
+                compatible_inputs_{{core::ProductId::Depth, DepthHistoryCapacity},
+                                   {core::ProductId::LidarScan, LidarHistoryCapacity}};
     };
 }

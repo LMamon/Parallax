@@ -84,6 +84,17 @@ namespace parallax::core {
             return false;
         }
 
+        lidar_detection_associator_ =
+            std::make_unique<parallax::perception::LidarDetectionAssociator>();
+
+        if (!lidar_detection_associator_->initialize(pipeline_.calibration(),
+                                                      sensor_extrinsics_,
+                                                      sensor_extrinsics_.left_camera.child_frame)) {
+            std::cerr << "Runtime: failed to initialize LiDAR detection associator\n";
+            shutdown();
+            return false;
+        }
+
         efficientvit_sam_ = std::make_unique<parallax::perception::EfficientVitSam>();
 
         /**
@@ -115,7 +126,9 @@ namespace parallax::core {
 
         marker_depth_producer_ = std::make_unique<parallax::pose::MarkerDepthPoducer>(context_.products());
         detection_producer_ = std::make_unique<parallax::perception::DetectionProducer>(*nanoowl_, context_.products());
-        object3d_producer_ = std::make_unique<parallax::perception::Object3DProducer>(*stereo_roi_associator_, context_.products());
+        object3d_producer_ = std::make_unique<parallax::perception::Object3DProducer>(*stereo_roi_associator_,
+                                                                                     *lidar_detection_associator_,
+                                                                                     context_.products());
 
         segmentation_producer_ = std::make_unique<parallax::perception::SegmentationProducer>(
                                                 *efficientvit_sam_,

@@ -72,6 +72,33 @@ namespace parallax::visualization {
                     return "unknown";
             }
         }
+
+        const char* objectMetricSourceName(parallax::perception::Object3DMethod method) noexcept {
+            using Method = parallax::perception::Object3DMethod;
+
+            switch (method) {
+                case Method::LidarAssociation:
+                    return "lidar";
+                case Method::StereoMask:
+                    return "stereo_mask";
+                case Method::StereoRoi:
+                    return "stereo";
+                case Method::StereoLidarRefined:
+                    return "stereo_lidar";
+                case Method::Unknown:
+                default:
+                    return "unknown";
+            }
+        }
+
+        float objectDisplayDistance(const parallax::perception::Object3D& object) noexcept {
+            if (object.method == parallax::perception::Object3DMethod::LidarAssociation &&
+                std::isfinite(object.range_m) &&
+                object.range_m > 0.0F) {
+                return object.range_m;
+            }
+            return object.depth_m;
+        }
     
         std::string formatDepth(float depth_m) {
             if (!std::isfinite(depth_m) || depth_m <= 0.0F) return {};
@@ -1271,7 +1298,7 @@ namespace parallax::visualization {
                 }
             }
 
-            const std::string distance = formatDepthForDisplay(object.depth_m);
+            const std::string distance = formatDepthForDisplay(objectDisplayDistance(object));
 
             // Billboard text is presentation-only. It follows the measured point
             // and remains readable while the Foxglove 3D camera is moved.
@@ -1301,7 +1328,10 @@ namespace parallax::visualization {
             text_color.a = 1.0;
             text.color = text_color;
 
-            text.text = distance.empty() ? object.label : object.label + " · " + distance;
+            const std::string metric_source = objectMetricSourceName(object.method);
+            text.text = distance.empty()
+                            ? object.label
+                            : object.label + " · " + distance + " · " + metric_source;
 
             entity.texts.push_back(std::move(text));
 
@@ -1318,6 +1348,12 @@ namespace parallax::visualization {
                 depth.value = distance;
                 entity.metadata.push_back(std::move(depth));
             }
+
+            foxglove::messages::KeyValuePair metric_source_metadata;
+            metric_source_metadata.key = "metric_source";
+            metric_source_metadata.value = metric_source;
+            entity.metadata.push_back(std::move(metric_source_metadata));
+
             update.entities.push_back(std::move(entity));
         }
 

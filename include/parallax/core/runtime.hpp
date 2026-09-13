@@ -32,6 +32,7 @@
 #include <parallax/perception/segmentation_producer.hpp>
 #include <parallax/perception/object3d_producer.hpp>
 #include <parallax/perception/stereo_roi_associator.hpp>
+#include <parallax/perception/lidar_detection_associator.hpp>
 #include <parallax/perception/localized_spatial_producer.hpp>
 
 #include <parallax/pose/charuco_pose_producer.hpp>
@@ -124,6 +125,7 @@ namespace parallax::core {
             std::unique_ptr<parallax::perception::DetectionProducer> detection_producer_;
             std::unique_ptr<parallax::tracking::SingleTargetProducer> single_target_producer_;
             std::unique_ptr<parallax::perception::StereoRoiAssociator> stereo_roi_associator_;
+            std::unique_ptr<parallax::perception::LidarDetectionAssociator> lidar_detection_associator_;
             std::unique_ptr<parallax::perception::Object3DProducer> object3d_producer_;
             std::unique_ptr<parallax::perception::LocalizedSpatialProducer> localized_spatial_producer_;
 

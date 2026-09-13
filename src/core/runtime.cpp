@@ -50,9 +50,8 @@ namespace parallax::core {
 
         lidar_ = std::make_unique<parallax::lidar::Rplidar>();
         if (!lidar_->initialize()) {
-            std::cerr << "Runtime: failed to initialize RPLIDAR\n";
-            shutdown();
-            return false;
+            std::cerr << "RPLIDAR: no device detected; continuing without LiDAR\n";
+            lidar_.reset();
         }
         /**
          * ISP allocations, VPI stream, rectifier, matcher, depth storage, and pose
@@ -93,7 +92,11 @@ namespace parallax::core {
          * producer for the lifetime of the graph.
          */
         camera_producer_ = std::make_unique<parallax::camera::CameraProducer>(*camera_, context_.products());
-        lidar_producer_ = std::make_unique<parallax::lidar::RplidarSourceProducer>(*lidar_, context_.products());
+        
+        if (lidar_) {
+            lidar_producer_ = std::make_unique<parallax::lidar::RplidarSourceProducer>(*lidar_, context_.products());
+        }
+        
         isp_producer_ = std::make_unique<parallax::isp::IspProducer>(pipeline_.isp(), context_.products());
 
         rectification_producer_ = std::make_unique<parallax::stereo::RectificationProducer>(pipeline_.rectifier(),
@@ -140,7 +143,8 @@ namespace parallax::core {
         graph_.register_producer(*marker_depth_producer_);
         graph_.register_producer(*detection_producer_);
         graph_.register_producer(*single_target_producer_);
-        graph_.register_producer(*lidar_producer_);
+
+        if (lidar_producer_) graph_.register_producer(*lidar_producer_);
         graph_.register_producer(*object3d_producer_);
         graph_.register_producer(*localized_spatial_producer_);
         graph_.register_producer(*segmentation_producer_);
@@ -162,7 +166,7 @@ namespace parallax::core {
         resolver_.acquire(ProductId::RectifiedRgb, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::Disparity, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::LocalizationOdometry, DemandSource::RuntimeBaseline);
-        resolver_.acquire(ProductId::LidarScan, DemandSource::RuntimeBaseline);
+        if (lidar_producer_) resolver_.acquire(ProductId::LidarScan, DemandSource::RuntimeBaseline);
 
 
         parallax::visualization::FoxgloveServer::DemandCallbacks foxglove_demand;
@@ -221,8 +225,7 @@ namespace parallax::core {
                                                                            serialized_state.size());
 
                     if (error != foxglove::FoxgloveError::Ok) {
-                        std::cerr << "Runtime: request-state publication failed: "
-                                  << foxglove::strerror(error) << '\n';
+                        std::cerr << "Runtime: request-state publication failed: " << foxglove::strerror(error) << '\n';
                     }
                 }
                 nlohmann::json response{{"accepted", true}, 
@@ -267,7 +270,6 @@ namespace parallax::core {
 
         /**
          * The camera-domain plan follows active demand.
-         *
          * LiDAR stays on its independent worker below. Everything else is resolved
          * from the same demand accounting used by Application and Foxglove.
          */
@@ -297,7 +299,7 @@ namespace parallax::core {
             }
         }
 
-        lidar_thread_ = std::thread(&Runtime::runLidarSource, this);
+        if (lidar_producer_) lidar_thread_ = std::thread(&Runtime::runLidarSource, this);
 
         while (running_.load() && !stop_requested) {
             refresh_execution_plan();

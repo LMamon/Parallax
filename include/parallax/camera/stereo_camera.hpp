@@ -37,6 +37,7 @@ namespace parallax::camera {
             // bool warmup(std::uint32_t frame_count = 2);
             bool warmup();
             bool setControl(std::uint32_t control_id, std::int32_t value);
+            bool getControlRange(std::uint32_t control_id, ControlRange& range) const;
 
             [[nodiscard]] const CameraConfig& config() const noexcept;
 

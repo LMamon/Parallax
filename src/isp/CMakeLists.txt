@@ -3,6 +3,7 @@ add_library(parallax_isp
     isp_config.cpp
     isp_producer.cpp
     demosaic.cu
+    isp_kernels.cu
 )
 
 target_include_directories(parallax_isp

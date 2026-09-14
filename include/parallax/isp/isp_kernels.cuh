@@ -21,6 +21,16 @@ struct CanonicalRgbParameters {
     float linear_white_level = 959.0F;
 };
 
+struct DeviceIspStatistics {
+    std::uint32_t luminance_histogram[256]{};
+    unsigned long long red_sum = 0;
+    unsigned long long green_sum = 0;
+    unsigned long long blue_sum = 0;
+    unsigned long long color_samples = 0;
+    unsigned long long total_samples = 0;
+    unsigned long long saturated_samples = 0;
+};
+
 bool prepareStereoBayer(const GpuBayerFrame& input,
                         parallax::cuda::CudaBuffer& left,
                         parallax::cuda::CudaBuffer& right,
@@ -34,4 +44,10 @@ bool formCanonicalStereo(const parallax::cuda::CudaBuffer& left_linear_rgb16,
                          const CanonicalRgbParameters& parameters,
                          cudaStream_t stream);
 
-} // namespace parallax::isp
+bool collectIspStatistics(const parallax::cuda::CudaBuffer& linear_rgb16,
+                          DeviceIspStatistics* output,
+                          float linear_white_level,
+                          std::uint32_t sample_stride,
+                          cudaStream_t stream);
+
+}

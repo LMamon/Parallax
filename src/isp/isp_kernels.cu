@@ -92,6 +92,46 @@ namespace parallax::isp {
             rgb_row[destination_offset + 2] = static_cast<std::uint8_t>(b * 255.0F + 0.5F);
         }
 
+        __global__ void statisticsKernel(const std::uint16_t* input,
+                                        std::size_t input_pitch,
+                                        int width,
+                                        int height,
+                                        float linear_white_level,
+                                        std::uint32_t sample_stride,
+                                        DeviceIspStatistics* output) {
+            const int sample_x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+            const int sample_y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+            const int x = sample_x * static_cast<int>(sample_stride);
+            const int y = sample_y * static_cast<int>(sample_stride);
+            if (x >= width || y >= height) return;
+
+            const auto* row = reinterpret_cast<const std::uint16_t*>(
+                reinterpret_cast<const std::uint8_t*>(input) + static_cast<std::size_t>(y) * input_pitch);
+            const std::size_t offset = static_cast<std::size_t>(x) * 3U;
+            const float scale = 1.0F / fmaxf(linear_white_level, 1.0F);
+
+            const float r = static_cast<float>(row[offset + 0]) * scale;
+            const float g = static_cast<float>(row[offset + 1]) * scale;
+            const float b = static_cast<float>(row[offset + 2]) * scale;
+            const float luma = clamp01(0.299F * r + 0.587F * g + 0.114F * b);
+            const std::uint32_t bin = min(255U, static_cast<std::uint32_t>(luma * 255.0F));
+
+            atomicAdd(&output->luminance_histogram[bin], 1U);
+            atomicAdd(&output->total_samples, 1ULL);
+
+            const float maximum = fmaxf(r, fmaxf(g, b));
+            if (maximum >= 0.98F) atomicAdd(&output->saturated_samples, 1ULL);
+
+            // AWB uses midtones only so one clipped lamp or deep shadow does not dominate it.
+            if (luma >= 0.125F && luma <= 0.875F && maximum < 0.98F) {
+                constexpr float SumScale = 4096.0F;
+                atomicAdd(&output->red_sum, static_cast<unsigned long long>(fmaxf(r, 0.0F) * SumScale));
+                atomicAdd(&output->green_sum, static_cast<unsigned long long>(fmaxf(g, 0.0F) * SumScale));
+                atomicAdd(&output->blue_sum, static_cast<unsigned long long>(fmaxf(b, 0.0F) * SumScale));
+                atomicAdd(&output->color_samples, 1ULL);
+            }
+        }
+
         bool validLinearRgb(const parallax::cuda::CudaBuffer& buffer) {
             return buffer.isAllocated() && buffer.channels() == 3 && buffer.elementSize() == sizeof(std::uint16_t);
         }
@@ -120,7 +160,7 @@ namespace parallax::isp {
             return cudaPeekAtLastError() == cudaSuccess;
         }
 
-    } // namespace
+    }
 
         bool prepareStereoBayer(const GpuBayerFrame& input,
                                 parallax::cuda::CudaBuffer& left,
@@ -160,4 +200,24 @@ namespace parallax::isp {
             return launchCanonical(right_linear_rgb16, rgb_output.right, gray_output.right, parameters, stream);
         }
 
+        bool collectIspStatistics(const parallax::cuda::CudaBuffer& linear_rgb16,
+                                DeviceIspStatistics* output,
+                                float linear_white_level,
+                                std::uint32_t sample_stride,
+                                cudaStream_t stream) {
+            if (!validLinearRgb(linear_rgb16) || output == nullptr || linear_white_level <= 0.0F || sample_stride == 0) return false;
+
+            const std::uint32_t sample_width = (linear_rgb16.width() + sample_stride - 1U) / sample_stride;
+            const std::uint32_t sample_height = (linear_rgb16.height() + sample_stride - 1U) / sample_stride;
+            constexpr dim3 block(16, 16);
+            const dim3 grid((sample_width + block.x - 1U) / block.x,
+                            (sample_height + block.y - 1U) / block.y);
+
+            statisticsKernel<<<grid, block, 0, stream>>>(
+                linear_rgb16.dataAs<std::uint16_t>(), linear_rgb16.pitch(),
+                static_cast<int>(linear_rgb16.width()), static_cast<int>(linear_rgb16.height()),
+                linear_white_level, sample_stride, output);
+
+            return cudaPeekAtLastError() == cudaSuccess;
+        }
 }

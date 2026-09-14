@@ -2,6 +2,7 @@ add_library(parallax_isp
     isp.cpp
     isp_config.cpp
     isp_producer.cpp
+    auto_control.cpp
     demosaic.cu
     isp_kernels.cu
 )

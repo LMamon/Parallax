@@ -3,7 +3,6 @@ add_library(parallax_isp
     isp_config.cpp
     isp_producer.cpp
     auto_control.cpp
-    demosaic.cu
     isp_kernels.cu
 )
 
@@ -17,6 +16,7 @@ target_link_libraries(parallax_isp
         parallax_camera
         parallax_cuda
         CUDA::cudart
+        CUDA::nppicc
         yaml-cpp
 )
 

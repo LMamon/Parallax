@@ -1,6 +1,7 @@
 #include <parallax/visualization/publisher.hpp>
 #include <parallax/pose/charuco_pose.hpp>
 #include <opencv4/opencv2/imgproc.hpp>
+#include <opencv4/opencv2/imgcodecs.hpp>
 #include <parallax/perception/detection.hpp>
 #include <parallax/tracking/track.hpp>
 
@@ -34,6 +35,16 @@ namespace parallax::visualization {
             timestamp.sec = static_cast<std::int32_t>(ns / 1'000'000'000LL);
             timestamp.nsec = static_cast<std::uint32_t>(ns % 1'000'000'000LL);
 
+            return timestamp;
+        }
+
+        foxglove::messages::Timestamp sourceTimestamp(const parallax::core::ProductMetadata& metadata) {
+            if (!metadata.wall_timestamp_valid) return nowTimestamp();
+            const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(metadata.wall_timestamp.time_since_epoch()).count();
+            if (ns < 0) return nowTimestamp();
+            foxglove::messages::Timestamp timestamp;
+            timestamp.sec = static_cast<std::int32_t>(ns / 1'000'000'000LL);
+            timestamp.nsec = static_cast<std::uint32_t>(ns % 1'000'000'000LL);
             return timestamp;
         }
         
@@ -129,10 +140,12 @@ namespace parallax::visualization {
                                std::uint32_t width, 
                                std::uint32_t height,
                                std::uint32_t fps,
-                               std::string coordinate_frame) {
+                               std::string coordinate_frame,
+                               std::uint32_t preview_fps,
+                               int jpeg_quality) {
 
         if (initialized_) return true;
-        if (width == 0 || height == 0 || fps == 0 || coordinate_frame.empty()) {
+        if (width == 0 || height == 0 || fps == 0 || preview_fps == 0 || jpeg_quality < 1 || jpeg_quality > 100 || coordinate_frame.empty()) {
             std::cerr << "Invalid visualization dimensions/FPS\n";
             return false;
         }
@@ -146,6 +159,8 @@ namespace parallax::visualization {
         width_ = width;
         height_ = height;
         fps_ = fps;
+        preview_fps_ = preview_fps;
+        jpeg_quality_ = jpeg_quality;
         coordinate_frame_ = std::move(coordinate_frame);
 
         if (cudaStreamCreate(&stream_) != cudaSuccess) {
@@ -186,12 +201,8 @@ namespace parallax::visualization {
         }
 
         disparity_float_.resize(pixels);
-
-        if (!video_encoder_.initialize(width_, height_, fps_)) {
-            std::cerr << "Failed to initialize video encoder\n";
-            shutdown();
-            return false;
-        }
+        bgr_storage_.resize(rgb_bytes);
+        jpeg_bytes_.reserve(rgb_bytes / 4U);
 
         initialized_ = true;
         return true;
@@ -267,24 +278,21 @@ namespace parallax::visualization {
                                                 parallax::core::ProductId::RectifiedRgb);
 
             if (rgb && rgb->valid()) {
-                const parallax::pose::CharucoPoseResult* overlay = nullptr;
-                const auto marker = store.latest<parallax::pose::CharucoPoseResult>(
-                                                parallax::core::ProductId::MarkerDepth);
-
-                if (marker && marker->valid() && parallax::core::same_source_observation(
-                                                                *marker,
-                                                                rgb->metadata.observation)) {
-
-                    overlay = marker->payload.get();
+                const auto now = std::chrono::steady_clock::now();
+                const auto interval = std::chrono::duration<double>(1.0 / static_cast<double>(preview_fps_));
+                const bool new_observation = !has_published_left_image_ || rgb->metadata.observation != last_left_image_observation_;
+                const bool due = !has_published_left_image_ || now - last_left_image_publish_ >= interval;
+                if (new_observation && due) {
+                    const parallax::pose::CharucoPoseResult* overlay = nullptr;
+                    const auto marker = store.latest<parallax::pose::CharucoPoseResult>(parallax::core::ProductId::MarkerDepth);
+                    if (marker && marker->valid() && parallax::core::same_source_observation(*marker, rgb->metadata.observation)) overlay = marker->payload.get();
+                    if (!rgb->completion.valid()) return false;
+                    if (rgb->completion.requires_wait() && !wait_for_host(rgb->completion)) return false;
+                    if (!publishLeftImage(*rgb, overlay)) return false;
+                    last_left_image_observation_ = rgb->metadata.observation;
+                    last_left_image_publish_ = now;
+                    has_published_left_image_ = true;
                 }
-
-                if (!rgb->completion.valid()) return false;
-
-                if (rgb->completion.requires_wait() && !wait_for_host(rgb->completion)) {
-                    return false;
-                }
-
-                if (!publishLeftImage(*rgb->payload, overlay)) return false;
             }
         }
 
@@ -297,22 +305,22 @@ namespace parallax::visualization {
         if (disparity_requested) {
             const auto stereo = store.latest<parallax::isp::StereoMatchFrame>(parallax::core::ProductId::Disparity);
 
-            if (stereo && stereo->valid()) {
+            if (stereo && stereo->valid() && (!has_published_disparity_ || stereo->metadata.observation != last_disparity_observation_)) {
                 if (!stereo->completion.valid()) return false;
                 if (stereo->completion.requires_wait() && !wait_for_host(stereo->completion)) {
                     return false;
                 }
 
-                if (disparity_requested && !publishDisparity(*stereo->payload)) {
-                    return false;
-                }
+                if (disparity_requested && !publishDisparity(*stereo->payload)) return false;
+                last_disparity_observation_ = stereo->metadata.observation;
+                has_published_disparity_ = true;
             }
         }
 
         if (foxglove_->depthChannel().hasSinks()) {
             const auto depth = store.latest<parallax::isp::DepthFrame>(parallax::core::ProductId::Depth);
 
-            if (depth && depth->valid()) {
+            if (depth && depth->valid() && (!has_published_depth_ || depth->metadata.observation != last_depth_observation_)) {
                 if (!depth->completion.valid()) return false;
 
                 if (depth->completion.requires_wait() && !wait_for_host(depth->completion)) {
@@ -320,14 +328,18 @@ namespace parallax::visualization {
                 }
 
                 if (!publishDepth(*depth->payload)) return false;
+                last_depth_observation_ = depth->metadata.observation;
+                has_published_depth_ = true;
             }
         }
 
         if (foxglove_->lidarScanChannel().hasSinks()) {
             const auto lidar = store.latest<parallax::lidar::LidarScan>(parallax::core::ProductId::LidarScan);
 
-            if (lidar && lidar->valid() && !publishLidarScan(*lidar->payload)) {
-                return false;
+            if (lidar && lidar->valid() && (!has_published_lidar_ || lidar->metadata.observation != last_lidar_observation_)) {
+                if (!publishLidarScan(*lidar->payload)) return false;
+                last_lidar_observation_ = lidar->metadata.observation;
+                has_published_lidar_ = true;
             }
         }
 
@@ -552,60 +564,36 @@ namespace parallax::visualization {
         return true;
     }
 
-    bool Publisher::publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame, const parallax::pose::CharucoPoseResult* pose) {
-        if (!initialized_ || foxglove_ == nullptr || !frame.left.isAllocated()) {
-            return false;
-        }
-
-        if (frame.width != width_ || frame.height != height_) {
-            std::cerr << "Visualization RGB dimensions changed\n";
-            return false;
-        }
-
-        const std::size_t host_pitch = static_cast<std::size_t>(width_) *
-                                       parallax::isp::RectifiedStereoFrame::Channels *
-                                       sizeof(std::uint8_t);
-
-        if (!frame.left.downloadAsync(host_rgb_, host_pitch, stream_)) {
-            std::cerr << "Failed to download depth frame\n";
-            return false;
-        }
-
-        if (cudaStreamSynchronize(stream_) != cudaSuccess) {
-            std::cerr << "Failed to synchronize depth download\n";
-            return false;
-        }
+    bool Publisher::publishLeftImage(const parallax::core::Product<parallax::isp::RectifiedStereoFrame>& product,
+                                    const parallax::pose::CharucoPoseResult* pose) {
+        if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload->left.isAllocated()) return false;
+        const auto& frame = *product.payload;
+        if (frame.width != width_ || frame.height != height_) return false;
+        const std::size_t host_pitch = static_cast<std::size_t>(width_) * 3U * sizeof(std::uint8_t);
+        if (!frame.left.downloadAsync(host_rgb_, host_pitch, stream_)) return false;
+        if (cudaStreamSynchronize(stream_) != cudaSuccess) return false;
 
         cv::Mat image(static_cast<int>(height_), static_cast<int>(width_), CV_8UC3, host_rgb_, host_pitch);
-
         if (pose != nullptr && pose->pose_valid) {
             std::vector<cv::Point> polygon;
             polygon.reserve(4);
-
-            for (const auto& p : pose->projected_plane) {
-                polygon.emplace_back(static_cast<int>(std::lround(p.x)), static_cast<int>(std::lround(p.y)));
-            }
+            for (const auto& point : pose->projected_plane) polygon.emplace_back(static_cast<int>(std::lround(point.x)), static_cast<int>(std::lround(point.y)));
             cv::polylines(image, polygon, true, cv::Scalar(0, 255, 0), 5, cv::LINE_AA);
-
-            cv::circle(image, 
-                      cv::Point(static_cast<int>(std::lround(pose->projected_center.x)),
-                                static_cast<int>(std::lround(pose->projected_center.y))),
-                      8,
-                      cv::Scalar(255, 0, 0),
-                      -1);
+            cv::circle(image, cv::Point(static_cast<int>(std::lround(pose->projected_center.x)), static_cast<int>(std::lround(pose->projected_center.y))), 8, cv::Scalar(255, 0, 0), -1);
         }
-    
 
-        const std::size_t rgb_bytes = host_pitch * height_;
-        if (!video_encoder_.encode(host_rgb_, rgb_bytes, encoded_video_)) return false;
+        cv::Mat bgr(static_cast<int>(height_), static_cast<int>(width_), CV_8UC3, bgr_storage_.data(), host_pitch);
+        cv::cvtColor(image, bgr, cv::COLOR_RGB2BGR);
+        const std::vector<int> parameters{cv::IMWRITE_JPEG_QUALITY, jpeg_quality_};
+        jpeg_bytes_.clear();
+        if (!cv::imencode(".jpg", bgr, jpeg_bytes_, parameters)) return false;
 
-        foxglove::messages::CompressedVideo message;
-
-        message.timestamp = nowTimestamp();
+        foxglove::messages::CompressedImage message;
+        message.timestamp = sourceTimestamp(product.metadata);
         message.frame_id = coordinate_frame_;
-        message.format = "h264";
-        message.data = encoded_video_;
-
+        message.format = "jpeg";
+        message.data.resize(jpeg_bytes_.size());
+        std::memcpy(message.data.data(), jpeg_bytes_.data(), jpeg_bytes_.size());
         return checkFoxglove(foxglove_->leftImageChannel().log(message), "Failed to publish /camera/left/image");
     }
 
@@ -794,15 +782,7 @@ namespace parallax::visualization {
         const auto& detections = *product.payload;
         foxglove::messages::ImageAnnotations message;
 
-        /*
-        * ProductMetadata uses the application's steady-clock observation domain,
-        * not Unix epoch time, so it cannot be copied into Foxglove Timestamp.
-        *
-        * Use publication time here rather than manufacturing a false conversion.
-        * SourceObservation remains available in the machine-readable DetectionSet
-        * channel for exact graph provenance.
-        */
-        message.timestamp = nowTimestamp();
+        message.timestamp = sourceTimestamp(product.metadata);
 
         /*
         * Top-level metadata keeps the visualization's coordinate/provenance
@@ -1568,7 +1548,6 @@ namespace parallax::visualization {
     }
 
     void Publisher::shutdown() {
-        video_encoder_.shutdown();
 
         if (host_rgb_ != nullptr) {
             cudaFreeHost(host_rgb_);
@@ -1596,7 +1575,6 @@ namespace parallax::visualization {
         }
         
         disparity_float_.clear();
-        encoded_video_.clear();
 
         last_segmentation_observation_ = {};
         last_segmentation_query_revision_ = 0;

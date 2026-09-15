@@ -89,7 +89,7 @@ namespace parallax::visualization {
              */
             [[nodiscard]] std::optional<parallax::core::ProductId> productForChannel(std::uint64_t channel_id) const noexcept;
 
-            [[nodiscard]] foxglove::messages::CompressedVideoChannel& leftImageChannel() noexcept { return *left_image_channel_; }
+            [[nodiscard]] foxglove::messages::CompressedImageChannel& leftImageChannel() noexcept { return *left_image_channel_; }
             [[nodiscard]] foxglove::messages::CameraCalibrationChannel& leftCalibrationChannel() noexcept { return *left_calibration_channel_; }
             
             [[nodiscard]] foxglove::messages::RawImageChannel& disparityChannel() noexcept { return *disparity_channel_; }
@@ -144,7 +144,7 @@ namespace parallax::visualization {
             foxglove::Context context_{};
 
             std::unique_ptr<foxglove::WebSocketServer> server_;
-            std::optional<foxglove::messages::CompressedVideoChannel> left_image_channel_;
+            std::optional<foxglove::messages::CompressedImageChannel> left_image_channel_;
             std::optional<foxglove::messages::CameraCalibrationChannel> left_calibration_channel_;
             std::optional<foxglove::messages::PoseInFrameChannel> marker_pose_channel_;
             std::optional<foxglove::messages::SceneUpdateChannel> object3d_scene_channel_;

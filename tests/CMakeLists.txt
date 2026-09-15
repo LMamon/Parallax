@@ -90,6 +90,14 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_lidar_first_object3d_test
+    lidar_first_object3d_test.cpp
+    parallax_core
+    parallax_perception
+    parallax_cuda
+)
+
+parallax_add_gtest(
     parallax_object3d_visualization_test
     object3d_visualization_test.cpp
     parallax_visualization

@@ -5,6 +5,7 @@
 #include <parallax/core/history_configuration.hpp>
 #include <parallax/core/runtime_metrics.hpp>
 #include <parallax/application/foxglove_command.hpp>
+#include <parallax/camera/arducam_controls.hpp>
 
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -19,6 +20,7 @@ namespace parallax::core {
     Runtime::~Runtime() { shutdown(); }
 
     bool Runtime::initialize(const std::filesystem::path& camera_config_path,
+                             const std::filesystem::path& isp_config_path,
                              const std::filesystem::path& sensor_extrinsics_path,
                              const std::filesystem::path& calibration_directory,
                              const std::filesystem::path& nanoowl_engine_path) {
@@ -33,6 +35,11 @@ namespace parallax::core {
 
         if (!config_.loadFromFile(camera_config_path)) {
             std::cerr << "Runtime: failed to load camera config\n";
+            return false;
+        }
+
+        if (!isp_config_.loadFromFile(isp_config_path)) {
+            std::cerr << "Runtime: failed to load ISP config\n";
             return false;
         }
 
@@ -57,10 +64,28 @@ namespace parallax::core {
          * ISP allocations, VPI stream, rectifier, matcher, depth storage, and pose
          * estimator. Runtime now takes over orchestration through graph producers.
          */
-        if (!pipeline_.initialize(config_, calibration_directory)) {
+        if (!pipeline_.initialize(config_, isp_config_, calibration_directory)) {
             std::cerr << "Runtime: failed to initialize processing pipeline\n";
             shutdown();
             return false;
+        }
+
+        if (isp_config_.auto_exposure.enable || isp_config_.auto_white_balance.enable) {
+            parallax::camera::ControlRange exposure_range{};
+            parallax::camera::ControlRange gain_range{};
+            if (isp_config_.auto_exposure.enable) {
+                if (!camera_->getControlRange(parallax::camera::controls::Exposure, exposure_range) ||
+                    !camera_->getControlRange(parallax::camera::controls::AnalogGain, gain_range)) {
+                    std::cerr << "Runtime: failed to query exposure/gain control ranges\n";
+                    shutdown();
+                    return false;
+                }
+            } else {
+                exposure_range = {config_.exposure, config_.exposure, 1, config_.exposure, true};
+                gain_range = {config_.analogue_gain, config_.analogue_gain, 1, config_.analogue_gain, true};
+            }
+            auto_controller_ = std::make_unique<parallax::isp::AutoController>(
+                isp_config_, exposure_range, gain_range, config_.exposure, config_.analogue_gain);
         }
 
         cuvslam_localizer_ = std::make_unique<parallax::localization::CuVslamLocalizer>();
@@ -80,6 +105,17 @@ namespace parallax::core {
         stereo_roi_associator_ = std::make_unique<parallax::perception::StereoRoiAssociator>(pipeline_.calibration(), sensor_extrinsics_.left_camera.child_frame);
         if (!stereo_roi_associator_->initialize()) {
             std::cerr << "Runtime: failed to initialize stereo ROI associator\n";
+            shutdown();
+            return false;
+        }
+
+        lidar_detection_associator_ =
+            std::make_unique<parallax::perception::LidarDetectionAssociator>();
+
+        if (!lidar_detection_associator_->initialize(pipeline_.calibration(),
+                                                      sensor_extrinsics_,
+                                                      sensor_extrinsics_.left_camera.child_frame)) {
+            std::cerr << "Runtime: failed to initialize LiDAR detection associator\n";
             shutdown();
             return false;
         }
@@ -115,7 +151,9 @@ namespace parallax::core {
 
         marker_depth_producer_ = std::make_unique<parallax::pose::MarkerDepthPoducer>(context_.products());
         detection_producer_ = std::make_unique<parallax::perception::DetectionProducer>(*nanoowl_, context_.products());
-        object3d_producer_ = std::make_unique<parallax::perception::Object3DProducer>(*stereo_roi_associator_, context_.products());
+        object3d_producer_ = std::make_unique<parallax::perception::Object3DProducer>(*stereo_roi_associator_,
+                                                                                     *lidar_detection_associator_,
+                                                                                     context_.products());
 
         segmentation_producer_ = std::make_unique<parallax::perception::SegmentationProducer>(
                                                 *efficientvit_sam_,
@@ -299,6 +337,9 @@ namespace parallax::core {
             }
         }
 
+        visualization_failed_.store(false);
+        visualization_thread_ = std::thread(&Runtime::runVisualization, this);
+        if (auto_controller_) auto_control_thread_ = std::thread(&Runtime::runAutoControl, this);
         if (lidar_producer_) lidar_thread_ = std::thread(&Runtime::runLidarSource, this);
 
         while (running_.load() && !stop_requested) {
@@ -424,31 +465,6 @@ namespace parallax::core {
 
             failed_frames = 0;
 
-            if (foxglove_.takeCalibrationRequest()) {
-                if (!publisher_.publishLeftCalibration(pipeline_.calibration())) {
-                    std::cerr << "Runtime: calibration publication failed\n";
-                    break;
-                }
-            }
-
-            if (foxglove_.takeTransformRequest()) {
-                if (!publisher_.publishStaticTransforms(sensor_extrinsics_)) {
-                    std::cerr << "Runtime: transform publication failed\n";
-                    break;
-                }
-            }
-
-            const bool published = publisher_.publishAvailable(context_.products(),
-                                                               [this](const CompletionHandle& completion) {
-
-                        return context_.waitForHost(completion);
-                    });
-
-            if (!published) {
-                std::cerr << "Runtime: visualization publication failed\n";
-                break;
-            }
-
             const auto telemetry_now = std::chrono::steady_clock::now();
 
             if (foxglove_.runtimeTelemetryChannel().hasSinks() &&
@@ -533,7 +549,68 @@ namespace parallax::core {
             // dispatch(products);
         }
         running_.store(false);
+        if (auto_control_thread_.joinable()) auto_control_thread_.join();
+        if (visualization_thread_.joinable()) visualization_thread_.join();
+        
+        if (visualization_failed_.load()) {
+            std::cerr << "Runtime: visualization worker stopped after a publication error\n";
+        }
         if (lidar_thread_.joinable()) lidar_thread_.join();
+    }
+
+    void Runtime::runVisualization() {
+        using namespace std::chrono_literals;
+
+        while (running_.load()) {
+            if (foxglove_.takeCalibrationRequest() &&
+                !publisher_.publishLeftCalibration(pipeline_.calibration())) {
+                visualization_failed_.store(true);
+                running_.store(false);
+                return;
+            }
+
+            if (foxglove_.takeTransformRequest() &&
+                !publisher_.publishStaticTransforms(sensor_extrinsics_)) {
+                visualization_failed_.store(true);
+                running_.store(false);
+                return;
+            }
+
+            if (!publisher_.publishAvailable(
+                    context_.products(),
+                    [this](const CompletionHandle& completion) {
+                        return context_.waitForHost(completion);
+                    })) {
+                visualization_failed_.store(true);
+                running_.store(false);
+                return;
+            }
+
+            std::this_thread::sleep_for(5ms);
+        }
+    }
+
+    void Runtime::runAutoControl() {
+        using namespace std::chrono_literals;
+        
+        while (running_.load() && auto_controller_) {
+            parallax::isp::IspStatistics statistics{};
+        
+            if (pipeline_.isp().tryGetStatistics(statistics)) {
+                const auto update = auto_controller_->update(statistics);
+        
+                if (update.gain_changed && !camera_->setControl(parallax::camera::controls::AnalogGain, update.analogue_gain)) {
+                    std::cerr << "Runtime: automatic gain update failed; disabling auto control\n"; return;
+                }
+        
+                if (update.exposure_changed && !camera_->setControl(parallax::camera::controls::Exposure, update.exposure)) {
+                    std::cerr << "Runtime: automatic exposure update failed; disabling auto control\n"; return;
+                }
+        
+                if (update.white_balance_changed) pipeline_.isp().setWhiteBalance(update.white_balance);
+            }
+            std::this_thread::sleep_for(5ms);
+        }
     }
 
     void Runtime::runLidarSource() {
@@ -583,7 +660,9 @@ namespace parallax::core {
     void Runtime::shutdown() {
         stop();
 
+        if (auto_control_thread_.joinable()) auto_control_thread_.join();
         if (lidar_thread_.joinable()) lidar_thread_.join();
+        if (visualization_thread_.joinable()) visualization_thread_.join();
 
         // Stop physical hardware as soon as its worker can no longer access it.
         if (lidar_) lidar_->shutdown();
@@ -606,6 +685,7 @@ namespace parallax::core {
         stereo_producer_.reset();
         rectification_producer_.reset();
         isp_producer_.reset();
+        auto_controller_.reset();
         lidar_producer_.reset();
         camera_producer_.reset();
         segmentation_producer_.reset();

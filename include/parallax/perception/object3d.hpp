@@ -50,6 +50,10 @@ namespace parallax::perception {
 
         std::array<float, 3> position_m{};
         float depth_m = 0.0F;
+
+        // Direct sensor-line range when available. For LidarAssociation this is
+        // the selected RPLIDAR return; depth_m remains camera optical-axis depth.
+        float range_m = 0.0F;
         std::string coordinate_frame;
 
         Object3DGeometry geometry = Object3DGeometry::Unknown;
@@ -79,6 +83,8 @@ namespace parallax::perception {
                    method != Object3DMethod::Unknown &&
                    std::isfinite(depth_m) &&
                    depth_m > 0.0F &&
+                   (method != Object3DMethod::LidarAssociation ||
+                    (std::isfinite(range_m) && range_m > 0.0F)) &&
                    std::isfinite(position_m[0]) &&
                    std::isfinite(position_m[1]) &&
                    std::isfinite(position_m[2]);

@@ -2,6 +2,7 @@
 #include <parallax/camera/camera_config.hpp>
 #include <parallax/camera/logger.hpp>
 
+#include <algorithm>
 #include <cerrno>
 #include <iostream>
 #include <fcntl.h>
@@ -169,6 +170,25 @@ namespace parallax::camera {
             return false;
 
         value = control.value;
+        return true;
+    }
+
+    bool V4L2Device::getControlRange(std::uint32_t id, ControlRange& range) const {
+        if (!isOpen()) return false;
+
+        v4l2_queryctrl query{};
+        query.id = id;
+        if (::ioctl(fd_, VIDIOC_QUERYCTRL, &query) < 0) {
+            logError("VIDIOC_QUERYCTRL");
+            return false;
+        }
+        if ((query.flags & V4L2_CTRL_FLAG_DISABLED) != 0U) return false;
+
+        range.minimum = query.minimum;
+        range.maximum = query.maximum;
+        range.step = std::max<std::int32_t>(query.step, 1);
+        range.default_value = query.default_value;
+        range.available = true;
         return true;
     }
 

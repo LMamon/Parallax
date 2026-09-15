@@ -1,7 +1,6 @@
 #pragma once
 
 #include <parallax/isp/frame_types.hpp>
-#include <parallax/visualization/video_encoder.hpp>
 #include <parallax/stereo/calibration.hpp>
 #include <parallax/pose/charuco_pose.hpp>
 #include <parallax/visualization/foxglove_server.hpp>
@@ -27,6 +26,7 @@
 #include <string>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <optional>
 #include <vector>
 
@@ -45,7 +45,9 @@ namespace parallax::visualization {
                             std::uint32_t width, 
                             std::uint32_t height, 
                             std::uint32_t fps, 
-                            std::string coordinate_frame);
+                            std::string coordinate_frame,
+                            std::uint32_t preview_fps = 20,
+                            int jpeg_quality = 85);
 
             /**
             * Observe the newest graph products currently available in ProductStore.
@@ -65,7 +67,7 @@ namespace parallax::visualization {
             [[nodiscard]] bool initialized() const noexcept { return initialized_; }
 
         private:
-            bool publishLeftImage(const parallax::isp::RectifiedStereoFrame& frame, const parallax::pose::CharucoPoseResult* pose);
+            bool publishLeftImage(const parallax::core::Product<parallax::isp::RectifiedStereoFrame>& product, const parallax::pose::CharucoPoseResult* pose);
             bool publishDepth(const parallax::isp::DepthFrame& frame);
             bool publishDisparity(const parallax::isp::StereoMatchFrame& frame);
             bool publishLidarScan(const parallax::lidar::LidarScan& scan);
@@ -87,7 +89,6 @@ namespace parallax::visualization {
 
             bool publishLocalizationLandmarks(const parallax::localization::VisualLandmarkSet& landmarks);
 
-            VideoEncoder video_encoder_;
             cudaStream_t stream_ = nullptr;
             
             // Reusable pinned host staging.
@@ -99,11 +100,22 @@ namespace parallax::visualization {
             // Converted disparity for Foxglove 32FC1.
             std::vector<float> disparity_float_;
 
-            // Reused H.264 output.
-            std::vector<std::byte> encoded_video_;
+            std::vector<std::uint8_t> bgr_storage_;
+            std::vector<std::uint8_t> jpeg_bytes_;
             std::uint32_t width_ = 0;
             std::uint32_t height_ = 0;
             std::uint32_t fps_ = 0;
+            std::uint32_t preview_fps_ = 20;
+            int jpeg_quality_ = 85;
+            parallax::core::SourceObservation last_left_image_observation_{};
+            std::chrono::steady_clock::time_point last_left_image_publish_{};
+            bool has_published_left_image_ = false;
+            parallax::core::SourceObservation last_disparity_observation_{};
+            parallax::core::SourceObservation last_depth_observation_{};
+            parallax::core::SourceObservation last_lidar_observation_{};
+            bool has_published_disparity_ = false;
+            bool has_published_depth_ = false;
+            bool has_published_lidar_ = false;
 
             parallax::core::SourceObservation last_localized_object_scene_observation_{};
             parallax::core::SourceObservation last_localized_object_scene_pose_observation_{};

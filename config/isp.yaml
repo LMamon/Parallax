@@ -1,17 +1,28 @@
 enable: true
 black_level: 64
 gamma: 2.2
-
 white_balance:
   red: 2.0
   green: 1.0
   blue: 1.8
-
 color_correction:
   matrix:
-    [
-      1.0,0.0,0.0,
-      0.0,1.0,0.0,
-      0.0,0.0,1.0
-    ]
-publish_debug: false
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+statistics:
+  sample_stride: 8
+  update_hz: 8.0
+auto_exposure:
+  enable: true
+  min_exposure_us: 100
+  max_exposure_us: 8000
+  target_luma: 0.45
+  deadband: 0.04
+  max_step_ratio: 1.25
+  highlight_fraction: 0.02
+auto_white_balance:
+  enable: true
+  smoothing: 0.08
+  min_gain: 0.5
+  max_gain: 3.0

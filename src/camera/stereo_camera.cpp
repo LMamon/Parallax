@@ -126,6 +126,14 @@ namespace parallax::camera {
         return device_->setControl(control_id, value);
     }
 
+    bool StereoCamera::getControlRange(std::uint32_t control_id, ControlRange& range) const {
+        if (!device_ || !device_->isOpen()) {
+            logMessage("StereoCamera::getControlRange: camera device is not open");
+            return false;
+        }
+        return device_->getControlRange(control_id, range);
+    }
+
     const CameraConfig& StereoCamera::config() const noexcept {
         return config_;
     }

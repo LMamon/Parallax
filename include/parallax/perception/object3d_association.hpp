@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <utility>
 
 namespace parallax::perception {
 
@@ -100,6 +101,76 @@ namespace parallax::perception {
         }
 
         result.product = nearest;
+        result.method = Object3DMatchMethod::NearestTimestamp;
+        result.source_delta = nearest_delta;
+        return result;
+    }
+
+    /**
+     * Select the temporally nearest observation from another sensor domain.
+     *
+     * Camera detections and LiDAR scans have independent source IDs and
+     * sequence counters, so cross-sensor association is timestamp-bounded
+     * rather than SourceObservation-equality based.
+     */
+    template <typename T>
+    [[nodiscard]] Object3DMatch<T> find_nearest_source_observation(
+        const core::ProductStore& products,
+        core::ProductId metric_product,
+        core::SourceId required_source,
+        const core::ProductMetadata& semantic_metadata,
+        const Object3DAssociationPolicy& policy) {
+
+        Object3DMatch<T> result{};
+
+        if (!semantic_metadata.valid || !semantic_metadata.observation.valid()) {
+            result.rejection = Object3DRejectReason::InvalidMetricObservation;
+            return result;
+        }
+
+        std::shared_ptr<const core::Product<T>> nearest{};
+        auto nearest_delta = std::chrono::steady_clock::duration::max();
+        bool saw_product = false;
+        bool saw_required_source = false;
+
+        const auto consider = [&](const std::shared_ptr<const core::Product<T>>& candidate) {
+            if (!candidate || !candidate->valid()) return;
+
+            saw_product = true;
+            if (candidate->metadata.observation.source != required_source) return;
+            saw_required_source = true;
+
+            const auto delta =
+                candidate->metadata.timestamp >= semantic_metadata.timestamp
+                    ? candidate->metadata.timestamp - semantic_metadata.timestamp
+                    : semantic_metadata.timestamp - candidate->metadata.timestamp;
+
+            if (delta < nearest_delta) {
+                nearest = candidate;
+                nearest_delta = delta;
+            }
+        };
+
+        consider(products.latest<T>(metric_product));
+        for (const auto& candidate : products.history<T>(metric_product)) {
+            consider(candidate);
+        }
+
+        if (!nearest) {
+            result.rejection =
+                saw_product && !saw_required_source
+                    ? Object3DRejectReason::WrongSource
+                    : Object3DRejectReason::InvalidMetricObservation;
+            return result;
+        }
+
+        if (nearest_delta > policy.max_source_delta) {
+            result.rejection = Object3DRejectReason::OutsideTimeBound;
+            result.source_delta = nearest_delta;
+            return result;
+        }
+
+        result.product = std::move(nearest);
         result.method = Object3DMatchMethod::NearestTimestamp;
         result.source_delta = nearest_delta;
         return result;

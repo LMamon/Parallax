@@ -1,7 +1,9 @@
 add_library(parallax_isp
     isp.cpp
+    isp_config.cpp
     isp_producer.cpp
-    demosaic.cu
+    auto_control.cpp
+    isp_kernels.cu
 )
 
 target_include_directories(parallax_isp
@@ -14,6 +16,8 @@ target_link_libraries(parallax_isp
         parallax_camera
         parallax_cuda
         CUDA::cudart
+        CUDA::nppicc
+        yaml-cpp
 )
 
 target_compile_features(parallax_isp

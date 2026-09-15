@@ -3,6 +3,7 @@
 #include <parallax/core/execution_context.hpp>
 #include <parallax/core/product.hpp>
 #include <parallax/isp/frame_types.hpp>
+#include <parallax/lidar/frame_types.hpp>
 #include <parallax/perception/detection.hpp>
 #include <parallax/perception/object3d.hpp>
 #include <parallax/perception/segmentation.hpp>
@@ -14,7 +15,14 @@
 
 namespace parallax::perception {
     Object3DProducer::Object3DProducer(StereoRoiAssociator& associator, core::ProductStore& products) noexcept
-                                                                    : associator_(associator), products_(products) {}
+        : associator_(associator), products_(products) {}
+
+    Object3DProducer::Object3DProducer(StereoRoiAssociator& stereo_associator,
+                                       LidarDetectionAssociator& lidar_associator,
+                                       core::ProductStore& products) noexcept
+        : associator_(stereo_associator),
+          lidar_associator_(&lidar_associator),
+          products_(products) {}
 
     std::string_view Object3DProducer::name() const noexcept {
         return "perception.object3d";
@@ -56,20 +64,78 @@ namespace parallax::perception {
         const auto depth_match = find_metric_observation<isp::DepthFrame>(products_,
                                                                           core::ProductId::Depth,
                                                                           detections->metadata,
-                                                                          policy_);
+                                                                          depth_policy_);
 
-        if (!depth_match.matched() || !depth_match.product) {
+        Object3DMatch<lidar::LidarScan> lidar_match{};
+        if (lidar_associator_ != nullptr) {
+            lidar_match = find_nearest_source_observation<lidar::LidarScan>(
+                products_,
+                core::ProductId::LidarScan,
+                core::SourceId::Rplidar,
+                detections->metadata,
+                lidar_policy_);
+        }
+
+        if ((!depth_match.matched() || !depth_match.product) &&
+            (!lidar_match.matched() || !lidar_match.product)) {
             return core::SubmitResult::NoWork;
         }
 
         auto objects = std::make_shared<Object3DSet>();
-        if (!associator_.associate(*detections->payload,
-                                   detections->metadata,
-                                   *depth_match.product,
-                                   context,
-                                   *objects)) {
+        objects->query = detections->payload->query;
+        objects->query_revision = detections->payload->query_revision;
 
-            return core::SubmitResult::Failed;
+        /*
+         * Stereo remains the complete-image fallback. Build those observations
+         * first when compatible depth exists.
+         */
+        if (depth_match.matched() && depth_match.product) {
+            if (!associator_.associate(*detections->payload,
+                                       detections->metadata,
+                                       *depth_match.product,
+                                       context,
+                                       *objects)) {
+                return core::SubmitResult::Failed;
+            }
+        }
+
+        /*
+         * A geometrically associated LiDAR hit is authoritative for that
+         * detection. Replace the stereo Object3D for the same semantic slot;
+         * if stereo had no usable depth there, insert the LiDAR observation.
+         */
+        if (lidar_associator_ != nullptr &&
+            lidar_match.matched() &&
+            lidar_match.product) {
+
+            Object3DSet lidar_objects{};
+            if (!lidar_associator_->associate(*detections->payload,
+                                              detections->metadata,
+                                              *lidar_match.product,
+                                              lidar_objects)) {
+                return core::SubmitResult::Failed;
+            }
+
+            for (auto& lidar_object : lidar_objects.objects) {
+                const auto existing = std::find_if(
+                    objects->objects.begin(),
+                    objects->objects.end(),
+                    [&lidar_object](const Object3D& object) {
+                        return object.semantic_index == lidar_object.semantic_index;
+                    });
+
+                if (existing != objects->objects.end()) {
+                    *existing = std::move(lidar_object);
+                } else {
+                    objects->objects.push_back(std::move(lidar_object));
+                }
+            }
+
+            std::sort(objects->objects.begin(),
+                      objects->objects.end(),
+                      [](const Object3D& lhs, const Object3D& rhs) {
+                          return lhs.semantic_index < rhs.semantic_index;
+                      });
         }
 
         /*
@@ -78,7 +144,9 @@ namespace parallax::perception {
         */
         const auto segmentation = products_.latest<SegmentationMask>( core::ProductId::Segmentation);
 
-        if (segmentation &&
+        if (depth_match.matched() &&
+            depth_match.product &&
+            segmentation &&
             segmentation->valid() &&
             segmentation->payload &&
             segmentation->payload->valid() &&
@@ -108,7 +176,11 @@ namespace parallax::perception {
                             return object.semantic_index == selected;
                         });
 
-                if (object_it != objects->objects.end()) {
+                if (object_it != objects->objects.end() &&
+                    object_it->method != Object3DMethod::LidarAssociation) {
+                    // A direct LiDAR hit owns the representative metric point.
+                    // Optional stereo-mask refinement is only allowed to refine
+                    // stereo-backed observations.
                     auto& lane = context.stereoLane();
 
                     if (!context.waitFor(segmentation->completion, lane)) return core::SubmitResult::Failed;

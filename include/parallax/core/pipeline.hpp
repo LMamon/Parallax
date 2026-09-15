@@ -5,6 +5,7 @@
 
 #include <parallax/core/sensor_frame.hpp>
 #include <parallax/isp/isp.hpp>
+#include <parallax/isp/isp_config.hpp>
 #include <parallax/pose/charuco_pose.hpp>
 
 #include <parallax/stereo/calibration.hpp>
@@ -29,7 +30,7 @@ namespace parallax::core {
             Pipeline(Pipeline&&) = delete;
             Pipeline& operator=(Pipeline&&) = delete;
 
-            bool initialize(const parallax::camera::CameraConfig& config, const std::filesystem::path& calibration);
+            bool initialize(const parallax::camera::CameraConfig& config, const parallax::isp::IspConfig& isp_config, const std::filesystem::path& calibration);
             bool process(const parallax::camera::RawFrame& input, SensorFrame& output);
             
             bool synchronize();

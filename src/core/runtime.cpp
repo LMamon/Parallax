@@ -5,7 +5,7 @@
 #include <parallax/core/history_configuration.hpp>
 #include <parallax/core/runtime_metrics.hpp>
 #include <parallax/application/foxglove_command.hpp>
-
+#include <parallax/camera/arducam_controls.hpp>
 
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -70,7 +70,23 @@ namespace parallax::core {
             return false;
         }
 
-        
+        if (isp_config_.auto_exposure.enable || isp_config_.auto_white_balance.enable) {
+            parallax::camera::ControlRange exposure_range{};
+            parallax::camera::ControlRange gain_range{};
+            if (isp_config_.auto_exposure.enable) {
+                if (!camera_->getControlRange(parallax::camera::controls::Exposure, exposure_range) ||
+                    !camera_->getControlRange(parallax::camera::controls::AnalogGain, gain_range)) {
+                    std::cerr << "Runtime: failed to query exposure/gain control ranges\n";
+                    shutdown();
+                    return false;
+                }
+            } else {
+                exposure_range = {config_.exposure, config_.exposure, 1, config_.exposure, true};
+                gain_range = {config_.analogue_gain, config_.analogue_gain, 1, config_.analogue_gain, true};
+            }
+            auto_controller_ = std::make_unique<parallax::isp::AutoController>(
+                isp_config_, exposure_range, gain_range, config_.exposure, config_.analogue_gain);
+        }
 
         cuvslam_localizer_ = std::make_unique<parallax::localization::CuVslamLocalizer>();
         if (!cuvslam_localizer_->initialize(pipeline_.calibration(), sensor_extrinsics_)) {
@@ -322,6 +338,7 @@ namespace parallax::core {
         }
 
 
+        if (auto_controller_) auto_control_thread_ = std::thread(&Runtime::runAutoControl, this);
         if (lidar_producer_) lidar_thread_ = std::thread(&Runtime::runLidarSource, this);
 
         while (running_.load() && !stop_requested) {
@@ -556,8 +573,32 @@ namespace parallax::core {
             // dispatch(products);
         }
         running_.store(false);
+        if (auto_control_thread_.joinable()) auto_control_thread_.join();
 
         if (lidar_thread_.joinable()) lidar_thread_.join();
+    }
+
+    void Runtime::runAutoControl() {
+        using namespace std::chrono_literals;
+        
+        while (running_.load() && auto_controller_) {
+            parallax::isp::IspStatistics statistics{};
+        
+            if (pipeline_.isp().tryGetStatistics(statistics)) {
+                const auto update = auto_controller_->update(statistics);
+        
+                if (update.gain_changed && !camera_->setControl(parallax::camera::controls::AnalogGain, update.analogue_gain)) {
+                    std::cerr << "Runtime: automatic gain update failed; disabling auto control\n"; return;
+                }
+        
+                if (update.exposure_changed && !camera_->setControl(parallax::camera::controls::Exposure, update.exposure)) {
+                    std::cerr << "Runtime: automatic exposure update failed; disabling auto control\n"; return;
+                }
+        
+                if (update.white_balance_changed) pipeline_.isp().setWhiteBalance(update.white_balance);
+            }
+            std::this_thread::sleep_for(5ms);
+        }
     }
 
     void Runtime::runLidarSource() {
@@ -607,7 +648,7 @@ namespace parallax::core {
     void Runtime::shutdown() {
         stop();
 
-
+        if (auto_control_thread_.joinable()) auto_control_thread_.join();
         if (lidar_thread_.joinable()) lidar_thread_.join();
 
         // Stop physical hardware as soon as its worker can no longer access it.
@@ -631,6 +672,7 @@ namespace parallax::core {
         stereo_producer_.reset();
         rectification_producer_.reset();
         isp_producer_.reset();
+        auto_controller_.reset();
         lidar_producer_.reset();
         camera_producer_.reset();
         segmentation_producer_.reset();

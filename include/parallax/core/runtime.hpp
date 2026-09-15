@@ -20,6 +20,7 @@
 #include <parallax/visualization/publisher.hpp>
 
 #include <parallax/isp/isp_producer.hpp>
+#include <parallax/isp/auto_control.hpp>
 #include <parallax/isp/isp_config.hpp>
 #include <parallax/core/execution_stats.hpp>
 
@@ -88,6 +89,7 @@ namespace parallax::core {
             std::chrono::steady_clock::time_point last_telemetry_publish_{};
             
             void runLidarSource();
+            void runAutoControl();
             parallax::camera::CameraConfig config_{};
             parallax::isp::IspConfig isp_config_{};
             SensorExtrinsics sensor_extrinsics_{};
@@ -95,6 +97,8 @@ namespace parallax::core {
             std::unique_ptr<parallax::camera::StereoCamera> camera_;
             std::atomic_bool running_{false};
             std::thread lidar_thread_;
+
+            std::thread auto_control_thread_;
             
             std::unique_ptr<parallax::perception::EfficientVitSam> efficientvit_sam_;
             std::unique_ptr<parallax::perception::SegmentationProducer> segmentation_producer_;
@@ -116,7 +120,7 @@ namespace parallax::core {
             // their proven CUDA/VPI/OpenCV resources.
             std::unique_ptr<parallax::camera::CameraProducer> camera_producer_;
             std::unique_ptr<parallax::isp::IspProducer> isp_producer_;
-
+            std::unique_ptr<parallax::isp::AutoController> auto_controller_;
 
             std::unique_ptr<parallax::stereo::RectificationProducer> rectification_producer_;
 

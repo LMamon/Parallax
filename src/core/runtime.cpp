@@ -337,7 +337,8 @@ namespace parallax::core {
             }
         }
 
-
+        visualization_failed_.store(false);
+        visualization_thread_ = std::thread(&Runtime::runVisualization, this);
         if (auto_controller_) auto_control_thread_ = std::thread(&Runtime::runAutoControl, this);
         if (lidar_producer_) lidar_thread_ = std::thread(&Runtime::runLidarSource, this);
 
@@ -464,31 +465,6 @@ namespace parallax::core {
 
             failed_frames = 0;
 
-            if (foxglove_.takeCalibrationRequest()) {
-                if (!publisher_.publishLeftCalibration(pipeline_.calibration())) {
-                    std::cerr << "Runtime: calibration publication failed\n";
-                    break;
-                }
-            }
-
-            if (foxglove_.takeTransformRequest()) {
-                if (!publisher_.publishStaticTransforms(sensor_extrinsics_)) {
-                    std::cerr << "Runtime: transform publication failed\n";
-                    break;
-                }
-            }
-
-            const bool published = publisher_.publishAvailable(context_.products(),
-                                                               [this](const CompletionHandle& completion) {
-
-                        return context_.waitForHost(completion);
-                    });
-
-            if (!published) {
-                std::cerr << "Runtime: visualization publication failed\n";
-                break;
-            }
-
             const auto telemetry_now = std::chrono::steady_clock::now();
 
             if (foxglove_.runtimeTelemetryChannel().hasSinks() &&
@@ -574,8 +550,44 @@ namespace parallax::core {
         }
         running_.store(false);
         if (auto_control_thread_.joinable()) auto_control_thread_.join();
-
+        if (visualization_thread_.joinable()) visualization_thread_.join();
+        
+        if (visualization_failed_.load()) {
+            std::cerr << "Runtime: visualization worker stopped after a publication error\n";
+        }
         if (lidar_thread_.joinable()) lidar_thread_.join();
+    }
+
+    void Runtime::runVisualization() {
+        using namespace std::chrono_literals;
+
+        while (running_.load()) {
+            if (foxglove_.takeCalibrationRequest() &&
+                !publisher_.publishLeftCalibration(pipeline_.calibration())) {
+                visualization_failed_.store(true);
+                running_.store(false);
+                return;
+            }
+
+            if (foxglove_.takeTransformRequest() &&
+                !publisher_.publishStaticTransforms(sensor_extrinsics_)) {
+                visualization_failed_.store(true);
+                running_.store(false);
+                return;
+            }
+
+            if (!publisher_.publishAvailable(
+                    context_.products(),
+                    [this](const CompletionHandle& completion) {
+                        return context_.waitForHost(completion);
+                    })) {
+                visualization_failed_.store(true);
+                running_.store(false);
+                return;
+            }
+
+            std::this_thread::sleep_for(5ms);
+        }
     }
 
     void Runtime::runAutoControl() {
@@ -650,6 +662,7 @@ namespace parallax::core {
 
         if (auto_control_thread_.joinable()) auto_control_thread_.join();
         if (lidar_thread_.joinable()) lidar_thread_.join();
+        if (visualization_thread_.joinable()) visualization_thread_.join();
 
         // Stop physical hardware as soon as its worker can no longer access it.
         if (lidar_) lidar_->shutdown();

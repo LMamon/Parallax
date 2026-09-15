@@ -18,6 +18,18 @@ namespace parallax::camera {
         std::uint32_t index = 0;
     };
 
+    struct ControlRange {
+        std::int32_t minimum = 0;
+        std::int32_t maximum = 0;
+        std::int32_t step = 1;
+        std::int32_t default_value = 0;
+        bool available = false;
+
+        [[nodiscard]] bool valid() const noexcept {
+            return available && minimum <= maximum && step > 0;
+        }
+    };
+
     class V4L2Device {
         public:
             explicit V4L2Device(const std::string& device);
@@ -35,6 +47,7 @@ namespace parallax::camera {
 
             bool setControl(std::uint32_t id, std::int32_t value);
             bool getControl(std::uint32_t id, std::int32_t& value);
+            bool getControlRange(std::uint32_t id, ControlRange& range) const;
 
             bool initializeStreaming(std::uint32_t buffer_count = 4);
             void shutdownStreaming();

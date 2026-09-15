@@ -185,7 +185,7 @@ namespace parallax::visualization {
 
         transform_channel_.emplace(std::move(transforms.value()));
 
-        auto left_image = foxglove::messages::CompressedVideoChannel::create("/camera/left/image", context_);
+        auto left_image = foxglove::messages::CompressedImageChannel::create("/camera/left/image", context_);
         if (!left_image.has_value()) {
             std::cerr << "Failed to create /camera/left/image channel: "
                       << foxglove::strerror(left_image.error()) << '\n';

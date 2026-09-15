@@ -10,9 +10,11 @@
 namespace parallax::core {
     Pipeline::~Pipeline() { shutdown(); }
 
-    bool Pipeline::initialize(const parallax::camera::CameraConfig& config, const std::filesystem::path& calibration) {
+    bool Pipeline::initialize(const parallax::camera::CameraConfig& config,
+                              const parallax::isp::IspConfig& isp_config,
+                              const std::filesystem::path& calibration) {
         if (initialized_) return true;
-        if (!isp_.initialize(config)) {
+        if (!isp_.initialize(config, isp_config)) {
             std::cerr << "Pipeline: failed to initialize ISP\n";
             shutdown();
             return false;

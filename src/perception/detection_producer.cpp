@@ -39,7 +39,7 @@ namespace parallax::perception {
          * ProductStore remains latest-value storage, so skipped camera
          * generations do not accumulate into a detector queue.
          */
-        policy.target_hz = 10.0;
+        policy.target_hz = 15.0;
         policy.max_input_age_ms = 0.0;
         policy.drop_policy = parallax::core::DropPolicy::Supersede;
         policy.priority = 0;

@@ -60,6 +60,9 @@ namespace parallax::core {
         std::chrono::steady_clock::time_point production_timestamp{};
 
         bool valid = false;
+
+        std::chrono::system_clock::time_point wall_timestamp{};
+        bool wall_timestamp_valid = false;
     };
 
     template <typename T> struct Product {

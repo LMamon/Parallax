@@ -58,7 +58,11 @@ namespace parallax::camera {
 
         // preserve+use monotonic V4L2 timestamps on the active capture path
         metadata.timestamp = std::chrono::steady_clock::time_point{frame.timestamp};
-        metadata.production_timestamp = std::chrono::steady_clock::now();
+        const auto steady_now = std::chrono::steady_clock::now();
+        const auto system_now = std::chrono::system_clock::now();
+        metadata.production_timestamp = steady_now;
+        metadata.wall_timestamp = system_now + (metadata.timestamp - steady_now);
+        metadata.wall_timestamp_valid = true;
         metadata.valid = true;
         
         store_.publish(parallax::core::make_product(parallax::core::ProductId::RawStereo,

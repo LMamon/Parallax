@@ -20,6 +20,7 @@
 #include <parallax/visualization/publisher.hpp>
 
 #include <parallax/isp/isp_producer.hpp>
+#include <parallax/isp/isp_config.hpp>
 #include <parallax/core/execution_stats.hpp>
 
 #include <parallax/stereo/rectification_producer.hpp>
@@ -64,6 +65,7 @@ namespace parallax::core {
             Runtime& operator=(Runtime&&) = delete;
 
             bool initialize(const std::filesystem::path& camera_config_path,
+                            const std::filesystem::path& isp_config_path,
                             const std::filesystem::path& sensor_extrinsics_path,
                             const std::filesystem::path& calibration_directory,
                             const std::filesystem::path& nanoowl_engine_path);
@@ -87,6 +89,7 @@ namespace parallax::core {
             
             void runLidarSource();
             parallax::camera::CameraConfig config_{};
+            parallax::isp::IspConfig isp_config_{};
             SensorExtrinsics sensor_extrinsics_{};
 
             std::unique_ptr<parallax::camera::StereoCamera> camera_;
@@ -113,6 +116,7 @@ namespace parallax::core {
             // their proven CUDA/VPI/OpenCV resources.
             std::unique_ptr<parallax::camera::CameraProducer> camera_producer_;
             std::unique_ptr<parallax::isp::IspProducer> isp_producer_;
+
 
             std::unique_ptr<parallax::stereo::RectificationProducer> rectification_producer_;
 

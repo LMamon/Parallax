@@ -6,6 +6,7 @@
 #include <parallax/core/runtime_metrics.hpp>
 #include <parallax/application/foxglove_command.hpp>
 
+
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <chrono>
@@ -19,6 +20,7 @@ namespace parallax::core {
     Runtime::~Runtime() { shutdown(); }
 
     bool Runtime::initialize(const std::filesystem::path& camera_config_path,
+                             const std::filesystem::path& isp_config_path,
                              const std::filesystem::path& sensor_extrinsics_path,
                              const std::filesystem::path& calibration_directory,
                              const std::filesystem::path& nanoowl_engine_path) {
@@ -33,6 +35,11 @@ namespace parallax::core {
 
         if (!config_.loadFromFile(camera_config_path)) {
             std::cerr << "Runtime: failed to load camera config\n";
+            return false;
+        }
+
+        if (!isp_config_.loadFromFile(isp_config_path)) {
+            std::cerr << "Runtime: failed to load ISP config\n";
             return false;
         }
 
@@ -57,11 +64,13 @@ namespace parallax::core {
          * ISP allocations, VPI stream, rectifier, matcher, depth storage, and pose
          * estimator. Runtime now takes over orchestration through graph producers.
          */
-        if (!pipeline_.initialize(config_, calibration_directory)) {
+        if (!pipeline_.initialize(config_, isp_config_, calibration_directory)) {
             std::cerr << "Runtime: failed to initialize processing pipeline\n";
             shutdown();
             return false;
         }
+
+        
 
         cuvslam_localizer_ = std::make_unique<parallax::localization::CuVslamLocalizer>();
         if (!cuvslam_localizer_->initialize(pipeline_.calibration(), sensor_extrinsics_)) {
@@ -312,6 +321,7 @@ namespace parallax::core {
             }
         }
 
+
         if (lidar_producer_) lidar_thread_ = std::thread(&Runtime::runLidarSource, this);
 
         while (running_.load() && !stop_requested) {
@@ -546,6 +556,7 @@ namespace parallax::core {
             // dispatch(products);
         }
         running_.store(false);
+
         if (lidar_thread_.joinable()) lidar_thread_.join();
     }
 
@@ -595,6 +606,7 @@ namespace parallax::core {
 
     void Runtime::shutdown() {
         stop();
+
 
         if (lidar_thread_.joinable()) lidar_thread_.join();
 

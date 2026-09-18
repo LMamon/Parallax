@@ -10,5 +10,7 @@ namespace parallax::cuda {
                         float fx_px,
                         float baseline_m,
                         float disparity_scale,
+                        float min_depth_m,
+                        float max_depth_m,
                         cudaStream_t stream);
 }

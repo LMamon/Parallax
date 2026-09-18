@@ -1,4 +1,5 @@
 #include <parallax/stereo/depth_producer.hpp>
+#include <parallax/stereo/depth_policy.hpp>
 #include <parallax/cuda/depth.cuh>
 #include <parallax/core/execution_context.hpp>
 
@@ -85,6 +86,8 @@ namespace parallax::stereo {
                                               rectified_fx_px,
                                               static_cast<float>(calibration_.metadata().baseline_mm / 1000.0),
                                               parallax::isp::StereoMatchFrame::DisparityScale,
+                                              parallax::stereo::MinUsefulDepthM,
+                                              parallax::stereo::MaxUsefulDepthM,
                                               lane.cudaHandle())) {
 
             return parallax::core::SubmitResult::Failed;

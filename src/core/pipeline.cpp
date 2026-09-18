@@ -1,5 +1,6 @@
 #include <parallax/core/pipeline.hpp>
 #include <parallax/cuda/depth.cuh>
+#include <parallax/stereo/depth_policy.hpp>
 
 #include <iostream>
 #include <chrono>
@@ -137,6 +138,8 @@ namespace parallax::core {
                                               static_cast<float>(calibration_.metadata().virtual_fx),
                                               static_cast<float>(calibration_.metadata().baseline_mm / 1000.0),
                                               parallax::isp::StereoMatchFrame::DisparityScale,
+                                              parallax::stereo::MinUsefulDepthM,
+                                              parallax::stereo::MaxUsefulDepthM,
                                               vpi_stream_.cudaHandle())) {
 
             std::cerr << "Pipeline: depth conversion failed\n";

@@ -100,9 +100,9 @@ namespace parallax::perception {
         }
 
         /*
-         * A geometrically associated LiDAR hit is authoritative for that
-         * detection. Replace the stereo Object3D for the same semantic slot;
-         * if stereo had no usable depth there, insert the LiDAR observation.
+         * A geometrically associated LiDAR hit is authoritative for the
+         * representative position. When stereo also measured the same semantic
+         * slot, retain both measurements before selecting the LiDAR result.
          */
         if (lidar_associator_ != nullptr &&
             lidar_match.matched() &&
@@ -125,6 +125,12 @@ namespace parallax::perception {
                     });
 
                 if (existing != objects->objects.end()) {
+                    lidar_object.stereo_evidence = existing->stereo_evidence;
+
+                    if (lidar_object.stereo_evidence && lidar_object.lidar_evidence) {
+                        lidar_object.method = Object3DMethod::StereoLidarRefined;
+                    }
+
                     *existing = std::move(lidar_object);
                 } else {
                     objects->objects.push_back(std::move(lidar_object));
@@ -177,7 +183,8 @@ namespace parallax::perception {
                         });
 
                 if (object_it != objects->objects.end() &&
-                    object_it->method != Object3DMethod::LidarAssociation) {
+                    object_it->method != Object3DMethod::LidarAssociation &&
+                    object_it->method != Object3DMethod::StereoLidarRefined) {
                     // A direct LiDAR hit owns the representative metric point.
                     // Optional stereo-mask refinement is only allowed to refine
                     // stereo-backed observations.

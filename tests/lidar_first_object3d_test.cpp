@@ -183,6 +183,10 @@ TEST(LidarDetectionAssociatorTest, CenterHitCreatesLidarObject3D) {
     EXPECT_EQ(object.geometry, perception::Object3DGeometry::Point);
     EXPECT_EQ(object.metric_observation.source, core::SourceId::Rplidar);
     EXPECT_FLOAT_EQ(object.range_m, 2.0F);
+    ASSERT_TRUE(object.lidar_evidence.has_value());
+    EXPECT_TRUE(object.lidar_evidence->valid());
+    EXPECT_EQ(object.lidar_evidence->observation.sequence, 7U);
+    EXPECT_FLOAT_EQ(object.lidar_evidence->range_m, 2.0F);
     EXPECT_NEAR(object.position_m[0], 0.0F, 1.0e-5F);
     EXPECT_NEAR(object.position_m[1], 0.0F, 1.0e-5F);
     EXPECT_NEAR(object.position_m[2], 2.0F, 1.0e-5F);
@@ -290,12 +294,26 @@ TEST(LidarFirstObject3DTest, LidarHitOverridesAvailableStereoDepth) {
     ASSERT_EQ(output->payload->size(), 1U);
 
     const auto& object = output->payload->objects.front();
-    EXPECT_EQ(object.method, perception::Object3DMethod::LidarAssociation);
+    EXPECT_EQ(object.method, perception::Object3DMethod::StereoLidarRefined);
     EXPECT_EQ(object.metric_observation.source, core::SourceId::Rplidar);
     EXPECT_EQ(object.metric_observation.sequence, 50U);
     EXPECT_FLOAT_EQ(object.range_m, 2.0F);
     EXPECT_NEAR(object.position_m[2], 2.0F, 1.0e-5F);
     EXPECT_NE(object.depth_m, 4.0F);
+
+    ASSERT_TRUE(object.stereo_evidence.has_value());
+    ASSERT_TRUE(object.lidar_evidence.has_value());
+    EXPECT_TRUE(object.stereo_evidence->valid());
+    EXPECT_TRUE(object.lidar_evidence->valid());
+
+    EXPECT_EQ(object.stereo_evidence->observation.source, core::SourceId::StereoCamera);
+    EXPECT_EQ(object.stereo_evidence->observation.sequence, 20U);
+    EXPECT_FLOAT_EQ(object.stereo_evidence->depth_m, 4.0F);
+
+    EXPECT_EQ(object.lidar_evidence->observation.source, core::SourceId::Rplidar);
+    EXPECT_EQ(object.lidar_evidence->observation.sequence, 50U);
+    EXPECT_FLOAT_EQ(object.lidar_evidence->range_m, 2.0F);
+    EXPECT_NEAR(object.lidar_evidence->position_m[2], 2.0F, 1.0e-5F);
 
     context.shutdown();
 }

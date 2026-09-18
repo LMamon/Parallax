@@ -64,6 +64,64 @@ TEST(Object3DTest, PreservesSemanticAndMetricProvenanceIndependently) {
     EXPECT_EQ(object.metric_observation.sequence, 99U);
 }
 
+TEST(Object3DMetricEvidenceTest, ValidatesStereoAndLidarIndependently) {
+    using namespace parallax;
+
+    perception::Object3DMetricEvidence stereo{};
+    stereo.observation = {core::SourceId::StereoCamera, 10};
+    stereo.position_m = {0.1F, 0.0F, 2.0F};
+    stereo.depth_m = 2.0F;
+    stereo.support_quality = 0.75F;
+
+    EXPECT_TRUE(stereo.valid());
+
+    perception::Object3DMetricEvidence lidar{};
+    lidar.observation = {core::SourceId::Rplidar, 20};
+    lidar.position_m = {0.0F, 0.0F, 1.8F};
+    lidar.depth_m = 1.8F;
+    lidar.range_m = 1.82F;
+    lidar.support_quality = 0.9F;
+
+    EXPECT_TRUE(lidar.valid());
+
+    lidar.range_m = 0.0F;
+    EXPECT_FALSE(lidar.valid());
+}
+
+TEST(Object3DTest, FusedMetricRequiresBothValidEvidenceRecords) {
+    using namespace parallax;
+
+    auto object = make_valid_object();
+    object.method = perception::Object3DMethod::StereoLidarRefined;
+    object.range_m = 1.8F;
+
+    perception::Object3DMetricEvidence stereo{};
+    stereo.observation = {core::SourceId::StereoCamera, 42};
+    stereo.position_m = object.position_m;
+    stereo.depth_m = object.depth_m;
+    stereo.support_quality = 0.8F;
+    object.stereo_evidence = stereo;
+
+    EXPECT_FALSE(object.valid());
+
+    perception::Object3DMetricEvidence lidar{};
+    lidar.observation = {core::SourceId::Rplidar, 50};
+    lidar.position_m = object.position_m;
+    lidar.depth_m = object.depth_m;
+    lidar.range_m = object.range_m;
+    lidar.support_quality = 0.9F;
+    object.lidar_evidence = lidar;
+
+    EXPECT_TRUE(object.valid());
+
+    object.range_m = 0.0F;
+    EXPECT_FALSE(object.valid());
+
+    object.range_m = 1.8F;
+    object.stereo_evidence->observation = {core::SourceId::Rplidar, 42};
+    EXPECT_FALSE(object.valid());
+}
+
 TEST(Object3DTest, RejectsInvalidMetricGeometry) {
     auto object = make_valid_object();
     object.depth_m = std::numeric_limits<float>::quiet_NaN();

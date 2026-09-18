@@ -340,6 +340,14 @@ namespace parallax::perception {
             // detector confidence and stereo support independently.
             object.support_quality = static_cast<float>(roi.valid_samples) / static_cast<float>(roi.sampled_pixels);
 
+            Object3DMetricEvidence stereo_evidence{};
+            stereo_evidence.observation = depth.metadata.observation;
+            stereo_evidence.position_m = object.position_m;
+            stereo_evidence.depth_m = object.depth_m;
+            stereo_evidence.source_time_delta = source_delta;
+            stereo_evidence.support_quality = object.support_quality;
+            object.stereo_evidence = stereo_evidence;
+
             output.objects.push_back(std::move(object));
         }
         return true;
@@ -470,6 +478,14 @@ namespace parallax::perception {
         object.method = Object3DMethod::StereoMask;
 
         object.support_quality = static_cast<float>(object.surface_points_m.size()) / static_cast<float>(MaxSurfaceSamples);
+
+        // Mask refinement changes the stereo representative geometry, so keep
+        // the retained stereo evidence synchronized with the refined result.
+        if (object.stereo_evidence) {
+            object.stereo_evidence->position_m = object.position_m;
+            object.stereo_evidence->depth_m = object.depth_m;
+            object.stereo_evidence->support_quality = object.support_quality;
+        }
 
         return true;
     }

@@ -392,6 +392,15 @@ namespace parallax::perception {
             // replacement for the detector confidence or SLAMTEC quality byte.
             object.support_quality = 1.0F / (1.0F + best_score);
 
+            Object3DMetricEvidence lidar_evidence{};
+            lidar_evidence.observation = scan.metadata.observation;
+            lidar_evidence.position_m = object.position_m;
+            lidar_evidence.depth_m = object.depth_m;
+            lidar_evidence.range_m = object.range_m;
+            lidar_evidence.source_time_delta = source_delta;
+            lidar_evidence.support_quality = object.support_quality;
+            object.lidar_evidence = lidar_evidence;
+
             output.objects.push_back(std::move(object));
         }
 

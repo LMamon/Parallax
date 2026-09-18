@@ -290,7 +290,8 @@ namespace parallax::core {
                                    rgb.width, 
                                    rgb.height, 
                                    config_.frame_rate, 
-                                   sensor_extrinsics_.left_camera.child_frame)) {
+                                   sensor_extrinsics_.left_camera.child_frame,
+                                   pipeline_.calibration())) {
             std::cerr << "Runtime: failed to initialize visualization publisher\n";
 
             shutdown();

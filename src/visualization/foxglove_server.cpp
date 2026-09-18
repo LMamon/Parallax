@@ -239,6 +239,16 @@ namespace parallax::visualization {
         depth_channel_.emplace(std::move(depth.value()));
         bindProduct(depth_channel_->id(), ProductId::Depth);
 
+        auto depth_scene = foxglove::messages::PointCloudChannel::create("/stereo/scene", context_);
+        if (!depth_scene.has_value()) {
+            std::cerr << "Failed to create /stereo/scene channel: "
+                      << foxglove::strerror(depth_scene.error()) << '\n';
+            return false;
+        }
+
+        depth_scene_channel_.emplace(std::move(depth_scene.value()));
+        bindProduct(depth_scene_channel_->id(), ProductId::Depth);
+
         auto marker_pose = foxglove::messages::PoseInFrameChannel::create("/marker/pose", context_);
         if (!marker_pose.has_value()) {
             std::cerr << "Failed to create /marker/pose channel: "
@@ -627,6 +637,11 @@ namespace parallax::visualization {
         if (depth_channel_) {
             depth_channel_->close();
             depth_channel_.reset();
+        }
+
+        if (depth_scene_channel_) {
+            depth_scene_channel_->close();
+            depth_scene_channel_.reset();
         }
 
         if (marker_pose_channel_) {

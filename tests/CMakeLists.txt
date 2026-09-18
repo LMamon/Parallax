@@ -126,6 +126,12 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_depth_scene_test
+    depth_scene_test.cpp
+    parallax_visualization
+)
+
+parallax_add_gtest(
     parallax_image_space_mapper_test
     image_space_mapper_test.cpp
     parallax_core

@@ -141,11 +141,14 @@ namespace parallax::visualization {
                                std::uint32_t height,
                                std::uint32_t fps,
                                std::string coordinate_frame,
+                               const parallax::stereo::StereoCalibration& calibration,
                                std::uint32_t preview_fps,
                                int jpeg_quality) {
 
         if (initialized_) return true;
-        if (width == 0 || height == 0 || fps == 0 || preview_fps == 0 || jpeg_quality < 1 || jpeg_quality > 100 || coordinate_frame.empty()) {
+        if (width == 0 || height == 0 || fps == 0 || preview_fps == 0 ||
+            jpeg_quality < 1 || jpeg_quality > 100 || coordinate_frame.empty() ||
+            !calibration.loaded()) {
             std::cerr << "Invalid visualization dimensions/FPS\n";
             return false;
         }
@@ -175,6 +178,17 @@ namespace parallax::visualization {
         const std::size_t disparity_bytes = pixels * sizeof(std::int16_t);
         depth_preview_width_ = (width_ + DepthPreviewStride - 1U) / DepthPreviewStride;
         depth_preview_height_ = (height_ + DepthPreviewStride - 1U) / DepthPreviewStride;
+
+        // Nearest preview samples are (0, stride, 2*stride, ...), so scale P1 directly.
+        depth_preview_projection_ = calibration.P1();
+        const double preview_scale = 1.0 / static_cast<double>(DepthPreviewStride);
+        depth_preview_projection_[0] *= preview_scale;
+        depth_preview_projection_[2] *= preview_scale;
+        depth_preview_projection_[3] *= preview_scale;
+        depth_preview_projection_[5] *= preview_scale;
+        depth_preview_projection_[6] *= preview_scale;
+        depth_preview_projection_[7] *= preview_scale;
+
         const std::size_t depth_preview_bytes = static_cast<std::size_t>(depth_preview_width_) *
                                                 depth_preview_height_ * sizeof(float);
         const std::size_t mask_bytes =static_cast<std::size_t>(width_) * height_ * sizeof(std::uint8_t);
@@ -355,7 +369,10 @@ namespace parallax::visualization {
             }
         }
 
-        if (foxglove_->depthChannel().hasSinks()) {
+        const bool depth_image_requested = foxglove_->depthChannel().hasSinks();
+        const bool depth_scene_requested = foxglove_->depthSceneChannel().hasSinks();
+
+        if (depth_image_requested || depth_scene_requested) {
             const auto depth = store.latest<parallax::isp::DepthFrame>(parallax::core::ProductId::Depth);
 
             if (depth && depth->valid() && (!has_published_depth_ || depth->metadata.observation != last_depth_observation_)) {
@@ -366,7 +383,7 @@ namespace parallax::visualization {
                 if (due) {
                     if (!depth->completion.valid()) return false;
                     if (depth->completion.requires_wait() && !wait_for_host(depth->completion)) return false;
-                    if (!publishDepth(*depth)) return false;
+                    if (!publishDepth(*depth, depth_image_requested, depth_scene_requested)) return false;
                     last_depth_observation_ = depth->metadata.observation;
                     last_depth_publish_ = now;
                     has_published_depth_ = true;
@@ -638,48 +655,75 @@ namespace parallax::visualization {
         return checkFoxglove(foxglove_->leftImageChannel().log(message), "Failed to publish /camera/left/image");
     }
 
-        bool Publisher::publishDepth(const parallax::core::Product<parallax::isp::DepthFrame>& product) {
-            if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload->depth.isAllocated()) {
-                return false;
-            }
+    bool Publisher::publishDepth(const parallax::core::Product<parallax::isp::DepthFrame>& product,
+                                 bool publish_image,
+                                 bool publish_scene) {
+        if (!initialized_ || foxglove_ == nullptr || !product.valid() ||
+            !product.payload->depth.isAllocated() || (!publish_image && !publish_scene)) return false;
 
-            const auto& frame = *product.payload;
-
-            if (frame.width != width_ || frame.height != height_) {
+        const auto& frame = *product.payload;
+        if (frame.width != width_ || frame.height != height_) {
             std::cerr << "Visualization depth dimensions changed\n";
             return false;
         }
 
-        if (!parallax::cuda::downsampleDepthNearest(frame.depth, depth_preview_, DepthPreviewStride, stream_)) {
-            std::cerr << "Failed to downsample depth preview\n";
-            return false;
-        }
+        if (!parallax::cuda::downsampleDepthNearest(frame.depth, depth_preview_, DepthPreviewStride, stream_)) return false;
 
         const std::size_t host_pitch = static_cast<std::size_t>(depth_preview_width_) * sizeof(float);
-        if (!depth_preview_.downloadAsync(host_depth_, host_pitch, stream_)) {
-            std::cerr << "Failed to download depth preview\n";
-            return false;
+        if (!depth_preview_.downloadAsync(host_depth_, host_pitch, stream_)) return false;
+        if (cudaStreamSynchronize(stream_) != cudaSuccess) return false;
+
+        if (publish_image) {
+            const std::size_t bytes = static_cast<std::size_t>(depth_preview_width_) *
+                                      depth_preview_height_ * sizeof(float);
+            foxglove::messages::RawImage image;
+            image.timestamp = sourceTimestamp(product.metadata);
+            image.frame_id = coordinate_frame_;
+            image.width = depth_preview_width_;
+            image.height = depth_preview_height_;
+            image.encoding = "32FC1";
+            image.step = depth_preview_width_ * sizeof(float);
+            image.data.resize(bytes);
+            std::memcpy(image.data.data(), host_depth_, bytes);
+            if (!checkFoxglove(foxglove_->depthChannel().log(image), "Failed to publish /stereo/depth")) return false;
         }
 
-        if (cudaStreamSynchronize(stream_) != cudaSuccess) {
-            std::cerr << "Failed to synchronize depth preview download\n";
-            return false;
-        }
+        return !publish_scene || publishDepthScene(product);
+    }
 
-        const std::size_t bytes = static_cast<std::size_t>(depth_preview_width_) *
-                                  depth_preview_height_ * sizeof(float);
+    bool Publisher::publishDepthScene(const parallax::core::Product<parallax::isp::DepthFrame>& product) {
+        const auto points = buildDepthScenePoints(host_depth_, depth_preview_width_, depth_preview_height_,
+                                                  DepthSceneSampleStride, depth_preview_projection_);
 
-        foxglove::messages::RawImage message;
+        foxglove::messages::PointCloud message;
         message.timestamp = sourceTimestamp(product.metadata);
         message.frame_id = coordinate_frame_;
-        message.width = depth_preview_width_;
-        message.height = depth_preview_height_;
-        message.encoding = "32FC1";
-        message.step = depth_preview_width_ * sizeof(float);
-        message.data.resize(bytes);
-        std::memcpy(message.data.data(), host_depth_, bytes);
+        message.point_stride = 3U * sizeof(float);
 
-        return checkFoxglove(foxglove_->depthChannel().log(message), "Failed to publish /stereo/depth");
+        foxglove::messages::Pose pose;
+        foxglove::messages::Vector3 position;
+        position.x = 0.0; position.y = 0.0; position.z = 0.0;
+        pose.position = position;
+        foxglove::messages::Quaternion orientation;
+        orientation.x = 0.0; orientation.y = 0.0; orientation.z = 0.0; orientation.w = 1.0;
+        pose.orientation = orientation;
+        message.pose = pose;
+
+        using NumericType = foxglove::messages::PackedElementField::NumericType;
+        foxglove::messages::PackedElementField x;
+        x.name = "x"; x.offset = 0; x.type = NumericType::FLOAT32;
+        foxglove::messages::PackedElementField y;
+        y.name = "y"; y.offset = sizeof(float); y.type = NumericType::FLOAT32;
+        foxglove::messages::PackedElementField z;
+        z.name = "z"; z.offset = 2U * sizeof(float); z.type = NumericType::FLOAT32;
+        message.fields = {x, y, z};
+
+        message.data.resize(points.size() * message.point_stride);
+        if (!points.empty()) std::memcpy(message.data.data(), points.data(), message.data.size());
+
+        // Source time is deliberate: Foxglove transform history places each retained
+        // cloud at the pose valid for that observation. Use ~0.75 s Decay Time in 3D.
+        return checkFoxglove(foxglove_->depthSceneChannel().log(message), "Failed to publish /stereo/scene");
     }
 
     bool Publisher::publishRuntimeTelemetry(const std::string& json) {

@@ -7,6 +7,7 @@
 #include <parallax/core/product_store.hpp>
 #include <parallax/core/sensor_extrinsics.hpp>
 #include <parallax/cuda/depth_preview.cuh>
+#include <parallax/visualization/depth_scene.hpp>
 
 #include <parallax/perception/detection.hpp>
 #include <parallax/perception/segmentation.hpp>
@@ -47,6 +48,7 @@ namespace parallax::visualization {
                             std::uint32_t height, 
                             std::uint32_t fps, 
                             std::string coordinate_frame,
+                            const parallax::stereo::StereoCalibration& calibration,
                             std::uint32_t preview_fps = 20,
                             int jpeg_quality = 85);
 
@@ -70,7 +72,10 @@ namespace parallax::visualization {
 
         private:
             bool publishLeftImage(const parallax::core::Product<parallax::isp::RectifiedStereoFrame>& product, const parallax::pose::CharucoPoseResult* pose);
-            bool publishDepth(const parallax::core::Product<parallax::isp::DepthFrame>& product);
+            bool publishDepth(const parallax::core::Product<parallax::isp::DepthFrame>& product,
+                              bool publish_image,
+                              bool publish_scene);
+            bool publishDepthScene(const parallax::core::Product<parallax::isp::DepthFrame>& product);
             bool publishDisparity(const parallax::isp::StereoMatchFrame& frame);
             bool publishLidarScan(const parallax::lidar::LidarScan& scan);
             bool publishDetections(const parallax::core::Product<parallax::perception::DetectionSet>& product);
@@ -105,8 +110,13 @@ namespace parallax::visualization {
             // device-side preview so visualization cannot dominate Nano bandwidth.
             static constexpr std::uint32_t DepthPreviewStride = 4;
             static constexpr std::uint32_t DepthPreviewFps = 10;
+
+            // Sample the preview again so history stays light without changing compute depth.
+            static constexpr std::uint32_t DepthSceneSampleStride = 8;
+
             std::uint32_t depth_preview_width_ = 0;
             std::uint32_t depth_preview_height_ = 0;
+            std::array<double, 12> depth_preview_projection_{};
 
             // Converted disparity for Foxglove 32FC1.
             std::vector<float> disparity_float_;

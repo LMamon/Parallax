@@ -327,7 +327,7 @@ namespace parallax::visualization {
                     return false;
                 }
 
-                if (!publishDepth(*depth->payload)) return false;
+                if (!publishDepth(*depth)) return false;
                 last_depth_observation_ = depth->metadata.observation;
                 has_published_depth_ = true;
             }
@@ -597,12 +597,14 @@ namespace parallax::visualization {
         return checkFoxglove(foxglove_->leftImageChannel().log(message), "Failed to publish /camera/left/image");
     }
 
-    bool Publisher::publishDepth(const parallax::isp::DepthFrame& frame) {
-        if (!initialized_ || foxglove_ == nullptr || !frame.depth.isAllocated()) {
-            return false;
-        }
+        bool Publisher::publishDepth(const parallax::core::Product<parallax::isp::DepthFrame>& product) {
+            if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload->depth.isAllocated()) {
+                return false;
+            }
 
-        if (frame.width != width_ || frame.height != height_) {
+            const auto& frame = *product.payload;
+
+            if (frame.width != width_ || frame.height != height_) {
             std::cerr << "Visualization depth dimensions changed\n";
             return false;
         }
@@ -622,7 +624,7 @@ namespace parallax::visualization {
 
         foxglove::messages::RawImage message;
 
-        message.timestamp = nowTimestamp();
+        message.timestamp = sourceTimestamp(product.metadata);
         message.frame_id = coordinate_frame_;
         message.width = frame.width;
         message.height = frame.height;

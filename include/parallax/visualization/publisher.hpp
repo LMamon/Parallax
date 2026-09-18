@@ -68,7 +68,7 @@ namespace parallax::visualization {
 
         private:
             bool publishLeftImage(const parallax::core::Product<parallax::isp::RectifiedStereoFrame>& product, const parallax::pose::CharucoPoseResult* pose);
-            bool publishDepth(const parallax::isp::DepthFrame& frame);
+            bool publishDepth(const parallax::core::Product<parallax::isp::DepthFrame>& product);
             bool publishDisparity(const parallax::isp::StereoMatchFrame& frame);
             bool publishLidarScan(const parallax::lidar::LidarScan& scan);
             bool publishDetections(const parallax::core::Product<parallax::perception::DetectionSet>& product);

@@ -164,6 +164,8 @@ namespace parallax::core {
         single_target_producer_ = std::make_unique<parallax::tracking::SingleTargetProducer>(context_.products(), resolver_);
         
         cuvslam_producer_ = std::make_unique<parallax::localization::CuVslamProducer>(*cuvslam_localizer_, context_.products());
+        local_occupancy_producer_ = std::make_unique<parallax::mapping::LocalOccupancyProducer>(
+            pipeline_.calibration(), sensor_extrinsics_, context_.products(), context_.stereoLane().cudaHandle());
         localized_spatial_producer_ = std::make_unique<parallax::perception::LocalizedSpatialProducer>(pipeline_.calibration(),
                                                                                                        sensor_extrinsics_,
                                                                                                        context_.products());
@@ -187,6 +189,7 @@ namespace parallax::core {
         graph_.register_producer(*localized_spatial_producer_);
         graph_.register_producer(*segmentation_producer_);
         graph_.register_producer(*cuvslam_producer_);
+        graph_.register_producer(*local_occupancy_producer_);
 
         graph_.finalize();
 
@@ -204,6 +207,7 @@ namespace parallax::core {
         resolver_.acquire(ProductId::RectifiedRgb, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::Disparity, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::LocalizationOdometry, DemandSource::RuntimeBaseline);
+        resolver_.acquire(ProductId::LocalOccupancy, DemandSource::RuntimeBaseline);
         if (lidar_producer_) resolver_.acquire(ProductId::LidarScan, DemandSource::RuntimeBaseline);
 
 

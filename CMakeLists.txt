@@ -39,6 +39,23 @@ endif()
 find_package(Threads REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(CUDAToolkit REQUIRED)
+# nvblox v0.0.10 exports build-time glog/gflags target names without
+# rediscovering them. Use the exact libraries already built in the image.
+set(NVBLOX_ROOT "/opt/nvblox")
+find_library(NVBLOX_LIBRARY NAMES nvblox_lib PATHS "${NVBLOX_ROOT}/build/nvblox" REQUIRED NO_DEFAULT_PATH)
+find_library(NVBLOX_GLOG_LIBRARY NAMES glog PATHS "${NVBLOX_ROOT}/build/_deps/ext_glog-build" REQUIRED NO_DEFAULT_PATH)
+find_library(NVBLOX_GFLAGS_LIBRARY NAMES gflags_nothreads PATHS "${NVBLOX_ROOT}/build/_deps/ext_gflags-build" REQUIRED NO_DEFAULT_PATH)
+
+add_library(nvblox::glog STATIC IMPORTED)
+set_target_properties(nvblox::glog PROPERTIES IMPORTED_LOCATION "${NVBLOX_GLOG_LIBRARY}" INTERFACE_INCLUDE_DIRECTORIES "${NVBLOX_ROOT}/build/_deps/ext_glog-build;${NVBLOX_ROOT}/build/_deps/ext_glog-src/src")
+add_library(nvblox::gflags_nothreads STATIC IMPORTED)
+set_target_properties(nvblox::gflags_nothreads PROPERTIES IMPORTED_LOCATION "${NVBLOX_GFLAGS_LIBRARY}" INTERFACE_INCLUDE_DIRECTORIES "${NVBLOX_ROOT}/build/_deps/ext_gflags-build/include")
+add_library(nvblox::nvblox_lib SHARED IMPORTED)
+set_target_properties(nvblox::nvblox_lib PROPERTIES
+    IMPORTED_LOCATION "${NVBLOX_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${NVBLOX_ROOT}/nvblox/include;${NVBLOX_ROOT}/build/nvblox/eigen/include/eigen3"
+    INTERFACE_LINK_LIBRARIES "nvblox::glog;nvblox::gflags_nothreads;CUDA::cudart;unwind"
+)
 find_package(OpenCV REQUIRED)
 find_package(
     foxglove-sdk
@@ -131,6 +148,7 @@ add_subdirectory(src/vpi)
 add_subdirectory(src/perception)
 add_subdirectory(src/tracking)
 add_subdirectory(src/localization)
+add_subdirectory(src/mapping)
 add_subdirectory(src/core/runtime)
 
 # add_subdirectory(src/bindings)

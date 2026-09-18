@@ -173,8 +173,12 @@ namespace parallax::visualization {
         const std::size_t rgb_bytes = pixels * 3 * sizeof(std::uint8_t);
 
         const std::size_t disparity_bytes = pixels * sizeof(std::int16_t);
-        const std::size_t depth_bytes = pixels * sizeof(float);
+        depth_preview_width_ = (width_ + DepthPreviewStride - 1U) / DepthPreviewStride;
+        depth_preview_height_ = (height_ + DepthPreviewStride - 1U) / DepthPreviewStride;
+        const std::size_t depth_preview_bytes = static_cast<std::size_t>(depth_preview_width_) *
+                                                depth_preview_height_ * sizeof(float);
         const std::size_t mask_bytes =static_cast<std::size_t>(width_) * height_ * sizeof(std::uint8_t);
+
 
         if (cudaMallocHost(reinterpret_cast<void**>(&host_segmentation_mask_), mask_bytes) != cudaSuccess) {
             std::cerr << "Failed to allocate segmentation mask staging buffer\n";
@@ -194,8 +198,14 @@ namespace parallax::visualization {
             return false;
         }
 
-        if (cudaMallocHost(reinterpret_cast<void**>(&host_depth_), depth_bytes) != cudaSuccess) {
-            std::cerr << "Failed to allocate depth staging buffer\n";
+        if (!depth_preview_.allocate(depth_preview_width_, depth_preview_height_, 1, sizeof(float))) {
+            std::cerr << "Failed to allocate depth preview buffer\n";
+            shutdown();
+            return false;
+        }
+
+        if (cudaMallocHost(reinterpret_cast<void**>(&host_depth_), depth_preview_bytes) != cudaSuccess) {
+            std::cerr << "Failed to allocate depth preview staging buffer\n";
             shutdown();
             return false;
         }
@@ -246,22 +256,24 @@ namespace parallax::visualization {
             return false;
         }
 
-        const auto& metadata = calibration.metadata();
         const auto& p1 = calibration.P1();
+        const double scale = 1.0 / static_cast<double>(DepthPreviewStride);
 
         foxglove::messages::CameraCalibration message;
         message.frame_id = coordinate_frame_;
-        message.width = metadata.image_width;
-        message.height = metadata.image_height;
+        message.width = depth_preview_width_;
+        message.height = depth_preview_height_;
         message.distortion_model = "plumb_bob";
         message.d = {0.0, 0.0, 0.0, 0.0, 0.0};
-        message.k = {p1[0], p1[1], p1[2],
-                     p1[4], p1[5], p1[6],
-                     p1[8], p1[9], p1[10]};
+        message.k = {p1[0] * scale, p1[1],         p1[2] * scale,
+                     p1[4],         p1[5] * scale, p1[6] * scale,
+                     p1[8],         p1[9],         p1[10]};
         message.r = {1.0, 0.0, 0.0,
                      0.0, 1.0, 0.0,
                      0.0, 0.0, 1.0};
-        message.p = p1;
+        message.p = {p1[0] * scale, p1[1],         p1[2] * scale, p1[3] * scale,
+                     p1[4],         p1[5] * scale, p1[6] * scale, p1[7] * scale,
+                     p1[8],         p1[9],         p1[10],        p1[11]};
 
         return checkFoxglove(foxglove_->depthCalibrationChannel().log(message),
                              "Failed to publish /stereo/depth/calibration");
@@ -347,15 +359,18 @@ namespace parallax::visualization {
             const auto depth = store.latest<parallax::isp::DepthFrame>(parallax::core::ProductId::Depth);
 
             if (depth && depth->valid() && (!has_published_depth_ || depth->metadata.observation != last_depth_observation_)) {
-                if (!depth->completion.valid()) return false;
+                const auto now = std::chrono::steady_clock::now();
+                const auto interval = std::chrono::duration<double>(1.0 / static_cast<double>(DepthPreviewFps));
+                const bool due = !has_published_depth_ || now - last_depth_publish_ >= interval;
 
-                if (depth->completion.requires_wait() && !wait_for_host(depth->completion)) {
-                    return false;
+                if (due) {
+                    if (!depth->completion.valid()) return false;
+                    if (depth->completion.requires_wait() && !wait_for_host(depth->completion)) return false;
+                    if (!publishDepth(*depth)) return false;
+                    last_depth_observation_ = depth->metadata.observation;
+                    last_depth_publish_ = now;
+                    has_published_depth_ = true;
                 }
-
-                if (!publishDepth(*depth)) return false;
-                last_depth_observation_ = depth->metadata.observation;
-                has_published_depth_ = true;
             }
         }
 
@@ -635,30 +650,33 @@ namespace parallax::visualization {
             return false;
         }
 
-        const std::size_t host_pitch = static_cast<std::size_t>(width_) * sizeof(float);
-        if (!frame.depth.downloadAsync(host_depth_, host_pitch, stream_)) {
-            std::cerr << "Failed to download depth frame\n";
+        if (!parallax::cuda::downsampleDepthNearest(frame.depth, depth_preview_, DepthPreviewStride, stream_)) {
+            std::cerr << "Failed to downsample depth preview\n";
+            return false;
+        }
+
+        const std::size_t host_pitch = static_cast<std::size_t>(depth_preview_width_) * sizeof(float);
+        if (!depth_preview_.downloadAsync(host_depth_, host_pitch, stream_)) {
+            std::cerr << "Failed to download depth preview\n";
             return false;
         }
 
         if (cudaStreamSynchronize(stream_) != cudaSuccess) {
-            std::cerr << "Failed to synchronize depth download\n";
+            std::cerr << "Failed to synchronize depth preview download\n";
             return false;
         }
 
-        const std::size_t bytes = static_cast<std::size_t>(frame.width) * frame.height * sizeof(float);
+        const std::size_t bytes = static_cast<std::size_t>(depth_preview_width_) *
+                                  depth_preview_height_ * sizeof(float);
 
         foxglove::messages::RawImage message;
-
         message.timestamp = sourceTimestamp(product.metadata);
         message.frame_id = coordinate_frame_;
-        message.width = frame.width;
-        message.height = frame.height;
+        message.width = depth_preview_width_;
+        message.height = depth_preview_height_;
         message.encoding = "32FC1";
-        message.step = frame.width * sizeof(float);
-
+        message.step = depth_preview_width_ * sizeof(float);
         message.data.resize(bytes);
-
         std::memcpy(message.data.data(), host_depth_, bytes);
 
         return checkFoxglove(foxglove_->depthChannel().log(message), "Failed to publish /stereo/depth");
@@ -1586,6 +1604,11 @@ namespace parallax::visualization {
             cudaFreeHost(host_depth_);
             host_depth_ = nullptr;
         }
+
+        depth_preview_.release();
+        depth_preview_width_ = 0;
+        depth_preview_height_ = 0;
+        last_depth_publish_ = {};
 
         if (host_disparity_ != nullptr) {
             cudaFreeHost(host_disparity_);

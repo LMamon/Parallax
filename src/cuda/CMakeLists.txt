@@ -1,6 +1,7 @@
 add_library(parallax_cuda
     cuda_buffer.cu
     depth.cu
+    depth_preview.cu
     depth_roi.cu
     efficientvit_sam.cu
     masked_depth_samples.cu

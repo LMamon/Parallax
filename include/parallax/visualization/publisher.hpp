@@ -6,6 +6,7 @@
 #include <parallax/visualization/foxglove_server.hpp>
 #include <parallax/core/product_store.hpp>
 #include <parallax/core/sensor_extrinsics.hpp>
+#include <parallax/cuda/depth_preview.cuh>
 
 #include <parallax/perception/detection.hpp>
 #include <parallax/perception/segmentation.hpp>
@@ -97,6 +98,14 @@ namespace parallax::visualization {
             std::uint8_t* host_rgb_ = nullptr;
             std::int16_t* host_disparity_ = nullptr;
             float* host_depth_ = nullptr;
+            parallax::cuda::CudaBuffer depth_preview_;
+
+            // Depth stays full resolution in the graph. Foxglove receives a sparse
+            // device-side preview so visualization cannot dominate Nano bandwidth.
+            static constexpr std::uint32_t DepthPreviewStride = 4;
+            static constexpr std::uint32_t DepthPreviewFps = 10;
+            std::uint32_t depth_preview_width_ = 0;
+            std::uint32_t depth_preview_height_ = 0;
 
             // Converted disparity for Foxglove 32FC1.
             std::vector<float> disparity_float_;
@@ -113,6 +122,7 @@ namespace parallax::visualization {
             bool has_published_left_image_ = false;
             parallax::core::SourceObservation last_disparity_observation_{};
             parallax::core::SourceObservation last_depth_observation_{};
+            std::chrono::steady_clock::time_point last_depth_publish_{};
             parallax::core::SourceObservation last_lidar_observation_{};
             bool has_published_disparity_ = false;
             bool has_published_depth_ = false;

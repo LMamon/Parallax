@@ -563,7 +563,8 @@ namespace parallax::core {
 
         while (running_.load()) {
             if (foxglove_.takeCalibrationRequest() &&
-                !publisher_.publishLeftCalibration(pipeline_.calibration())) {
+                (!publisher_.publishLeftCalibration(pipeline_.calibration()) ||
+                 !publisher_.publishDepthCalibration(pipeline_.calibration()))) {
                 visualization_failed_.store(true);
                 running_.store(false);
                 return;

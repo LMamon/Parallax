@@ -59,6 +59,7 @@ namespace parallax::visualization {
             * - no visualization-only accelerator wait when a channel has no sinks.
             */
             bool publishLeftCalibration(const parallax::stereo::StereoCalibration& calibration);
+            bool publishDepthCalibration(const parallax::stereo::StereoCalibration& calibration);
             bool publishStaticTransforms(const parallax::core::SensorExtrinsics& extrinsics);
             bool publishAvailable(const parallax::core::ProductStore& store, const HostWait& wait_for_host);
             bool publishRuntimeTelemetry(const std::string& json);

@@ -50,7 +50,8 @@ namespace parallax::visualization {
     }
 
     void FoxgloveServer::onSubscribe(std::uint64_t channel_id, const foxglove::ClientMetadata&) {
-        if (left_calibration_channel_ && channel_id == left_calibration_channel_->id()) {
+        if ((left_calibration_channel_ && channel_id == left_calibration_channel_->id()) ||
+            (depth_calibration_channel_ && channel_id == depth_calibration_channel_->id())) {
             calibration_requested_.store(true);
             return;
         }
@@ -203,6 +204,16 @@ namespace parallax::visualization {
         }
 
         left_calibration_channel_.emplace(std::move(calibration.value()));
+
+        auto depth_calibration = foxglove::messages::CameraCalibrationChannel::create(
+            "/stereo/depth/calibration", context_);
+        if (!depth_calibration.has_value()) {
+            std::cerr << "Failed to create /stereo/depth/calibration channel: "
+                      << foxglove::strerror(depth_calibration.error()) << '\n';
+            return false;
+        }
+
+        depth_calibration_channel_.emplace(std::move(depth_calibration.value()));
 
         /**
          * Calibration is startup/static configuration rather than a graph product,
@@ -601,6 +612,11 @@ namespace parallax::visualization {
         if (left_calibration_channel_) {
             left_calibration_channel_->close();
             left_calibration_channel_.reset();
+        }
+
+        if (depth_calibration_channel_) {
+            depth_calibration_channel_->close();
+            depth_calibration_channel_.reset();
         }
 
         if (disparity_channel_) {

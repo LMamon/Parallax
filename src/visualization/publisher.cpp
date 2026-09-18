@@ -241,6 +241,32 @@ namespace parallax::visualization {
         return checkFoxglove(foxglove_->leftCalibrationChannel().log(message), "Failed to publish /camera/left/calibration");
     }
 
+    bool Publisher::publishDepthCalibration(const parallax::stereo::StereoCalibration& calibration) {
+        if (!initialized_ || foxglove_ == nullptr || !calibration.loaded()) {
+            return false;
+        }
+
+        const auto& metadata = calibration.metadata();
+        const auto& p1 = calibration.P1();
+
+        foxglove::messages::CameraCalibration message;
+        message.frame_id = coordinate_frame_;
+        message.width = metadata.image_width;
+        message.height = metadata.image_height;
+        message.distortion_model = "plumb_bob";
+        message.d = {0.0, 0.0, 0.0, 0.0, 0.0};
+        message.k = {p1[0], p1[1], p1[2],
+                     p1[4], p1[5], p1[6],
+                     p1[8], p1[9], p1[10]};
+        message.r = {1.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0,
+                     0.0, 0.0, 1.0};
+        message.p = p1;
+
+        return checkFoxglove(foxglove_->depthCalibrationChannel().log(message),
+                             "Failed to publish /stereo/depth/calibration");
+    }
+
     bool Publisher::publishStaticTransforms(const parallax::core::SensorExtrinsics& extrinsics) {
         if (!initialized_ || foxglove_ == nullptr) return false;
 

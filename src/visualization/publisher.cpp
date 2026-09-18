@@ -985,7 +985,7 @@ namespace parallax::visualization {
 
         foxglove::messages::RawImage message;
 
-        message.timestamp = nowTimestamp();
+        message.timestamp = sourceTimestamp(product.metadata);
         message.frame_id = coordinate_frame_;
         message.width = mask.width;
         message.height = mask.height;
@@ -1023,7 +1023,7 @@ namespace parallax::visualization {
         }
 
         foxglove::messages::ImageAnnotations message;
-        message.timestamp = nowTimestamp();
+        message.timestamp = sourceTimestamp(product.metadata);
 
         // Track boxes stay in RgbLeft pixels.
         foxglove::messages::KeyValuePair image_space;
@@ -1104,7 +1104,7 @@ namespace parallax::visualization {
         }
 
         foxglove::messages::ImageAnnotations message;
-        message.timestamp = nowTimestamp();
+        message.timestamp = sourceTimestamp(product.metadata);
 
         foxglove::messages::KeyValuePair image_space;
         image_space.key = "image_space";
@@ -1178,7 +1178,10 @@ namespace parallax::visualization {
             return false;
         }
 
-        return publishObject3DScene(*product.payload, foxglove_->object3DSceneChannel(), "Failed to publish /perception/objects3d");
+        return publishObject3DScene(*product.payload,
+                                    sourceTimestamp(product.metadata),
+                                    foxglove_->object3DSceneChannel(),
+                                    "Failed to publish /perception/objects3d");
     }
 
     bool Publisher::publishLocalizedObject3DScene(const parallax::core::Product<parallax::perception::LocalizedSpatialObservation>& product) {
@@ -1186,10 +1189,16 @@ namespace parallax::visualization {
             return false;
         }
 
-        return publishObject3DScene(product.payload->objects, foxglove_->localizedObject3DSceneChannel(), "Failed to publish /localization/objects3d");
+        return publishObject3DScene(product.payload->objects,
+                                    sourceTimestamp(product.metadata),
+                                    foxglove_->localizedObject3DSceneChannel(),
+                                    "Failed to publish /localization/objects3d");
     }
 
-    bool Publisher::publishObject3DScene(const parallax::perception::Object3DSet& objects, foxglove::messages::SceneUpdateChannel& channel, const char* error_message) {
+    bool Publisher::publishObject3DScene(const parallax::perception::Object3DSet& objects,
+                                         const foxglove::messages::Timestamp& timestamp,
+                                         foxglove::messages::SceneUpdateChannel& channel,
+                                         const char* error_message) {
         if (!initialized_ || foxglove_ == nullptr || !objects.valid()) return false;
 
         foxglove::messages::SceneUpdate update;
@@ -1200,7 +1209,7 @@ namespace parallax::visualization {
             if (!object.valid()) continue;
 
             foxglove::messages::SceneEntity entity;
-            entity.timestamp = nowTimestamp();
+            entity.timestamp = timestamp;
             entity.frame_id = object.coordinate_frame;
 
             /*

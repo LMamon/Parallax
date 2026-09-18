@@ -85,8 +85,9 @@ namespace parallax::visualization {
             bool publishLocalizationState(const parallax::localization::LocalizationState& state);
             bool publishLocalizedObject3DScene(const parallax::core::Product<parallax::perception::LocalizedSpatialObservation>& product);
 
-            bool publishObject3DScene(const parallax::perception::Object3DSet& objects, 
-                                      foxglove::messages::SceneUpdateChannel& channel, 
+            bool publishObject3DScene(const parallax::perception::Object3DSet& objects,
+                                      const foxglove::messages::Timestamp& timestamp,
+                                      foxglove::messages::SceneUpdateChannel& channel,
                                       const char* error_message);
 
             bool publishLocalizationLandmarks(const parallax::localization::VisualLandmarkSet& landmarks);

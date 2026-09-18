@@ -609,6 +609,25 @@ namespace parallax::visualization {
             }
         }
 
+        if (foxglove_->localOccupancyChannel().hasSinks()) {
+            const auto occupancy =
+                store.latest<parallax::mapping::LocalOccupancyState>(
+                    parallax::core::ProductId::LocalOccupancy);
+            if (occupancy && occupancy->valid() && occupancy->payload &&
+                occupancy->payload->gridValid()) {
+                const bool changed =
+                    !has_published_local_occupancy_ ||
+                    occupancy->payload->localization_epoch != last_local_occupancy_epoch_ ||
+                    occupancy->payload->integrated_frames != last_local_occupancy_integrated_frames_;
+                if (changed) {
+                    if (!publishLocalOccupancy(*occupancy)) return false;
+                    last_local_occupancy_epoch_ = occupancy->payload->localization_epoch;
+                    last_local_occupancy_integrated_frames_ = occupancy->payload->integrated_frames;
+                    has_published_local_occupancy_ = true;
+                }
+            }
+        }
+
         if (foxglove_->localizationLandmarksChannel().hasSinks()) {
             const auto landmarks = store.latest<parallax::localization::VisualLandmarkSet>(parallax::core::ProductId::LocalizationLandmarks);
 
@@ -620,6 +639,80 @@ namespace parallax::visualization {
         }
 
         return true;
+    }
+
+    bool Publisher::publishLocalOccupancy(
+        const parallax::core::Product<parallax::mapping::LocalOccupancyState>& product) {
+
+        if (!initialized_ || foxglove_ == nullptr ||
+            !product.valid() || !product.payload || !product.payload->gridValid()) {
+            return false;
+        }
+
+        const auto& grid = *product.payload;
+        foxglove::messages::VoxelGrid message;
+        message.timestamp = sourceTimestamp(product.metadata);
+        message.frame_id = "localization_world";
+        message.row_count = grid.row_count;
+        message.column_count = grid.column_count;
+
+        foxglove::messages::Pose pose;
+        foxglove::messages::Vector3 position;
+        position.x = grid.origin_m[0];
+        position.y = grid.origin_m[1];
+        position.z = grid.origin_m[2];
+        pose.position = position;
+        foxglove::messages::Quaternion orientation;
+        orientation.w = 1.0;
+        pose.orientation = orientation;
+        message.pose = pose;
+
+        foxglove::messages::Vector3 cell_size;
+        cell_size.x = grid.voxel_size_m;
+        cell_size.y = grid.voxel_size_m;
+        cell_size.z = grid.voxel_size_m;
+        message.cell_size = cell_size;
+
+        constexpr std::uint32_t CellStride = 5;
+        message.cell_stride = CellStride;
+        message.row_stride = grid.column_count * CellStride;
+        message.slice_stride = grid.row_count * message.row_stride;
+
+        auto addField = [&message](const char* name, std::uint32_t offset) {
+            foxglove::messages::PackedElementField field;
+            field.name = name;
+            field.offset = offset;
+            field.type = foxglove::messages::PackedElementField::NumericType::UINT8;
+            message.fields.push_back(std::move(field));
+        };
+        addField("occupancy", 0);
+        addField("red", 1);
+        addField("green", 2);
+        addField("blue", 3);
+        addField("alpha", 4);
+
+        message.data.resize(grid.cells.size() * CellStride);
+        for (std::size_t i = 0; i < grid.cells.size(); ++i) {
+            const auto cell =
+                static_cast<parallax::mapping::OccupancyCell>(grid.cells[i]);
+            const std::size_t base = i * CellStride;
+            message.data[base] = static_cast<std::byte>(grid.cells[i]);
+
+            std::uint8_t red = 0, green = 0, blue = 0, alpha = 0;
+            if (cell == parallax::mapping::OccupancyCell::Free) {
+                red = 80; green = 160; blue = 255; alpha = 24;
+            } else if (cell == parallax::mapping::OccupancyCell::Occupied) {
+                red = 255; green = 80; blue = 80; alpha = 220;
+            }
+            message.data[base + 1] = static_cast<std::byte>(red);
+            message.data[base + 2] = static_cast<std::byte>(green);
+            message.data[base + 3] = static_cast<std::byte>(blue);
+            message.data[base + 4] = static_cast<std::byte>(alpha);
+        }
+
+        return checkFoxglove(
+            foxglove_->localOccupancyChannel().log(message),
+            "Failed to publish /mapping/local_occupancy");
     }
 
     bool Publisher::publishLeftImage(const parallax::core::Product<parallax::isp::RectifiedStereoFrame>& product,

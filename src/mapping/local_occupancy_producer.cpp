@@ -44,6 +44,13 @@ std::array<double, 9> multiply(const std::array<double, 9>& a,
     return out;
 }
 
+constexpr float OccupancyEpsilon = 1.0e-6F;
+std::uint8_t classifyOccupancy(float log_odds) {
+    if (log_odds > OccupancyEpsilon) return static_cast<std::uint8_t>(OccupancyCell::Occupied);
+    if (log_odds < -OccupancyEpsilon) return static_cast<std::uint8_t>(OccupancyCell::Free);
+    return static_cast<std::uint8_t>(OccupancyCell::Unknown);
+}
+
 }  // namespace
 
 LocalOccupancyProducer::LocalOccupancyProducer(
@@ -111,6 +118,110 @@ void LocalOccupancyProducer::resetForEpoch(std::uint64_t epoch) {
     mapper_->occupancy_decay_integrator().decay_to_free(false);
     epoch_ = epoch;
     last_integrated_.reset();
+}
+
+bool LocalOccupancyProducer::buildSnapshot(
+    const nvblox::Vector3f& center,
+    LocalOccupancyState* state) {
+
+    if (state == nullptr || mapper_ == nullptr) return false;
+    const auto& layer = mapper_->occupancy_layer();
+    using Block = nvblox::VoxelBlock<nvblox::OccupancyVoxel>;
+
+    const float size_x = static_cast<float>(SnapshotColumns) * VoxelSizeM;
+    const float size_y = static_cast<float>(SnapshotRows) * VoxelSizeM;
+    const float size_z = static_cast<float>(SnapshotSlices) * VoxelSizeM;
+    const auto snap = [](float value) {
+        return std::floor(value / VoxelSizeM) * VoxelSizeM;
+    };
+
+    const nvblox::Vector3f origin(
+        snap(center.x() - 0.5F * size_x),
+        snap(center.y() - 0.5F * size_y),
+        snap(center.z() - 0.5F * size_z));
+    const nvblox::Vector3f upper(
+        origin.x() + size_x, origin.y() + size_y, origin.z() + size_z);
+
+    const float block_size = layer.block_size();
+    const auto indices = layer.getAllBlockIndices();
+    std::vector<nvblox::Index3D> selected_indices;
+    std::vector<const Block*> selected_blocks;
+
+    for (const auto& index : indices) {
+        const nvblox::Vector3f block_min(
+            static_cast<float>(index.x()) * block_size,
+            static_cast<float>(index.y()) * block_size,
+            static_cast<float>(index.z()) * block_size);
+        const nvblox::Vector3f block_max =
+            block_min + nvblox::Vector3f::Constant(block_size);
+
+        const bool intersects =
+            block_max.x() > origin.x() && block_min.x() < upper.x() &&
+            block_max.y() > origin.y() && block_min.y() < upper.y() &&
+            block_max.z() > origin.z() && block_min.z() < upper.z();
+        if (!intersects) continue;
+
+        const auto block = layer.getBlockAtIndex(index);
+        if (block) {
+            selected_indices.push_back(index);
+            selected_blocks.push_back(block.get());
+        }
+    }
+
+    std::vector<Block> host_blocks(selected_blocks.size());
+    for (std::size_t i = 0; i < selected_blocks.size(); ++i) {
+        if (cudaMemcpyAsync(&host_blocks[i], selected_blocks[i], sizeof(Block),
+                            cudaMemcpyDeviceToHost, cuda_stream_) != cudaSuccess) {
+            return false;
+        }
+    }
+
+    // One synchronization covers the bounded block snapshot. Publisher never
+    // touches the live nvblox layer.
+    if (cudaStreamSynchronize(cuda_stream_) != cudaSuccess) return false;
+
+    state->origin_m = {origin.x(), origin.y(), origin.z()};
+    state->column_count = SnapshotColumns;
+    state->row_count = SnapshotRows;
+    state->slice_count = SnapshotSlices;
+    state->cells.assign(
+        static_cast<std::size_t>(SnapshotColumns) * SnapshotRows * SnapshotSlices,
+        static_cast<std::uint8_t>(OccupancyCell::Unknown));
+
+    for (std::size_t block_i = 0; block_i < host_blocks.size(); ++block_i) {
+        const auto& index = selected_indices[block_i];
+        const auto& block = host_blocks[block_i];
+
+        for (int vx = 0; vx < Block::kVoxelsPerSide; ++vx) {
+            for (int vy = 0; vy < Block::kVoxelsPerSide; ++vy) {
+                for (int vz = 0; vz < Block::kVoxelsPerSide; ++vz) {
+                    const float x = static_cast<float>(index.x()) * block_size +
+                                    (static_cast<float>(vx) + 0.5F) * VoxelSizeM;
+                    const float y = static_cast<float>(index.y()) * block_size +
+                                    (static_cast<float>(vy) + 0.5F) * VoxelSizeM;
+                    const float z = static_cast<float>(index.z()) * block_size +
+                                    (static_cast<float>(vz) + 0.5F) * VoxelSizeM;
+
+                    const int gx = static_cast<int>(std::floor((x - origin.x()) / VoxelSizeM));
+                    const int gy = static_cast<int>(std::floor((y - origin.y()) / VoxelSizeM));
+                    const int gz = static_cast<int>(std::floor((z - origin.z()) / VoxelSizeM));
+                    if (gx < 0 || gy < 0 || gz < 0 ||
+                        gx >= static_cast<int>(SnapshotColumns) ||
+                        gy >= static_cast<int>(SnapshotRows) ||
+                        gz >= static_cast<int>(SnapshotSlices)) continue;
+
+                    const std::size_t linear =
+                        (static_cast<std::size_t>(gz) * SnapshotRows +
+                         static_cast<std::size_t>(gy)) * SnapshotColumns +
+                        static_cast<std::size_t>(gx);
+                    state->cells[linear] =
+                        classifyOccupancy(block.voxels[vx][vy][vz].log_odds);
+                }
+            }
+        }
+    }
+
+    return state->gridValid();
 }
 
 nvblox::Transform LocalOccupancyProducer::worldFromRectifiedCamera(
@@ -204,6 +315,10 @@ parallax::core::SubmitResult LocalOccupancyProducer::submit(
     state->epoch_resets = epoch_resets_;
     state->allocated_blocks = mapper_->occupancy_layer().numAllocatedBlocks();
     state->allocated_bytes = mapper_->occupancy_layer().numAllocatedBytes();
+
+    if (!buildSnapshot(world_from_camera.translation(), state.get())) {
+        return parallax::core::SubmitResult::Failed;
+    }
 
     auto metadata = pose->metadata;
     metadata.production_timestamp = parallax::core::ExecutionContext::now();

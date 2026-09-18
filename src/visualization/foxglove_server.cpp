@@ -249,6 +249,16 @@ namespace parallax::visualization {
         depth_scene_channel_.emplace(std::move(depth_scene.value()));
         bindProduct(depth_scene_channel_->id(), ProductId::Depth);
 
+        auto local_occupancy =
+            foxglove::messages::VoxelGridChannel::create("/mapping/local_occupancy", context_);
+        if (!local_occupancy.has_value()) {
+            std::cerr << "Failed to create /mapping/local_occupancy channel: "
+                      << foxglove::strerror(local_occupancy.error()) << '\n';
+            return false;
+        }
+        local_occupancy_channel_.emplace(std::move(local_occupancy.value()));
+        bindProduct(local_occupancy_channel_->id(), ProductId::LocalOccupancy);
+
         auto marker_pose = foxglove::messages::PoseInFrameChannel::create("/marker/pose", context_);
         if (!marker_pose.has_value()) {
             std::cerr << "Failed to create /marker/pose channel: "
@@ -642,6 +652,11 @@ namespace parallax::visualization {
         if (depth_scene_channel_) {
             depth_scene_channel_->close();
             depth_scene_channel_.reset();
+        }
+
+        if (local_occupancy_channel_) {
+            local_occupancy_channel_->close();
+            local_occupancy_channel_.reset();
         }
 
         if (marker_pose_channel_) {

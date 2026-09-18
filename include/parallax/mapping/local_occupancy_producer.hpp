@@ -2,6 +2,7 @@
 
 #include <parallax/core/producer.hpp>
 #include <parallax/core/product_store.hpp>
+#include <parallax/mapping/local_occupancy_state.hpp>
 #include <parallax/core/sensor_extrinsics.hpp>
 #include <parallax/localization/localization.hpp>
 #include <parallax/stereo/calibration.hpp>
@@ -17,15 +18,6 @@
 #include <vector>
 
 namespace parallax::mapping {
-
-struct LocalOccupancyState {
-    std::uint64_t localization_epoch = 0;
-    std::uint64_t integrated_frames = 0;
-    std::uint64_t epoch_resets = 0;
-    std::size_t allocated_blocks = 0;
-    std::size_t allocated_bytes = 0;
-    float voxel_size_m = 0.15F;
-};
 
 class LocalOccupancyProducer final : public parallax::core::Producer {
 public:
@@ -45,8 +37,13 @@ private:
     static constexpr float VoxelSizeM = 0.15F;
     static constexpr float KeepRadiusM = 10.0F;
     static constexpr std::size_t DepthHistoryCapacity = 4;
+    // 8.1 m x 8.1 m x 4.05 m bounded visualization snapshot.
+    static constexpr std::uint32_t SnapshotColumns = 54;
+    static constexpr std::uint32_t SnapshotRows = 54;
+    static constexpr std::uint32_t SnapshotSlices = 27;
 
     void resetForEpoch(std::uint64_t epoch);
+    bool buildSnapshot(const nvblox::Vector3f& center, LocalOccupancyState* state);
     nvblox::Transform worldFromRectifiedCamera(
         const parallax::localization::LocalizationPose& pose) const;
 

@@ -698,10 +698,11 @@ namespace parallax::visualization {
             const std::size_t base = i * CellStride;
             message.data[base] = static_cast<std::byte>(grid.cells[i]);
 
+            // Free/unknown cells remain in the product but stay invisible in
+            // the default RGBA debug view. Occupied evidence is the useful
+            // visual comparison against stereo scene points and LiDAR hits.
             std::uint8_t red = 0, green = 0, blue = 0, alpha = 0;
-            if (cell == parallax::mapping::OccupancyCell::Free) {
-                red = 80; green = 160; blue = 255; alpha = 24;
-            } else if (cell == parallax::mapping::OccupancyCell::Occupied) {
+            if (cell == parallax::mapping::OccupancyCell::Occupied) {
                 red = 255; green = 80; blue = 80; alpha = 220;
             }
             message.data[base + 1] = static_cast<std::byte>(red);

@@ -2,6 +2,7 @@
 
 #include <parallax/core/producer.hpp>
 #include <parallax/core/product_store.hpp>
+#include <parallax/core/dependency_resolver.hpp>
 #include <parallax/mapping/local_occupancy_state.hpp>
 #include <parallax/core/sensor_extrinsics.hpp>
 #include <parallax/localization/localization.hpp>
@@ -24,6 +25,7 @@ public:
     LocalOccupancyProducer(const parallax::stereo::StereoCalibration& calibration,
                            const parallax::core::SensorExtrinsics& extrinsics,
                            parallax::core::ProductStore& products,
+                           const parallax::core::DependencyResolver& resolver,
                            cudaStream_t cuda_stream);
 
     std::string_view name() const noexcept override;
@@ -49,6 +51,7 @@ private:
 
     const parallax::stereo::StereoCalibration& calibration_;
     parallax::core::ProductStore& products_;
+    const parallax::core::DependencyResolver& resolver_;
     cudaStream_t cuda_stream_ = nullptr;
     std::shared_ptr<nvblox::CudaStreamNonOwning> nvblox_stream_;
     nvblox::Camera camera_;

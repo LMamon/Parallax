@@ -57,9 +57,11 @@ LocalOccupancyProducer::LocalOccupancyProducer(
     const parallax::stereo::StereoCalibration& calibration,
     const parallax::core::SensorExtrinsics& extrinsics,
     parallax::core::ProductStore& products,
+    const parallax::core::DependencyResolver& resolver,
     cudaStream_t cuda_stream)
     : calibration_(calibration),
       products_(products),
+      resolver_(resolver),
       cuda_stream_(cuda_stream),
       nvblox_stream_(std::make_shared<nvblox::CudaStreamNonOwning>(&cuda_stream_)) {
 
@@ -308,6 +310,19 @@ parallax::core::SubmitResult LocalOccupancyProducer::submit(
 
     ++integrated_frames_;
     last_integrated_ = pose->metadata.observation;
+
+    /*
+     * The nvblox occupancy layer is runtime-baseline state. Keep integrating it
+     * even with no viewer attached, but do not copy its bounded visualization
+     * window back to the CPU unless Foxglove is actually subscribed.
+     *
+     * DependencyResolver already owns synchronized demand accounting, so this
+     * check does not introduce a second subscription registry.
+     */
+    if (resolver_.demand(parallax::core::ProductId::LocalOccupancy,
+                         parallax::core::DemandSource::FoxgloveSubscriber) == 0) {
+        return parallax::core::SubmitResult::Submitted;
+    }
 
     auto state = std::make_shared<LocalOccupancyState>();
     state->localization_epoch = pose->payload->epoch;

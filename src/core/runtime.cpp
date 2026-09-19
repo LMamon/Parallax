@@ -165,7 +165,11 @@ namespace parallax::core {
         
         cuvslam_producer_ = std::make_unique<parallax::localization::CuVslamProducer>(*cuvslam_localizer_, context_.products());
         local_occupancy_producer_ = std::make_unique<parallax::mapping::LocalOccupancyProducer>(
-            pipeline_.calibration(), sensor_extrinsics_, context_.products(), context_.stereoLane().cudaHandle());
+            pipeline_.calibration(),
+            sensor_extrinsics_,
+            context_.products(),
+            resolver_,
+            context_.stereoLane().cudaHandle());
         localized_spatial_producer_ = std::make_unique<parallax::perception::LocalizedSpatialProducer>(pipeline_.calibration(),
                                                                                                        sensor_extrinsics_,
                                                                                                        context_.products());

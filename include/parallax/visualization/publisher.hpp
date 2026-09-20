@@ -85,6 +85,7 @@ namespace parallax::visualization {
             bool publishTrackAnnotations(const parallax::core::Product<parallax::tracking::Track2D>& product);
             bool publishObjectDepthAnnotations(const parallax::core::Product<parallax::perception::Object3DSet>& product);
             bool publishObject3DScene(const parallax::core::Product<parallax::perception::Object3DSet>& product);
+            bool publishTrackedObject3DScene(const parallax::core::Product<parallax::perception::Object3DSet>& product);
             bool publishLocalizationTransform(const parallax::localization::LocalizationOdometry& odometry);
             bool publishLocalizationPose(const parallax::localization::LocalizationOdometry& odometry);
             bool publishLocalizationTrajectory(const parallax::localization::LocalizationTrajectory& trajectory);
@@ -146,6 +147,11 @@ namespace parallax::visualization {
 
             std::uint64_t last_localized_object_scene_revision_ = 0;
             std::uint64_t last_localized_object_scene_epoch_ = 0;
+
+            parallax::core::SourceObservation last_tracked_object_scene_observation_{};
+            std::uint64_t last_tracked_object_scene_revision_ = 0;
+            std::uint64_t last_tracked_object_scene_track_id_ = 0;
+            bool has_published_tracked_object_scene_ = false;
 
             bool has_published_localized_object_scene_ = false;
 

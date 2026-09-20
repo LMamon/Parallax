@@ -420,6 +420,23 @@ namespace parallax::visualization {
         object3d_scene_channel_.emplace(std::move(object3d_scene.value()));
         bindProduct(object3d_scene_channel_->id(), ProductId::Object3D);
 
+        /*
+         * This is metric scene geometry, not another image overlay. The product
+         * remains in the rectified-left camera frame and carries the source
+         * timestamp. Foxglove resolves that frame through Parallax's existing
+         * camera/body/localization transform tree.
+         */
+        auto tracked_object3d_scene =
+            foxglove::messages::SceneUpdateChannel::create("/tracking/objects3d", context_);
+        if (!tracked_object3d_scene.has_value()) {
+            std::cerr << "Failed to create /tracking/objects3d channel: "
+                      << foxglove::strerror(tracked_object3d_scene.error()) << '\n';
+            return false;
+        }
+
+        tracked_object3d_scene_channel_.emplace(std::move(tracked_object3d_scene.value()));
+        bindProduct(tracked_object3d_scene_channel_->id(), ProductId::TrackedObject3D);
+
         auto localized_object3d_scene = foxglove::messages::SceneUpdateChannel::create("/localization/objects3d", context_);
         if (!localized_object3d_scene.has_value()) {
             std::cerr << "Failed to create /localization/objects3d channel: "
@@ -697,6 +714,11 @@ namespace parallax::visualization {
         if (detection_channel_) {
             detection_channel_->close();
             detection_channel_.reset();
+        }
+
+        if (tracked_object3d_scene_channel_) {
+            tracked_object3d_scene_channel_->close();
+            tracked_object3d_scene_channel_.reset();
         }
 
         if (localized_object3d_scene_channel_) {

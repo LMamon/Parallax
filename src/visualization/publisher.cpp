@@ -525,6 +525,30 @@ namespace parallax::visualization {
         }
 
 
+        if (foxglove_->trackedObject3DSceneChannel().hasSinks()) {
+            const auto tracked = store.latest<parallax::perception::Object3DSet>(
+                                                parallax::core::ProductId::TrackedObject3D);
+
+            if (tracked && tracked->valid() && tracked->payload &&
+                tracked->payload->valid() && !tracked->payload->objects.empty()) {
+
+                const auto& object = tracked->payload->objects.front();
+                const bool new_scene = !has_published_tracked_object_scene_ ||
+                                       tracked->metadata.observation != last_tracked_object_scene_observation_ ||
+                                       tracked->payload->query_revision != last_tracked_object_scene_revision_ ||
+                                       object.track_id != last_tracked_object_scene_track_id_;
+
+                if (new_scene) {
+                    if (!publishTrackedObject3DScene(*tracked)) return false;
+
+                    last_tracked_object_scene_observation_ = tracked->metadata.observation;
+                    last_tracked_object_scene_revision_ = tracked->payload->query_revision;
+                    last_tracked_object_scene_track_id_ = object.track_id;
+                    has_published_tracked_object_scene_ = true;
+                }
+            }
+        }
+
         if (foxglove_->localizedObject3DSceneChannel().hasSinks()) {
             const auto localized = store.latest<parallax::perception::LocalizedSpatialObservation>(
                                                 parallax::core::ProductId::LocalizedSpatialObservation);
@@ -1322,6 +1346,20 @@ namespace parallax::visualization {
                                     "Failed to publish /perception/objects3d");
     }
 
+    bool Publisher::publishTrackedObject3DScene(
+        const parallax::core::Product<parallax::perception::Object3DSet>& product) {
+
+        if (!initialized_ || foxglove_ == nullptr ||
+            !product.valid() || !product.payload || !product.payload->valid()) {
+            return false;
+        }
+
+        return publishObject3DScene(*product.payload,
+                                    sourceTimestamp(product.metadata),
+                                    foxglove_->trackedObject3DSceneChannel(),
+                                    "Failed to publish /tracking/objects3d");
+    }
+
     bool Publisher::publishLocalizedObject3DScene(const parallax::core::Product<parallax::perception::LocalizedSpatialObservation>& product) {
         if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload || !product.payload->valid()) {
             return false;
@@ -1431,7 +1469,9 @@ namespace parallax::visualization {
                 entity.lines.push_back(std::move(rectangle));
             }
 
-            if (object.geometry == parallax::perception::Object3DGeometry::Surface && !object.surface_points_m.empty()) {
+            if ((object.geometry == parallax::perception::Object3DGeometry::Surface ||
+                 object.geometry == parallax::perception::Object3DGeometry::ObservedExtent) &&
+                !object.surface_points_m.empty()) {
                 constexpr std::size_t MaxVisibleSurfacePoints = 64;
                 const std::size_t visible = std::min(object.surface_points_m.size(), MaxVisibleSurfacePoints);
                 
@@ -1469,6 +1509,51 @@ namespace parallax::visualization {
                     point.color = color;
                     entity.spheres.push_back(std::move(point));
                 }
+            }
+
+            if (object.geometry == parallax::perception::Object3DGeometry::ObservedExtent) {
+                /*
+                 * ObservedExtent bounds only stereo-supported visible samples.
+                 * This translucent box is a measurement envelope, not a claim
+                 * about hidden/back-side physical dimensions.
+                 *
+                 * The bounds are axis-aligned in object.coordinate_frame, so
+                 * identity orientation is intentional. A future oriented extent
+                 * would require a different geometry contract.
+                 */
+                foxglove::messages::CubePrimitive extent;
+                foxglove::messages::Pose extent_pose;
+
+                foxglove::messages::Vector3 extent_position;
+                extent_position.x = object.observed_extent_center_m[0];
+                extent_position.y = object.observed_extent_center_m[1];
+                extent_position.z = object.observed_extent_center_m[2];
+                extent_pose.position = extent_position;
+
+                foxglove::messages::Quaternion extent_orientation;
+                extent_orientation.w = 1.0;
+                extent_pose.orientation = extent_orientation;
+                extent.pose = extent_pose;
+
+                foxglove::messages::Vector3 extent_size;
+                extent_size.x = object.observed_extent_size_m[0];
+                extent_size.y = object.observed_extent_size_m[1];
+                extent_size.z = object.observed_extent_size_m[2];
+                extent.size = extent_size;
+
+                foxglove::messages::Color extent_color;
+                extent_color.r = 0.0;
+                extent_color.g = 0.75;
+                extent_color.b = 1.0;
+                extent_color.a = 0.18;
+                extent.color = extent_color;
+
+                entity.cubes.push_back(std::move(extent));
+
+                foxglove::messages::KeyValuePair support;
+                support.key = "observed_extent_support";
+                support.value = std::to_string(object.observed_extent_support);
+                entity.metadata.push_back(std::move(support));
             }
 
             const std::string distance = formatDepthForDisplay(objectDisplayDistance(object));

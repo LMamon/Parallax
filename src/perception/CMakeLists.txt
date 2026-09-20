@@ -8,6 +8,7 @@ add_library(parallax_perception
     observed_extent.cpp
     lidar_detection_associator.cpp
     object3d_producer.cpp
+    tracked_object3d_producer.cpp
     localized_spatial_producer.cpp
 )
 

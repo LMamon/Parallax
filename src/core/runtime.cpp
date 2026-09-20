@@ -154,6 +154,7 @@ namespace parallax::core {
         object3d_producer_ = std::make_unique<parallax::perception::Object3DProducer>(*stereo_roi_associator_,
                                                                                      *lidar_detection_associator_,
                                                                                      context_.products());
+        tracked_object3d_producer_ = std::make_unique<parallax::perception::TrackedObject3DProducer>(*stereo_roi_associator_, context_.products());
 
         segmentation_producer_ = std::make_unique<parallax::perception::SegmentationProducer>(
                                                 *efficientvit_sam_,
@@ -190,6 +191,7 @@ namespace parallax::core {
 
         if (lidar_producer_) graph_.register_producer(*lidar_producer_);
         graph_.register_producer(*object3d_producer_);
+        graph_.register_producer(*tracked_object3d_producer_);
         graph_.register_producer(*localized_spatial_producer_);
         graph_.register_producer(*segmentation_producer_);
         graph_.register_producer(*cuvslam_producer_);

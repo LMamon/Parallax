@@ -33,6 +33,7 @@ namespace parallax::core {
         Segmentation,
         Track2D,
         Object3D,
+        TrackedObject3D,
         LocalizedSpatialObservation,
         LocalizationObservations,
         LocalizationLandmarks,

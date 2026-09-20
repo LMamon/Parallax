@@ -78,6 +78,7 @@ namespace parallax::application {
             bool detection_demand_owned_ = false;
             bool segmentation_demand_owned_ = false;
             bool tracking_demand_owned_ = false;
+            bool tracked_object3d_demand_owned_ = false;
             bool object3d_demand_owned_ = false;
             
             std::uint64_t next_tracking_query_revision_ = 1;

@@ -88,6 +88,7 @@ namespace parallax::application {
                 state_.tracking_target = command.target;
 
                 acquire_once(core::ProductId::Track2D, tracking_demand_owned_);
+                acquire_once(core::ProductId::TrackedObject3D, tracked_object3d_demand_owned_);
                 return {RequestStatus::Applied, "tracking requested"};
             }
 
@@ -123,6 +124,7 @@ namespace parallax::application {
             }
 
             case CommandVerb::StopTracking: {
+                release_if_owned(core::ProductId::TrackedObject3D, tracked_object3d_demand_owned_);
                 release_if_owned(core::ProductId::Track2D, tracking_demand_owned_);
 
                 state_.tracking_requested = false;
@@ -140,6 +142,7 @@ namespace parallax::application {
         release_if_owned(core::ProductId::MarkerDepth, marker_depth_demand_owned_);
         release_if_owned(core::ProductId::Detection, detection_demand_owned_);
         release_if_owned(core::ProductId::Segmentation, segmentation_demand_owned_);
+        release_if_owned(core::ProductId::TrackedObject3D, tracked_object3d_demand_owned_);
         release_if_owned(core::ProductId::Track2D, tracking_demand_owned_);
         release_if_owned(core::ProductId::Object3D, object3d_demand_owned_);
 

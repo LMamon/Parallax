@@ -11,6 +11,7 @@
 #include <parallax/stereo/calibration.hpp>
 #include <parallax/cuda/masked_depth_samples.cuh>
 #include <parallax/perception/segmentation.hpp>
+#include <parallax/tracking/track.hpp>
 
 #include <array>
 #include <cstddef>
@@ -61,6 +62,12 @@ namespace parallax::perception {
                            const core::Product<isp::DepthFrame>& depth,
                            core::ExecutionContext& context,
                            Object3DSet& output);
+
+            bool associateTrack(const tracking::Track2D& track,
+                                const core::ProductMetadata& track_metadata,
+                                const core::Product<isp::DepthFrame>& depth,
+                                core::ExecutionContext& context,
+                                Object3D& output);
 
             bool refineWithMask(const SegmentationMask& mask,
                                 const core::ProductMetadata& mask_metadata,

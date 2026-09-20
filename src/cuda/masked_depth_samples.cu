@@ -7,6 +7,30 @@
 namespace parallax::cuda {
 
     namespace {
+        __global__ void sampleBoxDepthKernel(float box_x, float box_y, float box_width, float box_height,
+                                             const float* depth, std::size_t depth_pitch,
+                                             const float* map_x, std::size_t map_x_pitch,
+                                             const float* map_y, std::size_t map_y_pitch,
+                                             std::uint32_t width, std::uint32_t height,
+                                             float fx, float fy, float cx, float cy,
+                                             std::uint32_t stride, std::uint32_t max_samples,
+                                             MaskedDepthPoint* samples, std::uint32_t* sample_count) {
+            const std::uint32_t x=(blockIdx.x*blockDim.x+threadIdx.x)*stride;
+            const std::uint32_t y=(blockIdx.y*blockDim.y+threadIdx.y)*stride;
+            if(x>=width||y>=height) return;
+            const auto* mx=reinterpret_cast<const float*>(reinterpret_cast<const std::uint8_t*>(map_x)+static_cast<std::size_t>(y)*map_x_pitch);
+            const auto* my=reinterpret_cast<const float*>(reinterpret_cast<const std::uint8_t*>(map_y)+static_cast<std::size_t>(y)*map_y_pitch);
+            const float sx=mx[x], sy=my[x];
+            /* Track2D is RgbLeft. Membership is tested after calibrated rectified->source mapping. */
+            if(!isfinite(sx)||!isfinite(sy)||sx<box_x||sx>box_x+box_width||sy<box_y||sy>box_y+box_height) return;
+            const auto* dz=reinterpret_cast<const float*>(reinterpret_cast<const std::uint8_t*>(depth)+static_cast<std::size_t>(y)*depth_pitch);
+            const float z=dz[x];
+            if(!isfinite(z)||z<=0.0F) return;
+            const std::uint32_t i=atomicAdd(sample_count,1U);
+            if(i>=max_samples) return;
+            samples[i]={(static_cast<float>(x)-cx)*z/fx,(static_cast<float>(y)-cy)*z/fy,z};
+        }
+
         __global__ void sampleMaskedDepthKernel(const std::uint8_t* mask,
                                                 std::size_t mask_pitch,
                                                 std::uint32_t mask_width,
@@ -79,6 +103,31 @@ namespace parallax::cuda {
 
             samples[index] = point;
         }
+    }
+
+    bool sampleBoxDepth(float box_x, float box_y, float box_width, float box_height,
+                        const CudaBuffer& depth,
+                        const CudaBuffer& rectified_to_rgb_x,
+                        const CudaBuffer& rectified_to_rgb_y,
+                        float fx, float fy, float cx, float cy,
+                        std::uint32_t sample_stride, std::uint32_t max_samples,
+                        CudaBuffer& samples, CudaBuffer& sample_count,
+                        cudaStream_t stream) {
+        if(!isfinite(box_x)||!isfinite(box_y)||!isfinite(box_width)||!isfinite(box_height)||
+           box_width<=0.0F||box_height<=0.0F||!depth.isAllocated()||
+           !rectified_to_rgb_x.isAllocated()||!rectified_to_rgb_y.isAllocated()||
+           !samples.isAllocated()||!sample_count.isAllocated()||stream==nullptr||
+           sample_stride==0||max_samples==0||fx<=0.0F||fy<=0.0F) return false;
+        if(cudaMemsetAsync(sample_count.data(),0,sizeof(std::uint32_t),stream)!=cudaSuccess) return false;
+        const std::uint32_t sw=(depth.width()+sample_stride-1)/sample_stride;
+        const std::uint32_t sh=(depth.height()+sample_stride-1)/sample_stride;
+        constexpr dim3 Threads{16,16};
+        const dim3 blocks{(sw+Threads.x-1)/Threads.x,(sh+Threads.y-1)/Threads.y};
+        sampleBoxDepthKernel<<<blocks,Threads,0,stream>>>(box_x,box_y,box_width,box_height,
+            depth.dataAs<float>(),depth.pitch(),rectified_to_rgb_x.dataAs<float>(),rectified_to_rgb_x.pitch(),
+            rectified_to_rgb_y.dataAs<float>(),rectified_to_rgb_y.pitch(),depth.width(),depth.height(),
+            fx,fy,cx,cy,sample_stride,max_samples,samples.dataAs<MaskedDepthPoint>(),sample_count.dataAs<std::uint32_t>());
+        return cudaGetLastError()==cudaSuccess;
     }
 
     bool sampleMaskedDepth(const std::uint8_t* mask,

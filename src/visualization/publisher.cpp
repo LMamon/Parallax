@@ -536,7 +536,8 @@ namespace parallax::visualization {
                 const bool new_scene = !has_published_tracked_object_scene_ ||
                                        tracked->metadata.observation != last_tracked_object_scene_observation_ ||
                                        tracked->payload->query_revision != last_tracked_object_scene_revision_ ||
-                                       object.track_id != last_tracked_object_scene_track_id_;
+                                       object.track_id != last_tracked_object_scene_track_id_ ||
+                                       object.method != last_tracked_object_scene_method_;
 
                 if (new_scene) {
                     if (!publishTrackedObject3DScene(*tracked)) return false;
@@ -544,7 +545,43 @@ namespace parallax::visualization {
                     last_tracked_object_scene_observation_ = tracked->metadata.observation;
                     last_tracked_object_scene_revision_ = tracked->payload->query_revision;
                     last_tracked_object_scene_track_id_ = object.track_id;
+                    last_tracked_object_scene_method_ = object.method;
                     has_published_tracked_object_scene_ = true;
+                }
+            }
+        }
+
+        if (foxglove_->segmentationSceneChannel().hasSinks()) {
+            const auto segmented = store.latest<parallax::perception::Object3DSet>(
+                                                parallax::core::ProductId::TrackedObject3D);
+
+            if (segmented && segmented->valid() && segmented->payload &&
+                segmented->payload->valid() && !segmented->payload->objects.empty()) {
+
+                const auto& object = segmented->payload->objects.front();
+
+                /*
+                 * Only the synchronized SAM+stereo correction belongs on this
+                 * topic. Ordinary DCF rectangle support stays exclusively on
+                 * /tracking/objects3d.
+                 */
+                if (object.method == parallax::perception::Object3DMethod::StereoMask) {
+                    const bool new_scene = !has_published_segmentation_scene_ ||
+                                           segmented->metadata.observation != last_segmentation_scene_observation_ ||
+                                           segmented->payload->query_revision != last_segmentation_scene_revision_;
+
+                    if (new_scene) {
+                        if (!publishObject3DScene(*segmented->payload,
+                                                  sourceTimestamp(segmented->metadata),
+                                                  foxglove_->segmentationSceneChannel(),
+                                                  "Failed to publish /perception/segmentation/scene")) {
+                            return false;
+                        }
+
+                        last_segmentation_scene_observation_ = segmented->metadata.observation;
+                        last_segmentation_scene_revision_ = segmented->payload->query_revision;
+                        has_published_segmentation_scene_ = true;
+                    }
                 }
             }
         }
@@ -1862,6 +1899,11 @@ namespace parallax::visualization {
         last_segmentation_observation_ = {};
         last_segmentation_query_revision_ = 0;
         has_published_segmentation_ = false;
+
+        last_segmentation_scene_observation_ = {};
+        last_segmentation_scene_revision_ = 0;
+        has_published_segmentation_scene_ = false;
+        last_tracked_object_scene_method_ = parallax::perception::Object3DMethod::Unknown;
 
         width_ = 0;
         height_ = 0;

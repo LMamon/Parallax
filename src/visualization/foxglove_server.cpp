@@ -437,6 +437,23 @@ namespace parallax::visualization {
         tracked_object3d_scene_channel_.emplace(std::move(tracked_object3d_scene.value()));
         bindProduct(tracked_object3d_scene_channel_->id(), ProductId::TrackedObject3D);
 
+        /*
+         * Spatial segmentation is the mask-supported stereo measurement itself,
+         * not the RawImage mask projected at an arbitrary display distance.
+         * It shares TrackedObject3D demand because the strong measurement is a
+         * synchronized correction of that persistent target.
+         */
+        auto segmentation_scene =
+            foxglove::messages::SceneUpdateChannel::create("/perception/segmentation/scene", context_);
+        if (!segmentation_scene.has_value()) {
+            std::cerr << "Failed to create /perception/segmentation/scene channel: "
+                      << foxglove::strerror(segmentation_scene.error()) << '\n';
+            return false;
+        }
+
+        segmentation_scene_channel_.emplace(std::move(segmentation_scene.value()));
+        bindProduct(segmentation_scene_channel_->id(), ProductId::TrackedObject3D);
+
         auto localized_object3d_scene = foxglove::messages::SceneUpdateChannel::create("/localization/objects3d", context_);
         if (!localized_object3d_scene.has_value()) {
             std::cerr << "Failed to create /localization/objects3d channel: "
@@ -719,6 +736,11 @@ namespace parallax::visualization {
         if (tracked_object3d_scene_channel_) {
             tracked_object3d_scene_channel_->close();
             tracked_object3d_scene_channel_.reset();
+        }
+
+        if (segmentation_scene_channel_) {
+            segmentation_scene_channel_->close();
+            segmentation_scene_channel_.reset();
         }
 
         if (localized_object3d_scene_channel_) {

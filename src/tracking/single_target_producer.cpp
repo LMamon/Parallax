@@ -5,6 +5,7 @@
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/perception/detection.hpp>
 #include <parallax/perception/image_space.hpp>
+#include <parallax/perception/segmentation.hpp>
 #include <parallax/tracking/tracker_ordering.hpp>
 
 #include <algorithm>
@@ -98,6 +99,19 @@ namespace parallax::tracking {
             return initialize_from_detection(context) ? core::SubmitResult::Submitted : core::SubmitResult::NoWork;
         }
 
+        /*
+         * A semantic refresh is a correction event, not a second tracker loop.
+         * Accept the detector result first, then let SAM finish against that
+         * same observation while DCF resumes on subsequent RGB generations.
+         */
+        finish_semantic_refresh_if_mask_ready();
+
+        if (semantic_refresh_needed_ && !semantic_detection_accepted_) {
+            if (refresh_from_detection(context)) {
+                return core::SubmitResult::Submitted;
+            }
+        }
+
         return update_track(context);
     }
 
@@ -168,7 +182,73 @@ namespace parallax::tracking {
         if (reacquiring) ++metrics_.reacquisition_successes;
 
         lost_since_ = {};
+        last_semantic_refresh_ = std::chrono::steady_clock::now();
         clear_reacquisition();
+        return true;
+    }
+
+    bool SingleTargetProducer::refresh_from_detection(core::ExecutionContext& context) {
+        if (!semantic_refresh_needed_ || semantic_detection_accepted_ || !tracker_.initialized()) {
+            return false;
+        }
+
+        const auto detection = products_.latest<perception::DetectionSet>(core::ProductId::Detection);
+        if (!detection || !detection->valid() || !detection->payload ||
+            !detection->payload->valid() || detection->payload->empty()) {
+            return false;
+        }
+
+        if (detection->payload->query != target_query_ ||
+            detection->payload->query_revision != target_revision_ ||
+            detection->payload->image_space != perception::ImageSpace::RgbLeft ||
+            detection->metadata.production_timestamp < semantic_refresh_started_at_) {
+            return false;
+        }
+
+        if (track_.last_detector_observation.valid()) {
+            const auto& previous = track_.last_detector_observation;
+            const auto& candidate = detection->metadata.observation;
+            if (candidate.source != previous.source || candidate.sequence <= previous.sequence) {
+                return false;
+            }
+        }
+
+        const auto rgb = products_.find_observation<isp::StereoRgbFrame>(
+            core::ProductId::RgbLeft, detection->metadata.observation);
+        if (!rgb || !rgb->valid() || !rgb->payload) return false;
+        if (!context.waitForHost(rgb->completion)) return false;
+
+        const auto best = std::max_element(
+            detection->payload->scores.begin(), detection->payload->scores.end());
+        if (best == detection->payload->scores.end()) return false;
+
+        const std::size_t index =
+            static_cast<std::size_t>(std::distance(detection->payload->scores.begin(), best));
+
+        /*
+         * Reinitialize the correlation filter from the semantic detector box.
+         * Track identity is preserved: this is a correction of one persistent
+         * target, not creation of a new target.
+         */
+        if (!tracker_.initialize(rgb->payload->left, detection->payload->boxes[index])) {
+            return false;
+        }
+
+        track_.box = detection->payload->boxes[index];
+        track_.quality = detection->payload->scores[index];
+        track_.source_observation = detection->metadata.observation;
+        track_.last_detector_observation = detection->metadata.observation;
+        track_.last_tracker_observation = detection->metadata.observation;
+        track_.last_detector_timestamp = detection->metadata.timestamp;
+        track_.last_tracker_timestamp = detection->metadata.timestamp;
+
+        semantic_detection_accepted_ = true;
+        semantic_refresh_observation_ = detection->metadata.observation;
+
+        auto metadata = detection->metadata;
+        metadata.production_timestamp = std::chrono::steady_clock::now();
+        publish_track(TrackLifecycle::Tracking, track_.box, track_.quality, metadata);
+
         return true;
     }
 
@@ -242,12 +322,75 @@ namespace parallax::tracking {
         }
 
         publish_track(TrackLifecycle::Tracking, result.box, result.response, metadata);
+        maybe_begin_semantic_refresh();
         return core::SubmitResult::Submitted;
+    }
+
+    void SingleTargetProducer::maybe_begin_semantic_refresh() {
+        if (reacquisition_needed_ || semantic_refresh_needed_ || target_query_.empty()) return;
+
+        const auto now = std::chrono::steady_clock::now();
+        if (last_semantic_refresh_ != std::chrono::steady_clock::time_point{} &&
+            now - last_semantic_refresh_ < SemanticRefreshPeriod) {
+            return;
+        }
+
+        semantic_refresh_needed_ = true;
+        semantic_detection_accepted_ = false;
+        semantic_refresh_observation_ = {};
+        semantic_refresh_started_at_ = now;
+
+        /*
+         * Segmentation depends on Detection, so this one demand reference keeps
+         * the complete strong-correction branch active. Runtime sees
+         * needsDetection() and points NanoOWL at the tracking query/revision.
+         */
+        if (!segmentation_demand_owned_) {
+            resolver_.acquire(core::ProductId::Segmentation, core::DemandSource::InternalDependent);
+            segmentation_demand_owned_ = true;
+            ++metrics_.detector_refreshes;
+
+            if (first_detector_refresh_ == std::chrono::steady_clock::time_point{}) {
+                first_detector_refresh_ = now;
+            }
+        }
+    }
+
+    void SingleTargetProducer::finish_semantic_refresh_if_mask_ready() {
+        if (!semantic_refresh_needed_ || !semantic_detection_accepted_ ||
+            !semantic_refresh_observation_.valid()) {
+            return;
+        }
+
+        const auto mask = products_.latest<perception::SegmentationMask>(core::ProductId::Segmentation);
+        if (!mask || !mask->valid() || !mask->payload || !mask->payload->valid()) return;
+
+        if (mask->metadata.observation != semantic_refresh_observation_ ||
+            mask->payload->source_observation != semantic_refresh_observation_ ||
+            mask->payload->query_revision != target_revision_ ||
+            mask->payload->query != target_query_) {
+            return;
+        }
+
+        last_semantic_refresh_ = std::chrono::steady_clock::now();
+        clear_semantic_refresh();
+    }
+
+    void SingleTargetProducer::clear_semantic_refresh() noexcept {
+        semantic_refresh_needed_ = false;
+        semantic_detection_accepted_ = false;
+        semantic_refresh_observation_ = {};
+        semantic_refresh_started_at_ = {};
+
+        if (!segmentation_demand_owned_) return;
+        resolver_.release(core::ProductId::Segmentation, core::DemandSource::InternalDependent);
+        segmentation_demand_owned_ = false;
     }
 
     void SingleTargetProducer::begin_reacquisition() {
         if (reacquisition_needed_) return;
 
+        clear_semantic_refresh();
         reacquisition_needed_ = true;
         reacquisition_started_at_ = std::chrono::steady_clock::now();
 
@@ -294,6 +437,7 @@ namespace parallax::tracking {
 
     void SingleTargetProducer::reset() noexcept {
         tracker_.reset();
+        clear_semantic_refresh();
         clear_reacquisition();
         if (!target_query_.empty() || tracker_.initialized() || reacquisition_needed_) {
             ++metrics_.resets;
@@ -303,6 +447,7 @@ namespace parallax::tracking {
         target_revision_ = 0;
         track_ = {};
         lost_since_ = {};
+        last_semantic_refresh_ = {};
     }
 
     SingleTargetMetrics SingleTargetProducer::metrics() const noexcept {

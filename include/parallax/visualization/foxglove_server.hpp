@@ -110,6 +110,7 @@ namespace parallax::visualization {
             
             [[nodiscard]] foxglove::messages::SceneUpdateChannel& object3DSceneChannel() noexcept { return *object3d_scene_channel_; }
             [[nodiscard]] foxglove::messages::SceneUpdateChannel& trackedObject3DSceneChannel() noexcept { return *tracked_object3d_scene_channel_; }
+            [[nodiscard]] foxglove::messages::SceneUpdateChannel& segmentationSceneChannel() noexcept { return *segmentation_scene_channel_; }
             [[nodiscard]] foxglove::messages::SceneUpdateChannel& localizedObject3DSceneChannel() noexcept { return *localized_object3d_scene_channel_; }
             [[nodiscard]] foxglove::messages::SceneUpdateChannel& localizationLandmarksChannel() noexcept { return *localization_landmarks_channel_; }
             
@@ -154,6 +155,7 @@ namespace parallax::visualization {
             std::optional<foxglove::messages::PoseInFrameChannel> marker_pose_channel_;
             std::optional<foxglove::messages::SceneUpdateChannel> object3d_scene_channel_;
             std::optional<foxglove::messages::SceneUpdateChannel> tracked_object3d_scene_channel_;
+            std::optional<foxglove::messages::SceneUpdateChannel> segmentation_scene_channel_;
             std::optional<foxglove::messages::ImageAnnotationsChannel> detection_annotations_channel_;
             std::optional<foxglove::messages::ImageAnnotationsChannel> track_annotations_channel_;
             std::optional<foxglove::messages::ImageAnnotationsChannel> object_depth_annotations_channel_;

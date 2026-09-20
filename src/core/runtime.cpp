@@ -386,8 +386,11 @@ namespace parallax::core {
                                                 request_state.segmentation_target != request_state.tracking_target;
 
             /*
-            * Tracking borrows the existing detector only while acquiring a box.
-            * An active segmentation prompt is not replaced with an unrelated target.
+            * Tracking borrows the existing detector for acquisition and for
+            * bounded semantic refreshes. SAM follows those refresh detections so
+            * detector correction, mask, and metric depth retain one observation ID.
+            * An explicit segmentation prompt for another target still wins rather
+            * than being silently replaced by tracking.
             */
             if (detection_producer_) {
                 if (tracker_needs_detection && !segmentation_conflicts) {

@@ -15,7 +15,10 @@ class TrackedObject3DProducer final : public core::Producer {
   core::SubmitResult submit(core::ExecutionContext& context) override;
  private:
   static constexpr std::size_t DepthHistoryCapacity=4;
-  StereoRoiAssociator& stereo_; core::ProductStore& products_; core::SourceObservation last_track_observation_{};
+  StereoRoiAssociator& stereo_;
+  core::ProductStore& products_;
+  core::SourceObservation last_track_observation_{};
+  core::SourceObservation last_mask_observation_{};
   const std::vector<core::ProductId> inputs_{core::ProductId::Track2D,core::ProductId::Depth};
   const std::vector<core::ProductId> outputs_{core::ProductId::TrackedObject3D};
   const std::vector<core::CompatibleInputRequirement> compatible_inputs_{{core::ProductId::Depth,DepthHistoryCapacity}};

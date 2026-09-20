@@ -121,6 +121,8 @@ namespace parallax::perception {
         mask->source_observation = detection->metadata.observation;
         mask->image_space = detection->payload->image_space;
         mask->query_revision = detection->payload->query_revision;
+        mask->query = detection->payload->query;
+        mask->prompt_box = detection->payload->boxes[selected];
         mask->width = result.width;
         mask->height = result.height;
         mask->pitch_bytes = result.pitch_bytes;

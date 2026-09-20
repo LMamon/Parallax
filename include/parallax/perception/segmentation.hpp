@@ -6,6 +6,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
+
+#include <opencv2/core/types.hpp>
 
 namespace parallax::perception {
 
@@ -22,6 +25,12 @@ namespace parallax::perception {
         ImageSpace image_space = ImageSpace::Unknown;
 
         std::uint64_t query_revision = 0;
+
+        // Preserve the detector prompt that produced this mask.  Tracking may
+        // already have advanced to a newer DCF frame when SAM finishes, so a
+        // consumer must not substitute the newest track rectangle here.
+        std::string query;
+        cv::Rect2f prompt_box{};
 
         std::uint32_t width = 0;
         std::uint32_t height = 0;

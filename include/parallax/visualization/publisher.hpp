@@ -151,7 +151,13 @@ namespace parallax::visualization {
             parallax::core::SourceObservation last_tracked_object_scene_observation_{};
             std::uint64_t last_tracked_object_scene_revision_ = 0;
             std::uint64_t last_tracked_object_scene_track_id_ = 0;
+            parallax::perception::Object3DMethod last_tracked_object_scene_method_ =
+                parallax::perception::Object3DMethod::Unknown;
             bool has_published_tracked_object_scene_ = false;
+
+            parallax::core::SourceObservation last_segmentation_scene_observation_{};
+            std::uint64_t last_segmentation_scene_revision_ = 0;
+            bool has_published_segmentation_scene_ = false;
 
             bool has_published_localized_object_scene_ = false;
 

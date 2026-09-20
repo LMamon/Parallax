@@ -45,7 +45,9 @@ namespace parallax::tracking {
 
             [[nodiscard]] std::string_view targetQuery() const noexcept { return target_query_; }
             [[nodiscard]] std::uint64_t targetRevision() const noexcept { return target_revision_; }
-            [[nodiscard]] bool needsDetection() const noexcept { return reacquisition_needed_; }
+            [[nodiscard]] bool needsDetection() const noexcept {
+                return reacquisition_needed_ || semantic_refresh_needed_;
+            }
             [[nodiscard]] const Track2D& track() const noexcept { return track_; }
             [[nodiscard]] bool tracking() const noexcept { return tracker_.initialized(); }
             [[nodiscard]] SingleTargetMetrics metrics() const noexcept;
@@ -56,8 +58,12 @@ namespace parallax::tracking {
 
         private:
             [[nodiscard]] bool initialize_from_detection(core::ExecutionContext& context);
+            [[nodiscard]] bool refresh_from_detection(core::ExecutionContext& context);
             [[nodiscard]] core::SubmitResult update_track(core::ExecutionContext& context);
 
+            void maybe_begin_semantic_refresh();
+            void finish_semantic_refresh_if_mask_ready();
+            void clear_semantic_refresh() noexcept;
             void begin_reacquisition();
             void clear_reacquisition() noexcept;
 
@@ -79,6 +85,20 @@ namespace parallax::tracking {
             bool reacquisition_needed_ = false;
             bool detection_demand_owned_ = false;
             std::chrono::steady_clock::time_point reacquisition_started_at_{};
+
+            /*
+             * Semantic refresh is deliberately slower than DCF.  Segmentation
+             * demand transitively keeps Detection alive, so one refresh event
+             * yields a detector correction and a SAM mask from the same source
+             * observation without running either network at camera cadence.
+             */
+            static constexpr auto SemanticRefreshPeriod = std::chrono::seconds{1};
+            bool semantic_refresh_needed_ = false;
+            bool segmentation_demand_owned_ = false;
+            bool semantic_detection_accepted_ = false;
+            core::SourceObservation semantic_refresh_observation_{};
+            std::chrono::steady_clock::time_point semantic_refresh_started_at_{};
+            std::chrono::steady_clock::time_point last_semantic_refresh_{};
 
             const std::vector<core::ProductId> inputs_{core::ProductId::RgbLeft};
             const std::vector<core::ProductId> outputs_{core::ProductId::Track2D};

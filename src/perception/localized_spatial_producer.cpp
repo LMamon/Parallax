@@ -203,6 +203,13 @@ namespace parallax::perception {
                 point = transformPoint(world_from_rectified_rotation, world_from_rectified_translation, point);
             }
 
+            if (object.geometry == Object3DGeometry::ObservedExtent) {
+                object.observed_extent_center_m =
+                    transformPoint(world_from_rectified_rotation,
+                                   world_from_rectified_translation,
+                                   object.observed_extent_center_m);
+            }
+
             object.coordinate_frame = "localization_world";
         }
 

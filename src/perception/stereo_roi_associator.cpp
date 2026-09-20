@@ -1,4 +1,5 @@
 #include <parallax/perception/stereo_roi_associator.hpp>
+#include <parallax/perception/observed_extent.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -476,6 +477,18 @@ namespace parallax::perception {
         object.depth_m = median_depth;
         object.geometry = Object3DGeometry::Surface;
         object.method = Object3DMethod::StereoMask;
+
+        /*
+         * Fit only the visible metric support. This is intentionally not
+         * PhysicalExtent: stereo cannot reveal hidden/back-side dimensions.
+         */
+        ObservedExtent3D extent{};
+        if (estimateObservedExtent(object.surface_points_m, extent)) {
+            object.observed_extent_center_m = extent.center_m;
+            object.observed_extent_size_m = extent.size_m;
+            object.observed_extent_support = static_cast<std::uint32_t>(extent.support);
+            object.geometry = Object3DGeometry::ObservedExtent;
+        }
 
         object.support_quality = static_cast<float>(object.surface_points_m.size()) / static_cast<float>(MaxSurfaceSamples);
 

@@ -20,6 +20,7 @@ namespace parallax::perception {
         Point,
         ImageSupportedGeometry,
         Surface,
+        ObservedExtent,
         PhysicalExtent
     };
 
@@ -71,6 +72,15 @@ namespace parallax::perception {
         
         std::uint32_t semantic_index = 0;
         std::vector<std::array<float, 3>> surface_points_m;
+
+        /*
+         * Axis-aligned bounds of stereo-supported surface measurements in
+         * coordinate_frame. This is observed extent, not a claim about hidden
+         * or back-side physical dimensions.
+         */
+        std::array<float, 3> observed_extent_center_m{};
+        std::array<float, 3> observed_extent_size_m{};
+        std::uint32_t observed_extent_support = 0;
         
         cv::Rect2f image_box{};
         ImageSpace image_space = ImageSpace::Unknown;
@@ -137,7 +147,18 @@ namespace parallax::perception {
                     (stereo_evidence.has_value() && lidar_evidence.has_value())) &&
                    std::isfinite(position_m[0]) &&
                    std::isfinite(position_m[1]) &&
-                   std::isfinite(position_m[2]);
+                   std::isfinite(position_m[2]) &&
+                   (geometry != Object3DGeometry::ObservedExtent ||
+                    (observed_extent_support > 0 &&
+                     std::isfinite(observed_extent_center_m[0]) &&
+                     std::isfinite(observed_extent_center_m[1]) &&
+                     std::isfinite(observed_extent_center_m[2]) &&
+                     std::isfinite(observed_extent_size_m[0]) &&
+                     std::isfinite(observed_extent_size_m[1]) &&
+                     std::isfinite(observed_extent_size_m[2]) &&
+                     observed_extent_size_m[0] > 0.0F &&
+                     observed_extent_size_m[1] > 0.0F &&
+                     observed_extent_size_m[2] > 0.0F));
         }
 
         [[nodiscard]] bool persistent() const noexcept { return track_id != 0; }

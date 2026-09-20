@@ -75,6 +75,12 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_observed_extent_test
+    observed_extent_test.cpp
+    parallax_perception
+)
+
+parallax_add_gtest(
     parallax_object3d_association_test
     object3d_association_test.cpp
     parallax_core

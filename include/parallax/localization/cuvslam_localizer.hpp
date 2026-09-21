@@ -51,7 +51,9 @@ namespace parallax::localization {
 
         std::vector<cuvslam::Observation> observations;
         std::vector<cuvslam::Landmark> landmarks;
-        [[nodiscard]] bool valid() const noexcept { return world_from_rig.has_value(); }
+        [[nodiscard]] bool valid() const noexcept { 
+            return world_from_rig.has_value(); 
+        }
     };
 
     /**
@@ -90,7 +92,9 @@ namespace parallax::localization {
             bool reset();
             void shutdown() noexcept;
 
-            [[nodiscard]] bool initialized() const noexcept { return odometry_ != nullptr; }
+            [[nodiscard]] bool initialized() const noexcept { 
+                return odometry_ != nullptr; 
+            }
 
             /**
              * Exposed for focused rig-contract tests.

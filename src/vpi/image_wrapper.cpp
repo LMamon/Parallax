@@ -51,9 +51,7 @@ namespace parallax::vpi {
             char buffer[VPI_MAX_STATUS_MESSAGE_LENGTH]{};
             vpiGetLastStatusMessage(buffer, sizeof(buffer));
 
-            std::cerr << "Failed to create VPI image wrapper: "
-                    << vpiStatusGetName(status)
-                    << " - " << buffer << '\n';
+            std::cerr << "Failed to create VPI image wrapper: " << vpiStatusGetName(status) << " - " << buffer << '\n';
 
             image_ = nullptr;
             return false;

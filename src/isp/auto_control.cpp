@@ -10,12 +10,13 @@ namespace parallax::isp {
 
         std::int32_t scaledControl(std::int32_t current, float factor) {
             const double scaled = static_cast<double>(current) * static_cast<double>(factor);
+
             const double bounded = std::clamp(scaled,
                                             static_cast<double>(std::numeric_limits<std::int32_t>::min()),
                                             static_cast<double>(std::numeric_limits<std::int32_t>::max()));
+
             return static_cast<std::int32_t>(std::lround(bounded));
         }
-
     }
 
     AutoController::AutoController(IspConfig config,
@@ -160,5 +161,4 @@ namespace parallax::isp {
         result.white_balance = white_balance_;
         return result;
     }
-
 }

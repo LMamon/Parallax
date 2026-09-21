@@ -19,9 +19,7 @@ namespace parallax::stereo {
             char buffer[VPI_MAX_STATUS_MESSAGE_LENGTH]{};
             vpiGetLastStatusMessage(buffer, sizeof(buffer));
 
-            std::cerr << message << ": "
-                      << vpiStatusGetName(status) << " - "
-                      << buffer << '\n';
+            std::cerr << message << ": " << vpiStatusGetName(status) << " - " << buffer << '\n';
         }
     }
 

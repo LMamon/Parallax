@@ -22,29 +22,52 @@ namespace parallax::isp {
         white_balance_ = config_.white_balance;
         linear_white_level_ = static_cast<float>(1023U - config_.black_level);
 
-        if (cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking) != cudaSuccess) { shutdown(); return false; }
+        if (cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking) != cudaSuccess) { 
+            shutdown(); 
+            return false; 
+        }
         
-        if (nppGetStreamContext(&npp_context_) != NPP_SUCCESS) { shutdown(); return false; }
+        if (nppGetStreamContext(&npp_context_) != NPP_SUCCESS) { 
+            shutdown(); 
+            return false; 
+        }
         npp_context_.hStream = stream_;
 
-        if (!gpu_input_.buffer.allocate(camera_config.width, camera_config.height, 1, sizeof(std::uint16_t))) { shutdown(); return false; }
+        if (!gpu_input_.buffer.allocate(camera_config.width, camera_config.height, 1, sizeof(std::uint16_t))) { 
+            shutdown(); 
+            return false; 
+        }
         gpu_input_.width = camera_config.width;
         gpu_input_.height = camera_config.height;
         gpu_input_.pattern = camera_config.bayer_pattern;
 
         const auto eye_width = static_cast<std::uint32_t>(camera_config.width / 2);
         const auto height = static_cast<std::uint32_t>(camera_config.height);
+        
         if (!left_bayer16_.allocate(eye_width, height, 1, sizeof(std::uint16_t)) ||
             !right_bayer16_.allocate(eye_width, height, 1, sizeof(std::uint16_t)) ||
             !left_linear_rgb16_.allocate(eye_width, height, 3, sizeof(std::uint16_t)) ||
-            !right_linear_rgb16_.allocate(eye_width, height, 3, sizeof(std::uint16_t))) { shutdown(); return false; }
+            !right_linear_rgb16_.allocate(eye_width, height, 3, sizeof(std::uint16_t))) { 
+
+                shutdown(); 
+                return false; 
+            }
 
         if (!pitchFitsNpp(left_bayer16_.pitch()) || !pitchFitsNpp(right_bayer16_.pitch()) ||
-            !pitchFitsNpp(left_linear_rgb16_.pitch()) || !pitchFitsNpp(right_linear_rgb16_.pitch())) { shutdown(); return false; }
+            !pitchFitsNpp(left_linear_rgb16_.pitch()) || !pitchFitsNpp(right_linear_rgb16_.pitch())) { 
+                
+                shutdown(); 
+                return false; 
+            }
 
         if (!output_pool_.initialize([&](OutputSlot& slot, std::size_t index) {
-            slot.rgb.width = eye_width; slot.rgb.height = height; slot.rgb.storage_slot = static_cast<std::uint32_t>(index);
-            slot.gray.width = eye_width; slot.gray.height = height; slot.gray.storage_slot = static_cast<std::uint32_t>(index);
+
+            slot.rgb.width = eye_width; 
+            slot.rgb.height = height; 
+            slot.rgb.storage_slot = static_cast<std::uint32_t>(index);
+            slot.gray.width = eye_width; 
+            slot.gray.height = height; 
+            slot.gray.storage_slot = static_cast<std::uint32_t>(index);
             
             return slot.rgb.left.allocate(eye_width, height, 3, sizeof(std::uint8_t)) &&
                 slot.rgb.right.allocate(eye_width, height, 3, sizeof(std::uint8_t)) &&
@@ -60,8 +83,9 @@ namespace parallax::isp {
             cudaEventCreateWithFlags(&statistics_event_, cudaEventDisableTiming) != cudaSuccess) { shutdown(); return false; }
 
         const float source_fps = static_cast<float>(std::max(camera_config.frame_rate, 1));
-        statistics_interval_frames_ = std::max<std::uint32_t>(1U,
-            static_cast<std::uint32_t>(std::lround(source_fps / config_.statistics.update_hz)));
+        statistics_interval_frames_ = std::max<std::uint32_t>(1U, static_cast<std::uint32_t>(
+                                                              std::lround(source_fps / config_.statistics.update_hz)));
+
         initialized_ = true;
         return true;
     }
@@ -72,6 +96,7 @@ namespace parallax::isp {
 
     bool ISP::upload(const parallax::camera::RawFrame& input) {
         if (input.width != gpu_input_.width || input.height != gpu_input_.height) return false;
+
         return gpu_input_.buffer.uploadAsync(input.data, input.width * sizeof(std::uint16_t), stream_);
     }
 
@@ -79,12 +104,18 @@ namespace parallax::isp {
         const NppiSize size{static_cast<int>(bayer.width()), static_cast<int>(bayer.height())};
         const NppiRect roi{0, 0, static_cast<int>(bayer.width()), static_cast<int>(bayer.height())};
         
-        const NppStatus status = nppiCFAToRGB_16u_C1C3R_Ctx(
-            bayer.dataAs<Npp16u>(), static_cast<int>(bayer.pitch()), size, roi,
-            rgb16.dataAs<Npp16u>(), static_cast<int>(rgb16.pitch()),
-            NPPI_BAYER_GRBG, NPPI_INTER_UNDEFINED, npp_context_);
+        const NppStatus status = nppiCFAToRGB_16u_C1C3R_Ctx(bayer.dataAs<Npp16u>(), 
+                                                            static_cast<int>(bayer.pitch()), 
+                                                            size, 
+                                                            roi,
+                                                            rgb16.dataAs<Npp16u>(), 
+                                                            static_cast<int>(rgb16.pitch()),
+                                                            NPPI_BAYER_GRBG, 
+                                                            NPPI_INTER_UNDEFINED, 
+                                                            npp_context_);
 
         if (status != NPP_SUCCESS) std::cerr << "ISP: NPP demosaic failed: " << status << '\n';
+
         return status == NPP_SUCCESS;
     }
 
@@ -105,6 +136,7 @@ namespace parallax::isp {
         ++frame_counter_;
         
         if ((frame_counter_ % statistics_interval_frames_) != 0U) return true;
+
         std::lock_guard<std::mutex> lock(statistics_mutex_);
         if (statistics_pending_) return true;
         
@@ -141,18 +173,24 @@ namespace parallax::isp {
         
         const auto status = cudaEventQuery(statistics_event_);
         if (status == cudaErrorNotReady) return false;
-        if (status != cudaSuccess) { statistics_pending_ = false; return false; }
         
-        for (std::size_t i = 0; i < 256; ++i) statistics.luminance_histogram[i] = host_statistics_->luminance_histogram[i];
-        statistics.red_sum = host_statistics_->red_sum;
-        statistics.green_sum = host_statistics_->green_sum;
-        statistics.blue_sum = host_statistics_->blue_sum;
-        statistics.color_samples = host_statistics_->color_samples;
+        if (status != cudaSuccess) { 
+            statistics_pending_ = false;
+            return false; 
+        }
         
-        statistics.total_samples = host_statistics_->total_samples;
-        statistics.saturated_samples = host_statistics_->saturated_samples;
-        statistics.sequence = pending_statistics_sequence_;
-        statistics_pending_ = false;
+        for (std::size_t i = 0; i < 256; ++i) {
+            statistics.luminance_histogram[i] = host_statistics_->luminance_histogram[i];
+            statistics.red_sum = host_statistics_->red_sum;
+            statistics.green_sum = host_statistics_->green_sum;
+            statistics.blue_sum = host_statistics_->blue_sum;
+            statistics.color_samples = host_statistics_->color_samples;
+            
+            statistics.total_samples = host_statistics_->total_samples;
+            statistics.saturated_samples = host_statistics_->saturated_samples;
+            statistics.sequence = pending_statistics_sequence_;
+            statistics_pending_ = false;
+        }
         
         return statistics.valid();
     }

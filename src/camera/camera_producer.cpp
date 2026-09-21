@@ -60,6 +60,7 @@ namespace parallax::camera {
         metadata.timestamp = std::chrono::steady_clock::time_point{frame.timestamp};
         const auto steady_now = std::chrono::steady_clock::now();
         const auto system_now = std::chrono::system_clock::now();
+        
         metadata.production_timestamp = steady_now;
         metadata.wall_timestamp = system_now + (metadata.timestamp - steady_now);
         metadata.wall_timestamp_valid = true;

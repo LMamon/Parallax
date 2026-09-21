@@ -33,6 +33,7 @@
 #include <parallax/perception/detection_producer.hpp>
 #include <parallax/perception/efficientvit_sam.hpp>
 #include <parallax/perception/segmentation_producer.hpp>
+#include <parallax/perception/segmented_depth_producer.hpp>
 #include <parallax/perception/object3d_producer.hpp>
 #include <parallax/perception/tracked_object3d_producer.hpp>
 #include <parallax/perception/stereo_roi_associator.hpp>
@@ -106,6 +107,7 @@ namespace parallax::core {
             
             std::unique_ptr<parallax::perception::EfficientVitSam> efficientvit_sam_;
             std::unique_ptr<parallax::perception::SegmentationProducer> segmentation_producer_;
+            std::unique_ptr<parallax::perception::SegmentedDepthProducer> segmented_depth_producer_;
 
             /**
              * Runtime-scoped shared execution infrastructure.

@@ -36,13 +36,11 @@ namespace parallax::stereo {
             parallax::core::ProductStore& store_;
 
             const std::vector<parallax::core::ProductId> inputs_{
-                parallax::core::ProductId::RgbLeft,
-                parallax::core::ProductId::GrayStereo
+                parallax::core::ProductId::RgbLeft, parallax::core::ProductId::GrayStereo
             };
 
             const std::vector<parallax::core::ProductId> outputs_{
-                parallax::core::ProductId::RectifiedRgb,
-                parallax::core::ProductId::RectifiedGray
+                parallax::core::ProductId::RectifiedRgb, parallax::core::ProductId::RectifiedGray
             };
     };
 }

@@ -6,8 +6,6 @@
 
 namespace parallax::application {
 
-    // Parse the human-readable application command grammar.
-    //
     // Supported commands:
     //   marker depth
     //   detect <target>

@@ -73,6 +73,7 @@ namespace parallax::core {
         if (isp_config_.auto_exposure.enable || isp_config_.auto_white_balance.enable) {
             parallax::camera::ControlRange exposure_range{};
             parallax::camera::ControlRange gain_range{};
+
             if (isp_config_.auto_exposure.enable) {
                 if (!camera_->getControlRange(parallax::camera::controls::Exposure, exposure_range) ||
                     !camera_->getControlRange(parallax::camera::controls::AnalogGain, gain_range)) {
@@ -109,8 +110,7 @@ namespace parallax::core {
             return false;
         }
 
-        lidar_detection_associator_ =
-            std::make_unique<parallax::perception::LidarDetectionAssociator>();
+        lidar_detection_associator_ = std::make_unique<parallax::perception::LidarDetectionAssociator>();
 
         if (!lidar_detection_associator_->initialize(pipeline_.calibration(),
                                                       sensor_extrinsics_,
@@ -154,23 +154,25 @@ namespace parallax::core {
         object3d_producer_ = std::make_unique<parallax::perception::Object3DProducer>(*stereo_roi_associator_,
                                                                                      *lidar_detection_associator_,
                                                                                      context_.products());
+                                                                                     
         tracked_object3d_producer_ = std::make_unique<parallax::perception::TrackedObject3DProducer>(*stereo_roi_associator_, context_.products());
 
-        segmentation_producer_ = std::make_unique<parallax::perception::SegmentationProducer>(
-                                                *efficientvit_sam_,
-                                                context_.products(),
-                                                "models/efficientvit-sam/engines/l0_encoder_fp16.engine",
-                                                "models/efficientvit-sam/engines/l0_decoder_fp16.engine");
+        segmentation_producer_ = std::make_unique<parallax::perception::SegmentationProducer>(*efficientvit_sam_,
+                                                                                              context_.products(),
+                                                                                              "models/efficientvit-sam/engines/l0_encoder_fp16.engine",
+                                                                                              "models/efficientvit-sam/engines/l0_decoder_fp16.engine");
+        segmented_depth_producer_ = std::make_unique<parallax::perception::SegmentedDepthProducer>(*stereo_roi_associator_, context_.products());
 
         single_target_producer_ = std::make_unique<parallax::tracking::SingleTargetProducer>(context_.products(), resolver_);
         
         cuvslam_producer_ = std::make_unique<parallax::localization::CuVslamProducer>(*cuvslam_localizer_, context_.products());
-        local_occupancy_producer_ = std::make_unique<parallax::mapping::LocalOccupancyProducer>(
-            pipeline_.calibration(),
-            sensor_extrinsics_,
-            context_.products(),
-            resolver_,
-            context_.stereoLane().cudaHandle());
+
+        local_occupancy_producer_ = std::make_unique<parallax::mapping::LocalOccupancyProducer>(pipeline_.calibration(),
+                                                                                                sensor_extrinsics_,
+                                                                                                context_.products(),
+                                                                                                resolver_,
+                                                                                                context_.stereoLane().cudaHandle());
+
         localized_spatial_producer_ = std::make_unique<parallax::perception::LocalizedSpatialProducer>(pipeline_.calibration(),
                                                                                                        sensor_extrinsics_,
                                                                                                        context_.products());
@@ -194,6 +196,7 @@ namespace parallax::core {
         graph_.register_producer(*tracked_object3d_producer_);
         graph_.register_producer(*localized_spatial_producer_);
         graph_.register_producer(*segmentation_producer_);
+        graph_.register_producer(*segmented_depth_producer_);
         graph_.register_producer(*cuvslam_producer_);
         graph_.register_producer(*local_occupancy_producer_);
 
@@ -481,8 +484,7 @@ namespace parallax::core {
 
             const auto telemetry_now = std::chrono::steady_clock::now();
 
-            if (foxglove_.runtimeTelemetryChannel().hasSinks() &&
-                telemetry_now - last_telemetry_publish_ >= std::chrono::seconds(1)) {
+            if (foxglove_.runtimeTelemetryChannel().hasSinks() && telemetry_now - last_telemetry_publish_ >= std::chrono::seconds(1)) {
 
                 nlohmann::json message;
 

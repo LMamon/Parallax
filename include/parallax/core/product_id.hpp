@@ -31,6 +31,7 @@ namespace parallax::core {
         MarkerDepth,
         Detection,
         Segmentation,
+        SegmentedDepth,
         Track2D,
         Object3D,
         TrackedObject3D,

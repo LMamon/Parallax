@@ -29,8 +29,13 @@ namespace parallax::localization {
 
             parallax::core::SubmitResult submit(parallax::core::ExecutionContext& context) override;
 
-            [[nodiscard]] std::optional<parallax::core::SourceObservation> last_consumed() const noexcept { return last_consumed_; }
-            [[nodiscard]] std::uint64_t epoch() const noexcept { return epoch_; }
+            [[nodiscard]] std::optional<parallax::core::SourceObservation> last_consumed() const noexcept { 
+                return last_consumed_; 
+            }
+            
+            [[nodiscard]] std::uint64_t epoch() const noexcept { 
+                return epoch_; 
+            }
 
         private:
             using GrayProduct = parallax::core::Product<parallax::isp::RectifiedStereoGrayFrame>;

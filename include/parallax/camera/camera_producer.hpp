@@ -23,11 +23,10 @@ namespace parallax::camera {
      class CameraProducer final : public parallax::core::Producer {
         public:
             CameraProducer(StereoCamera& camera, parallax::core::ProductStore& store);
+            
             [[nodiscard]] std::string_view name() const noexcept override;
-            [[nodiscard]]
-            const std::vector<parallax::core::ProductId>& inputs() const noexcept override;
-            [[nodiscard]]
-            const std::vector<parallax::core::ProductId>& outputs() const noexcept override;
+            [[nodiscard]] const std::vector<parallax::core::ProductId>& inputs() const noexcept override;
+            [[nodiscard]] const std::vector<parallax::core::ProductId>& outputs() const noexcept override;
 
             [[nodiscard]] parallax::core::ExecutionPolicy execution_policy() const noexcept override;
             parallax::core::SubmitResult submit(parallax::core::ExecutionContext& context) override;

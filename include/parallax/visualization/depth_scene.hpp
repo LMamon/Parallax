@@ -9,12 +9,11 @@
 namespace parallax::visualization {
 
     // Visualization geometry only. Full-resolution graph depth is not retained.
-    inline std::vector<std::array<float, 3>> buildDepthScenePoints(
-        const float* depth,
-        std::uint32_t width,
-        std::uint32_t height,
-        std::uint32_t sample_stride,
-        const std::array<double, 12>& projection) {
+    inline std::vector<std::array<float, 3>> buildDepthScenePoints(const float* depth,
+                                                                   std::uint32_t width,
+                                                                   std::uint32_t height,
+                                                                   std::uint32_t sample_stride,
+                                                                   const std::array<double, 12>& projection) {
 
         std::vector<std::array<float, 3>> points;
         if (depth == nullptr || width == 0 || height == 0 || sample_stride == 0) return points;

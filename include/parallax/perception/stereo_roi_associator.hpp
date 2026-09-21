@@ -69,6 +69,12 @@ namespace parallax::perception {
                                 core::ExecutionContext& context,
                                 Object3D& output);
 
+            bool associateMask(const SegmentationMask& mask,
+                               const core::ProductMetadata& mask_metadata,
+                               const core::Product<isp::DepthFrame>& depth,
+                               core::ExecutionContext& context,
+                               Object3D& output);
+
             bool refineWithMask(const SegmentationMask& mask,
                                 const core::ProductMetadata& mask_metadata,
                                 const core::Product<isp::DepthFrame>& depth,

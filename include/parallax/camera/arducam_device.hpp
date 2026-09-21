@@ -38,5 +38,4 @@ namespace parallax::camera {
 
             bool writeControllerRegister(std::uint16_t reg, std::uint32_t value) const;
     };
-
-} // namespace parallax::camera
+}

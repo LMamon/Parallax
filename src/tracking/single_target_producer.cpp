@@ -341,12 +341,13 @@ namespace parallax::tracking {
         semantic_refresh_started_at_ = now;
 
         /*
-         * Segmentation depends on Detection, so this one demand reference keeps
-         * the complete strong-correction branch active. Runtime sees
+         * SegmentedDepth depends on Segmentation + Depth, and Segmentation in
+         * turn depends on Detection. One demand reference therefore keeps the
+         * complete strong-correction branch active. Runtime sees
          * needsDetection() and points NanoOWL at the tracking query/revision.
          */
         if (!segmentation_demand_owned_) {
-            resolver_.acquire(core::ProductId::Segmentation, core::DemandSource::InternalDependent);
+            resolver_.acquire(core::ProductId::SegmentedDepth, core::DemandSource::InternalDependent);
             segmentation_demand_owned_ = true;
             ++metrics_.detector_refreshes;
 
@@ -383,7 +384,7 @@ namespace parallax::tracking {
         semantic_refresh_started_at_ = {};
 
         if (!segmentation_demand_owned_) return;
-        resolver_.release(core::ProductId::Segmentation, core::DemandSource::InternalDependent);
+        resolver_.release(core::ProductId::SegmentedDepth, core::DemandSource::InternalDependent);
         segmentation_demand_owned_ = false;
     }
 

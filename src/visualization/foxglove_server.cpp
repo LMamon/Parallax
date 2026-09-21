@@ -440,11 +440,10 @@ namespace parallax::visualization {
         /*
          * Spatial segmentation is the mask-supported stereo measurement itself,
          * not the RawImage mask projected at an arbitrary display distance.
-         * It shares TrackedObject3D demand because the strong measurement is a
-         * synchronized correction of that persistent target.
+         * SegmentedDepth owns this geometry independently of tracking, so a
+         * plain `segment <target>` request can be inspected in 3D.
          */
-        auto segmentation_scene =
-            foxglove::messages::SceneUpdateChannel::create("/perception/segmentation/scene", context_);
+        auto segmentation_scene = foxglove::messages::SceneUpdateChannel::create("/perception/segmentation/scene", context_);
         if (!segmentation_scene.has_value()) {
             std::cerr << "Failed to create /perception/segmentation/scene channel: "
                       << foxglove::strerror(segmentation_scene.error()) << '\n';
@@ -452,7 +451,7 @@ namespace parallax::visualization {
         }
 
         segmentation_scene_channel_.emplace(std::move(segmentation_scene.value()));
-        bindProduct(segmentation_scene_channel_->id(), ProductId::TrackedObject3D);
+        bindProduct(segmentation_scene_channel_->id(), ProductId::SegmentedDepth);
 
         auto localized_object3d_scene = foxglove::messages::SceneUpdateChannel::create("/localization/objects3d", context_);
         if (!localized_object3d_scene.has_value()) {

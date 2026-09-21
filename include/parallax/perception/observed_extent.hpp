@@ -18,10 +18,8 @@ namespace parallax::perception {
      * Fit bounds to visible stereo surface samples. Per-axis trimmed quantiles
      * prevent isolated depth failures from inflating the result.
      */
-    [[nodiscard]] bool estimateObservedExtent(
-        const std::vector<std::array<float, 3>>& points_m,
-        ObservedExtent3D& output,
-        float trim_fraction = 0.10F,
-        std::size_t min_support = 8) noexcept;
-
+    [[nodiscard]] bool estimateObservedExtent(const std::vector<std::array<float, 3>>& points_m,
+                                              ObservedExtent3D& output,
+                                              float trim_fraction = 0.10F,
+                                              std::size_t min_support = 8) noexcept;
 }

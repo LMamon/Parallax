@@ -38,6 +38,7 @@ namespace parallax::tracking {
             bool ensureResources(const parallax::cuda::CudaBuffer& image);
             bool bindInput(const parallax::cuda::CudaBuffer& image);
             bool convertInput();
+            
             bool crop(VPIArray objects);
             bool sync();
             bool readResult(DcfTrackerResult& result);

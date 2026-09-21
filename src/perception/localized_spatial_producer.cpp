@@ -25,6 +25,7 @@ namespace parallax::perception {
             double w = q[3];
 
             const double norm = std::sqrt(x * x + y * y + z * z + w * w);
+
             if (!std::isfinite(norm) || norm <= 1.0e-9) {
                 throw std::invalid_argument("localized spatial producer received invalid camera rotation");
             }
@@ -145,6 +146,7 @@ namespace parallax::perception {
         std::shared_ptr<const core::Product<localization::LocalizationPose>> selected_pose{};
 
         auto selected_delta = std::chrono::steady_clock::duration::max();
+        
         for (const auto& candidate : pose_history) {
             if (!candidate || !candidate->valid() || !candidate->payload) {
                 continue;

@@ -3,6 +3,7 @@ add_library(parallax_perception
     detection_producer.cpp
     efficientvit_sam.cpp
     segmentation_producer.cpp
+    segmented_depth_producer.cpp
     image_space_mapper.cpp
     stereo_roi_associator.cpp
     observed_extent.cpp

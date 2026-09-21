@@ -30,7 +30,10 @@ namespace parallax::perception {
 
         for (const auto& point : points_m) {
             if (!std::isfinite(point[0]) || !std::isfinite(point[1]) ||
-                !std::isfinite(point[2]) || point[2] <= 0.0F) continue;
+                !std::isfinite(point[2]) || point[2] <= 0.0F) {
+                    continue;
+                }
+                
             axes[0].push_back(point[0]);
             axes[1].push_back(point[1]);
             axes[2].push_back(point[2]);
@@ -40,8 +43,7 @@ namespace parallax::perception {
         if (count < min_support) return false;
         for (auto& axis : axes) std::sort(axis.begin(), axis.end());
 
-        const std::size_t requested_trim =
-            static_cast<std::size_t>(static_cast<double>(count - 1) * trim_fraction);
+        const std::size_t requested_trim = static_cast<std::size_t>(static_cast<double>(count - 1) * trim_fraction);
         const std::size_t trim = std::min(requested_trim, (count - 2) / 2);
         const std::size_t low = trim;
         const std::size_t high = count - 1 - trim;

@@ -44,6 +44,8 @@ namespace parallax::perception {
         std::chrono::steady_clock::duration source_time_delta{};
         float support_quality = 0.0F;
 
+        // TODO: split object3D into explicit components. Represent sensor/method-specific 
+        // states with typed variants rather than encoding valid states through fields + valid().
         [[nodiscard]] bool valid() const noexcept {
             if (!observation.valid() ||
                 !std::isfinite(position_m[0]) ||
@@ -54,6 +56,7 @@ namespace parallax::perception {
                 !std::isfinite(support_quality) ||
                 support_quality < 0.0F ||
                 support_quality > 1.0F) {
+
                 return false;
             }
 
@@ -124,6 +127,8 @@ namespace parallax::perception {
         std::optional<Object3DMetricEvidence> lidar_evidence;
 
         [[nodiscard]] bool valid() const noexcept {
+            // TODO: split object3D into explicit components. Represent sensor/method-specific 
+            // states with typed variants rather than encoding valid states through fields + valid().
             return !label.empty() &&
                    query_revision != 0 &&
                    image_space != ImageSpace::Unknown &&
@@ -134,31 +139,27 @@ namespace parallax::perception {
                    method != Object3DMethod::Unknown &&
                    std::isfinite(depth_m) &&
                    depth_m > 0.0F &&
-                   ((method != Object3DMethod::LidarAssociation &&
-                     method != Object3DMethod::StereoLidarRefined) ||
+                   ((method != Object3DMethod::LidarAssociation && method != Object3DMethod::StereoLidarRefined) ||
                     (std::isfinite(range_m) && range_m > 0.0F)) &&
-                   (!stereo_evidence ||
-                    (stereo_evidence->valid() &&
+                   (!stereo_evidence || (stereo_evidence->valid() &&
                      stereo_evidence->observation.source == core::SourceId::StereoCamera)) &&
-                   (!lidar_evidence ||
-                    (lidar_evidence->valid() &&
+                   (!lidar_evidence || (lidar_evidence->valid() &&
                      lidar_evidence->observation.source == core::SourceId::Rplidar)) &&
-                   (method != Object3DMethod::StereoLidarRefined ||
-                    (stereo_evidence.has_value() && lidar_evidence.has_value())) &&
+                   (method != Object3DMethod::StereoLidarRefined || (stereo_evidence.has_value() && lidar_evidence.has_value())) &&
                    std::isfinite(position_m[0]) &&
                    std::isfinite(position_m[1]) &&
                    std::isfinite(position_m[2]) &&
                    (geometry != Object3DGeometry::ObservedExtent ||
                     (observed_extent_support > 0 &&
-                     std::isfinite(observed_extent_center_m[0]) &&
-                     std::isfinite(observed_extent_center_m[1]) &&
-                     std::isfinite(observed_extent_center_m[2]) &&
-                     std::isfinite(observed_extent_size_m[0]) &&
-                     std::isfinite(observed_extent_size_m[1]) &&
-                     std::isfinite(observed_extent_size_m[2]) &&
-                     observed_extent_size_m[0] > 0.0F &&
-                     observed_extent_size_m[1] > 0.0F &&
-                     observed_extent_size_m[2] > 0.0F));
+                        std::isfinite(observed_extent_center_m[0]) &&
+                        std::isfinite(observed_extent_center_m[1]) &&
+                        std::isfinite(observed_extent_center_m[2]) &&
+                        std::isfinite(observed_extent_size_m[0]) &&
+                        std::isfinite(observed_extent_size_m[1]) &&
+                        std::isfinite(observed_extent_size_m[2]) &&
+                        observed_extent_size_m[0] > 0.0F &&
+                        observed_extent_size_m[1] > 0.0F &&
+                        observed_extent_size_m[2] > 0.0F));
         }
 
         [[nodiscard]] bool persistent() const noexcept { return track_id != 0; }

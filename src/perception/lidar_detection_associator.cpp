@@ -311,10 +311,9 @@ namespace parallax::perception {
 
         if (detections.empty()) return true;
 
-        const auto source_delta =
-            scan.metadata.timestamp >= semantic_metadata.timestamp
-                ? scan.metadata.timestamp - semantic_metadata.timestamp
-                : semantic_metadata.timestamp - scan.metadata.timestamp;
+        const auto source_delta = scan.metadata.timestamp >= semantic_metadata.timestamp
+                                    ? scan.metadata.timestamp - semantic_metadata.timestamp
+                                    : semantic_metadata.timestamp - scan.metadata.timestamp;
 
         const auto association_timestamp = std::chrono::steady_clock::now();
 
@@ -341,6 +340,7 @@ namespace parallax::perception {
 
             for (const auto& point : scan.payload->points) {
                 ProjectedHit candidate{};
+
                 if (!project(point, candidate) || !contains(box, candidate.source_pixel)) {
                     continue;
                 }
@@ -356,6 +356,7 @@ namespace parallax::perception {
                     score < best_score ||
                     (std::abs(score - best_score) < 1.0e-6F &&
                      candidate.range_m < best_hit.range_m)) {
+                
                     best_hit = candidate;
                     best_score = score;
                     found = true;

@@ -359,62 +359,142 @@ namespace parallax::perception {
                                                const core::Product<isp::DepthFrame>& depth,
                                                core::ExecutionContext& context,
                                                Object3D& output) {
+                                                
         output = {};
-        if(!initialized_||!track.valid()||!track_metadata.valid||!track_metadata.observation.valid()||
-           !depth.valid()||!depth.payload||track.image_space!=ImageSpace::RgbLeft||
-           (track.lifecycle!=tracking::TrackLifecycle::Tentative&&track.lifecycle!=tracking::TrackLifecycle::Tracking)||
-           !std::isfinite(track.box.x)||!std::isfinite(track.box.y)||!std::isfinite(track.box.width)||
-           !std::isfinite(track.box.height)||track.box.width<=0.0F||track.box.height<=0.0F) return false;
+        if (!initialized_ || !track.valid() || !track_metadata.valid || !track_metadata.observation.valid() || 
+           !depth.valid() || !depth.payload || track.image_space!=ImageSpace::RgbLeft || 
+           (track.lifecycle != tracking::TrackLifecycle::Tentative && track.lifecycle != tracking::TrackLifecycle::Tracking) || 
+           !std::isfinite(track.box.x) || !std::isfinite(track.box.y) || !std::isfinite(track.box.width) || 
+           !std::isfinite(track.box.height) || track.box.width <= 0.0F || track.box.height <= 0.0F) return false;
 
         /* Exact exposure matching matters more than producing a plausible stale 3D target. */
-        if(depth.metadata.observation!=track_metadata.observation||depth.payload->width!=image_width_||
-           depth.payload->height!=image_height_||!depth.payload->depth.isAllocated()) return false;
+        if(depth.metadata.observation != track_metadata.observation || depth.payload->width != image_width_ || 
+           depth.payload->height != image_height_ || !depth.payload->depth.isAllocated()) return false;
 
-        auto& lane=context.stereoLane();
-        const cudaStream_t stream=lane.cudaHandle();
-        if(stream==nullptr||!context.waitFor(depth.completion,lane)) return false;
-        if(!cuda::sampleBoxDepth(track.box.x,track.box.y,track.box.width,track.box.height,depth.payload->depth,
-            rectified_to_rgb_x_device_,rectified_to_rgb_y_device_,camera_model_.fx_px,camera_model_.fy_px,
-            camera_model_.cx_px,camera_model_.cy_px,SurfaceSampleStride,static_cast<std::uint32_t>(MaxSurfaceSamples),
-            surface_samples_device_,surface_sample_count_device_,stream)) return false;
-        if(!surface_samples_device_.downloadAsync(surface_samples_host_.data(),MaxSurfaceSamples*sizeof(cuda::MaskedDepthPoint),stream)||
-           !surface_sample_count_device_.downloadAsync(&surface_sample_count_host_,sizeof(std::uint32_t),stream)) return false;
-        auto completion=context.recordCudaCompletion(stream);
-        if(!completion.valid()||!context.waitForHost(completion)) return false;
-        const std::size_t count=std::min<std::size_t>(surface_sample_count_host_,MaxSurfaceSamples);
-        if(count<MinSurfaceSamples) return false;
+        auto& lane = context.stereoLane();
+        const cudaStream_t stream = lane.cudaHandle();
+        if (stream == nullptr || !context.waitFor(depth.completion, lane)) return false;
 
-        std::vector<std::array<float,3>> points; points.reserve(count);
-        std::vector<float> depths; depths.reserve(count);
-        std::array<float,3> centroid{};
-        for(std::size_t i=0;i<count;++i){
-            const auto& s=surface_samples_host_[i];
-            if(!std::isfinite(s.x)||!std::isfinite(s.y)||!std::isfinite(s.z)||s.z<=0.0F) continue;
-            points.push_back({s.x,s.y,s.z}); centroid[0]+=s.x; centroid[1]+=s.y; centroid[2]+=s.z; depths.push_back(s.z);
+        if (!cuda::sampleBoxDepth(track.box.x, track.box.y, track.box.width, track.box.height, depth.payload->depth,
+            rectified_to_rgb_x_device_, rectified_to_rgb_y_device_, camera_model_.fx_px,camera_model_.fy_px, 
+            camera_model_.cx_px, camera_model_.cy_px, SurfaceSampleStride, static_cast<std::uint32_t>(MaxSurfaceSamples),
+            surface_samples_device_, surface_sample_count_device_, stream)) return false;
+        
+        if (!surface_samples_device_.downloadAsync(surface_samples_host_.data(), MaxSurfaceSamples*sizeof(cuda::MaskedDepthPoint), stream) || 
+           !surface_sample_count_device_.downloadAsync(&surface_sample_count_host_, sizeof(std::uint32_t), stream)) return false;
+        
+        auto completion = context.recordCudaCompletion(stream);
+        
+        if (!completion.valid() || !context.waitForHost(completion)) return false;
+        
+        const std::size_t count = std::min<std::size_t>(surface_sample_count_host_, MaxSurfaceSamples);
+        
+        if (count < MinSurfaceSamples) return false;
+
+        std::vector<std::array<float, 3>> points; 
+        points.reserve(count);
+        std::vector<float> depths; 
+        depths.reserve(count);
+        std::array<float, 3> centroid{};
+        
+        for(std::size_t i = 0; i < count; ++i){
+            const auto& s = surface_samples_host_[i];
+
+            if (!std::isfinite(s.x) || !std::isfinite(s.y) || !std::isfinite(s.z) || s.z<=0.0F) continue;
+
+            points.push_back({s.x, s.y, s.z}); 
+            centroid[0] += s.x; 
+            centroid[1] += s.y; 
+            centroid[2] += s.z; 
+            depths.push_back(s.z);
         }
-        if(points.size()<MinSurfaceSamples) return false;
-        const float inv=1.0F/static_cast<float>(points.size()); centroid[0]*=inv; centroid[1]*=inv; centroid[2]*=inv;
-        std::sort(depths.begin(),depths.end()); const std::size_t mid=depths.size()/2;
-        const float median=(depths.size()&1U)?depths[mid]:0.5F*(depths[mid-1]+depths[mid]);
+        
+        if(points.size() < MinSurfaceSamples) return false;
+        
+        const float inv = 1.0F / static_cast<float>(points.size()); 
+        centroid[0] *= inv; 
+        centroid[1] *= inv; 
+        centroid[2]*=inv;
+        
+        std::sort(depths.begin(), depths.end()); 
+        const std::size_t mid = depths.size() / 2;
+        
+        const float median = (depths.size()&1U) ? depths[mid]:0.5F * (depths[mid - 1] + depths[mid]);
 
-        output.label=track.target_query; output.query_revision=track.target_revision; output.semantic_confidence=track.quality;
-        output.image_box=track.box; output.image_space=track.image_space; output.position_m=centroid; output.depth_m=median;
-        output.coordinate_frame=camera_model_.coordinate_frame; output.geometry=Object3DGeometry::Surface;
-        output.method=Object3DMethod::StereoRoi; output.semantic_observation=track_metadata.observation;
-        output.metric_observation=depth.metadata.observation; output.association_timestamp=std::chrono::steady_clock::now();
-        output.source_time_delta=std::chrono::steady_clock::duration::zero(); output.track_id=track.track_id;
-        output.surface_points_m=std::move(points);
-        output.support_quality=static_cast<float>(output.surface_points_m.size())/static_cast<float>(MaxSurfaceSamples);
+        output.label = track.target_query; 
+        output.query_revision = track.target_revision; 
+        output.semantic_confidence = track.quality;
+        output.image_box = track.box; 
+        output.image_space = track.image_space; 
+        output.position_m = centroid; 
+        output.depth_m = median;
+        output.coordinate_frame = camera_model_.coordinate_frame; 
+        output.geometry = Object3DGeometry::Surface;
+        output.method = Object3DMethod::StereoRoi; 
+        output.semantic_observation = track_metadata.observation;
+        output.metric_observation = depth.metadata.observation; 
+        output.association_timestamp = std::chrono::steady_clock::now();
+        output.source_time_delta = std::chrono::steady_clock::duration::zero(); 
+        output.track_id = track.track_id;
+        output.surface_points_m = std::move(points);
+        output.support_quality = static_cast<float>(output.surface_points_m.size()) / static_cast<float>(MaxSurfaceSamples);
 
         ObservedExtent3D extent{};
-        if(estimateObservedExtent(output.surface_points_m,extent)){
-            output.observed_extent_center_m=extent.center_m; output.observed_extent_size_m=extent.size_m;
-            output.observed_extent_support=static_cast<std::uint32_t>(extent.support); output.geometry=Object3DGeometry::ObservedExtent;
+        if(estimateObservedExtent(output.surface_points_m,extent)) {
+            output.observed_extent_center_m = extent.center_m; 
+            output.observed_extent_size_m = extent.size_m;
+            output.observed_extent_support = static_cast<std::uint32_t>(extent.support); 
+            output.geometry = Object3DGeometry::ObservedExtent;
         }
-        Object3DMetricEvidence evidence{}; evidence.observation=depth.metadata.observation; evidence.position_m=output.position_m;
-        evidence.depth_m=output.depth_m; evidence.source_time_delta=output.source_time_delta; evidence.support_quality=output.support_quality;
-        output.stereo_evidence=evidence;
+
+        Object3DMetricEvidence evidence{}; 
+        evidence.observation = depth.metadata.observation; 
+        evidence.position_m = output.position_m;
+        evidence.depth_m = output.depth_m; 
+        evidence.source_time_delta = output.source_time_delta; 
+        evidence.support_quality = output.support_quality;
+        output.stereo_evidence = evidence;
         return output.valid();
+    }
+
+    bool StereoRoiAssociator::associateMask(const SegmentationMask& mask,
+                                             const core::ProductMetadata& mask_metadata,
+                                             const core::Product<isp::DepthFrame>& depth,
+                                             core::ExecutionContext& context,
+                                             Object3D& output) {
+        output = {};
+
+        if (!mask.valid() || 
+            mask.query.empty() || 
+            mask.prompt_box.width <= 0.0F ||
+            mask.prompt_box.height <= 0.0F ||
+            mask.source_observation != mask_metadata.observation) {
+            return false;
+        }
+
+        /*
+         * Reuse the calibrated box-depth path only to establish the semantic
+         * identity and a metric fallback. refineWithMask immediately replaces
+         * that rectangular support with pixels that actually belong to the mask.
+         * No tracker state or persistent track identity is involved here.
+         */
+        tracking::Track2D semantic_support{};
+        semantic_support.track_id = 0;
+        semantic_support.target_query = mask.query;
+        semantic_support.target_revision = mask.query_revision;
+        semantic_support.box = mask.prompt_box;
+        semantic_support.quality = mask.confidence;
+        semantic_support.lifecycle = tracking::TrackLifecycle::Tracking;
+        semantic_support.image_space = mask.image_space;
+        semantic_support.source_observation = mask.source_observation;
+        semantic_support.last_detector_observation = mask.source_observation;
+        semantic_support.last_tracker_observation = mask.source_observation;
+
+        if (!associateTrack(semantic_support, mask_metadata, depth, context, output)) {
+            return false;
+        }
+
+        return refineWithMask(mask, mask_metadata, depth, context, output);
     }
 
     bool StereoRoiAssociator::refineWithMask(const SegmentationMask& mask,

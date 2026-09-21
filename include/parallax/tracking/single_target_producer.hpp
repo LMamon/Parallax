@@ -45,6 +45,7 @@ namespace parallax::tracking {
 
             [[nodiscard]] std::string_view targetQuery() const noexcept { return target_query_; }
             [[nodiscard]] std::uint64_t targetRevision() const noexcept { return target_revision_; }
+
             [[nodiscard]] bool needsDetection() const noexcept {
                 return reacquisition_needed_ || semantic_refresh_needed_;
             }
@@ -87,8 +88,8 @@ namespace parallax::tracking {
             std::chrono::steady_clock::time_point reacquisition_started_at_{};
 
             /*
-             * Semantic refresh is deliberately slower than DCF.  Segmentation
-             * demand transitively keeps Detection alive, so one refresh event
+             * Semantic refresh is deliberately slower than DCF. SegmentedDepth
+             * demand transitively keeps Segmentation and Detection alive, so one refresh event
              * yields a detector correction and a SAM mask from the same source
              * observation without running either network at camera cadence.
              */
@@ -109,6 +110,8 @@ namespace parallax::tracking {
             std::chrono::steady_clock::time_point lost_since_{};
             
             // Keep only enough RGB history to recover the image used by a detector result.
-            const std::vector<core::CompatibleInputRequirement> compatible_inputs_{{core::ProductId::RgbLeft, 2}};
+            const std::vector<core::CompatibleInputRequirement> compatible_inputs_{
+                {core::ProductId::RgbLeft, 2}
+            };
     };
 }

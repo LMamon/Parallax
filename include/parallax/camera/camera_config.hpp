@@ -27,5 +27,4 @@ namespace parallax::camera {
             int horizontal_flip = 0;
             int vertical_flip = 0;
         };
-
-} // namespace parallax::camera
+}

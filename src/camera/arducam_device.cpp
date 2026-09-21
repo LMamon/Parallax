@@ -78,4 +78,4 @@ namespace parallax::camera {
         return true;
     }
 
-} // namespace parallax::camera
+}

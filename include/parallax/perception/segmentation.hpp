@@ -46,6 +46,8 @@ namespace parallax::perception {
         std::shared_ptr<const void> storage{};
 
         [[nodiscard]] bool valid() const noexcept {
+            
+            // TODO: SPLIT INTO EXPLICIT COMPOENENTS
             return source_observation.valid() &&
                    image_space != ImageSpace::Unknown &&
                    query_revision != 0 &&

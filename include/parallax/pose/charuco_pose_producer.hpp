@@ -20,9 +20,7 @@ namespace parallax::pose {
      */
     class CharucoPoseProducer final : public parallax::core::Producer {
         public:
-            CharucoPoseProducer(CharucoPose& pose,
-                                const parallax::stereo::StereoCalibration& calibration,
-                                parallax::core::ProductStore& store);
+            CharucoPoseProducer(CharucoPose& pose, const parallax::stereo::StereoCalibration& calibration, parallax::core::ProductStore& store);
 
             [[nodiscard]] std::string_view name() const noexcept override;
             

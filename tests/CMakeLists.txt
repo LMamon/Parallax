@@ -68,6 +68,13 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
+    parallax_segmented_depth_test
+    segmented_depth_test.cpp
+    parallax_core
+    parallax_perception
+)
+
+parallax_add_gtest(
     parallax_object3d_test
     object3d_test.cpp
     parallax_core

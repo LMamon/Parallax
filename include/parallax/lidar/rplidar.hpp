@@ -21,27 +21,27 @@ namespace parallax::lidar {
      * Parallax LidarScan values in radians and meters.
      */
     class Rplidar {
-    public:
-        Rplidar() = default;
-        ~Rplidar();
+        public:
+            Rplidar() = default;
+            ~Rplidar();
 
-        Rplidar(const Rplidar&) = delete;
-        Rplidar& operator=(const Rplidar&) = delete;
+            Rplidar(const Rplidar&) = delete;
+            Rplidar& operator=(const Rplidar&) = delete;
 
-        bool initialize(const std::string& device = "/dev/ttyUSB0", std::uint32_t baud_rate = 460800);
+            bool initialize(const std::string& device = "/dev/ttyUSB0", std::uint32_t baud_rate = 460800);
 
-        bool capture(LidarScan& scan);
-        void shutdown() noexcept;
+            bool capture(LidarScan& scan);
+            void shutdown() noexcept;
 
-        [[nodiscard]] bool initialized() const noexcept {
-            return initialized_;
-        }
+            [[nodiscard]] bool initialized() const noexcept {
+                return initialized_;
+            }
 
-    private:
-        sl::ILidarDriver* driver_{nullptr};
-        sl::IChannel* channel_{nullptr};
+        private:
+            sl::ILidarDriver* driver_{nullptr};
+            sl::IChannel* channel_{nullptr};
 
-        bool initialized_{false};
-        bool scanning_{false};
+            bool initialized_{false};
+            bool scanning_{false};
     };
 }

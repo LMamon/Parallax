@@ -3,6 +3,7 @@
 #include <opencv4/opencv2/imgproc.hpp>
 #include <opencv4/opencv2/imgcodecs.hpp>
 #include <parallax/perception/detection.hpp>
+#include <parallax/perception/segmented_depth.hpp>
 #include <parallax/tracking/track.hpp>
 
 
@@ -552,36 +553,26 @@ namespace parallax::visualization {
         }
 
         if (foxglove_->segmentationSceneChannel().hasSinks()) {
-            const auto segmented = store.latest<parallax::perception::Object3DSet>(
-                                                parallax::core::ProductId::TrackedObject3D);
+            const auto segmented = store.latest<parallax::perception::SegmentedDepth>(
+                                                parallax::core::ProductId::SegmentedDepth);
 
-            if (segmented && segmented->valid() && segmented->payload &&
-                segmented->payload->valid() && !segmented->payload->objects.empty()) {
+            if (segmented && segmented->valid() && segmented->payload && segmented->payload->valid()) {
+                const bool new_scene = !has_published_segmentation_scene_ ||
+                                       segmented->metadata.observation != last_segmentation_scene_observation_ ||
+                                       segmented->payload->query_revision != last_segmentation_scene_revision_;
 
-                const auto& object = segmented->payload->objects.front();
-
-                /*
-                 * Only the synchronized SAM+stereo correction belongs on this
-                 * topic. Ordinary DCF rectangle support stays exclusively on
-                 * /tracking/objects3d.
-                 */
-                if (object.method == parallax::perception::Object3DMethod::StereoMask) {
-                    const bool new_scene = !has_published_segmentation_scene_ ||
-                                           segmented->metadata.observation != last_segmentation_scene_observation_ ||
-                                           segmented->payload->query_revision != last_segmentation_scene_revision_;
-
-                    if (new_scene) {
-                        if (!publishObject3DScene(*segmented->payload,
-                                                  sourceTimestamp(segmented->metadata),
-                                                  foxglove_->segmentationSceneChannel(),
-                                                  "Failed to publish /perception/segmentation/scene")) {
-                            return false;
-                        }
-
-                        last_segmentation_scene_observation_ = segmented->metadata.observation;
-                        last_segmentation_scene_revision_ = segmented->payload->query_revision;
-                        has_published_segmentation_scene_ = true;
+                if (new_scene) {
+                    const auto objects = segmented->payload->asObject3DSet();
+                    if (!publishObject3DScene(objects,
+                                              sourceTimestamp(segmented->metadata),
+                                              foxglove_->segmentationSceneChannel(),
+                                              "Failed to publish /perception/segmentation/scene")) {
+                        return false;
                     }
+
+                    last_segmentation_scene_observation_ = segmented->metadata.observation;
+                    last_segmentation_scene_revision_ = segmented->payload->query_revision;
+                    has_published_segmentation_scene_ = true;
                 }
             }
         }

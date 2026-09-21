@@ -31,6 +31,7 @@ namespace parallax::perception {
 
     template <typename T> struct Object3DMatch {
         std::shared_ptr<const core::Product<T>> product{};
+
         Object3DMatchMethod method = Object3DMatchMethod::None;
         Object3DRejectReason rejection = Object3DRejectReason::None;
         std::chrono::steady_clock::duration source_delta{};
@@ -53,6 +54,7 @@ namespace parallax::perception {
         }
 
         const auto exact = products.find_observation<T>(metric_product, semantic_metadata.observation);
+        
         if (exact && exact->valid()) {
             result.product = exact;
             result.method = Object3DMatchMethod::ExactObservation;
@@ -113,13 +115,11 @@ namespace parallax::perception {
      * sequence counters, so cross-sensor association is timestamp-bounded
      * rather than SourceObservation-equality based.
      */
-    template <typename T>
-    [[nodiscard]] Object3DMatch<T> find_nearest_source_observation(
-        const core::ProductStore& products,
-        core::ProductId metric_product,
-        core::SourceId required_source,
-        const core::ProductMetadata& semantic_metadata,
-        const Object3DAssociationPolicy& policy) {
+    template <typename T> [[nodiscard]] Object3DMatch<T> find_nearest_source_observation(const core::ProductStore& products,
+                                                                                         core::ProductId metric_product,
+                                                                                         core::SourceId required_source,
+                                                                                         const core::ProductMetadata& semantic_metadata,
+                                                                                         const Object3DAssociationPolicy& policy) {
 
         Object3DMatch<T> result{};
 
@@ -140,10 +140,9 @@ namespace parallax::perception {
             if (candidate->metadata.observation.source != required_source) return;
             saw_required_source = true;
 
-            const auto delta =
-                candidate->metadata.timestamp >= semantic_metadata.timestamp
-                    ? candidate->metadata.timestamp - semantic_metadata.timestamp
-                    : semantic_metadata.timestamp - candidate->metadata.timestamp;
+            const auto delta = candidate->metadata.timestamp >= semantic_metadata.timestamp
+                               ? candidate->metadata.timestamp - semantic_metadata.timestamp
+                               : semantic_metadata.timestamp - candidate->metadata.timestamp;
 
             if (delta < nearest_delta) {
                 nearest = candidate;
@@ -157,8 +156,7 @@ namespace parallax::perception {
         }
 
         if (!nearest) {
-            result.rejection =
-                saw_product && !saw_required_source
+            result.rejection = saw_product && !saw_required_source
                     ? Object3DRejectReason::WrongSource
                     : Object3DRejectReason::InvalidMetricObservation;
             return result;

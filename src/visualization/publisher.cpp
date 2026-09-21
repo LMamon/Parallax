@@ -662,15 +662,13 @@ namespace parallax::visualization {
         }
 
         if (foxglove_->localOccupancyChannel().hasSinks()) {
-            const auto occupancy =
-                store.latest<parallax::mapping::LocalOccupancyState>(
-                    parallax::core::ProductId::LocalOccupancy);
+            const auto occupancy = store.latest<parallax::mapping::LocalOccupancyState>(parallax::core::ProductId::LocalOccupancy);
+
             if (occupancy && occupancy->valid() && occupancy->payload &&
                 occupancy->payload->gridValid()) {
-                const bool changed =
-                    !has_published_local_occupancy_ ||
-                    occupancy->payload->localization_epoch != last_local_occupancy_epoch_ ||
-                    occupancy->payload->integrated_frames != last_local_occupancy_integrated_frames_;
+                const bool changed = !has_published_local_occupancy_ ||
+                                      occupancy->payload->localization_epoch != last_local_occupancy_epoch_ ||
+                                      occupancy->payload->integrated_frames != last_local_occupancy_integrated_frames_;
                 if (changed) {
                     if (!publishLocalOccupancy(*occupancy)) return false;
                     last_local_occupancy_epoch_ = occupancy->payload->localization_epoch;
@@ -702,6 +700,7 @@ namespace parallax::visualization {
         }
 
         const auto& grid = *product.payload;
+
         foxglove::messages::VoxelGrid message;
         message.timestamp = sourceTimestamp(product.metadata);
         message.frame_id = "localization_world";
@@ -714,6 +713,7 @@ namespace parallax::visualization {
         position.y = grid.origin_m[1];
         position.z = grid.origin_m[2];
         pose.position = position;
+
         foxglove::messages::Quaternion orientation;
         orientation.w = 1.0;
         pose.orientation = orientation;
@@ -737,6 +737,7 @@ namespace parallax::visualization {
             field.type = foxglove::messages::PackedElementField::NumericType::UINT8;
             message.fields.push_back(std::move(field));
         };
+
         addField("occupancy", 0);
         addField("red", 1);
         addField("green", 2);
@@ -745,8 +746,8 @@ namespace parallax::visualization {
 
         message.data.resize(grid.cells.size() * CellStride);
         for (std::size_t i = 0; i < grid.cells.size(); ++i) {
-            const auto cell =
-                static_cast<parallax::mapping::OccupancyCell>(grid.cells[i]);
+            const auto cell = static_cast<parallax::mapping::OccupancyCell>(grid.cells[i]);
+
             const std::size_t base = i * CellStride;
             message.data[base] = static_cast<std::byte>(grid.cells[i]);
 
@@ -755,8 +756,12 @@ namespace parallax::visualization {
             // visual comparison against stereo scene points and LiDAR hits.
             std::uint8_t red = 0, green = 0, blue = 0, alpha = 0;
             if (cell == parallax::mapping::OccupancyCell::Occupied) {
-                red = 255; green = 80; blue = 80; alpha = 220;
+                red = 255; 
+                green = 80; 
+                blue = 80; 
+                alpha = 220;
             }
+
             message.data[base + 1] = static_cast<std::byte>(red);
             message.data[base + 2] = static_cast<std::byte>(green);
             message.data[base + 3] = static_cast<std::byte>(blue);
@@ -770,18 +775,27 @@ namespace parallax::visualization {
 
     bool Publisher::publishLeftImage(const parallax::core::Product<parallax::isp::RectifiedStereoFrame>& product,
                                     const parallax::pose::CharucoPoseResult* pose) {
+
         if (!initialized_ || foxglove_ == nullptr || !product.valid() || !product.payload->left.isAllocated()) return false;
+
         const auto& frame = *product.payload;
         if (frame.width != width_ || frame.height != height_) return false;
+        
         const std::size_t host_pitch = static_cast<std::size_t>(width_) * 3U * sizeof(std::uint8_t);
+        
         if (!frame.left.downloadAsync(host_rgb_, host_pitch, stream_)) return false;
         if (cudaStreamSynchronize(stream_) != cudaSuccess) return false;
 
         cv::Mat image(static_cast<int>(height_), static_cast<int>(width_), CV_8UC3, host_rgb_, host_pitch);
+        
         if (pose != nullptr && pose->pose_valid) {
             std::vector<cv::Point> polygon;
             polygon.reserve(4);
-            for (const auto& point : pose->projected_plane) polygon.emplace_back(static_cast<int>(std::lround(point.x)), static_cast<int>(std::lround(point.y)));
+        
+            for (const auto& point : pose->projected_plane) {
+                polygon.emplace_back(static_cast<int>(std::lround(point.x)), static_cast<int>(std::lround(point.y)));
+            }
+        
             cv::polylines(image, polygon, true, cv::Scalar(0, 255, 0), 5, cv::LINE_AA);
             cv::circle(image, cv::Point(static_cast<int>(std::lround(pose->projected_center.x)), static_cast<int>(std::lround(pose->projected_center.y))), 8, cv::Scalar(255, 0, 0), -1);
         }
@@ -789,6 +803,7 @@ namespace parallax::visualization {
         cv::Mat bgr(static_cast<int>(height_), static_cast<int>(width_), CV_8UC3, bgr_storage_.data(), host_pitch);
         cv::cvtColor(image, bgr, cv::COLOR_RGB2BGR);
         const std::vector<int> parameters{cv::IMWRITE_JPEG_QUALITY, jpeg_quality_};
+
         jpeg_bytes_.clear();
         if (!cv::imencode(".jpg", bgr, jpeg_bytes_, parameters)) return false;
 
@@ -797,13 +812,13 @@ namespace parallax::visualization {
         message.frame_id = coordinate_frame_;
         message.format = "jpeg";
         message.data.resize(jpeg_bytes_.size());
+
         std::memcpy(message.data.data(), jpeg_bytes_.data(), jpeg_bytes_.size());
         return checkFoxglove(foxglove_->leftImageChannel().log(message), "Failed to publish /camera/left/image");
     }
 
-    bool Publisher::publishDepth(const parallax::core::Product<parallax::isp::DepthFrame>& product,
-                                 bool publish_image,
-                                 bool publish_scene) {
+    bool Publisher::publishDepth(const parallax::core::Product<parallax::isp::DepthFrame>& product, bool publish_image, bool publish_scene) {
+
         if (!initialized_ || foxglove_ == nullptr || !product.valid() ||
             !product.payload->depth.isAllocated() || (!publish_image && !publish_scene)) return false;
 
@@ -813,15 +828,16 @@ namespace parallax::visualization {
             return false;
         }
 
-        if (!parallax::cuda::downsampleDepthNearest(frame.depth, depth_preview_, DepthPreviewStride, stream_)) return false;
+        if (!parallax::cuda::downsampleDepthRobust(frame.depth, depth_preview_, DepthPreviewStride, stream_)) return false;
 
         const std::size_t host_pitch = static_cast<std::size_t>(depth_preview_width_) * sizeof(float);
+        
         if (!depth_preview_.downloadAsync(host_depth_, host_pitch, stream_)) return false;
         if (cudaStreamSynchronize(stream_) != cudaSuccess) return false;
 
         if (publish_image) {
-            const std::size_t bytes = static_cast<std::size_t>(depth_preview_width_) *
-                                      depth_preview_height_ * sizeof(float);
+            const std::size_t bytes = static_cast<std::size_t>(depth_preview_width_) * depth_preview_height_ * sizeof(float);
+
             foxglove::messages::RawImage image;
             image.timestamp = sourceTimestamp(product.metadata);
             image.frame_id = coordinate_frame_;
@@ -830,7 +846,9 @@ namespace parallax::visualization {
             image.encoding = "32FC1";
             image.step = depth_preview_width_ * sizeof(float);
             image.data.resize(bytes);
+            
             std::memcpy(image.data.data(), host_depth_, bytes);
+            
             if (!checkFoxglove(foxglove_->depthChannel().log(image), "Failed to publish /stereo/depth")) return false;
         }
 

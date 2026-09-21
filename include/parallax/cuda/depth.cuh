@@ -2,6 +2,7 @@
 
 #include <parallax/cuda/cuda_buffer.cuh>
 #include <cuda_runtime.h>
+#include <cstdint>
 
 namespace parallax::cuda {
 

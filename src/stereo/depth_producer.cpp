@@ -82,10 +82,12 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::Failed;
         }
         if (!parallax::cuda::disparityToDepth(disparity->payload->disparity,
+                                              
                                               depth->depth,
                                               rectified_fx_px,
                                               static_cast<float>(calibration_.metadata().baseline_mm / 1000.0),
                                               parallax::isp::StereoMatchFrame::DisparityScale,
+                                              
                                               parallax::stereo::MinUsefulDepthM,
                                               parallax::stereo::MaxUsefulDepthM,
                                               lane.cudaHandle())) {

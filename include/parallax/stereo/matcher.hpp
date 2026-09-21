@@ -59,7 +59,7 @@ namespace parallax::stereo {
 
                 VPIImage left_block_linear = nullptr;
                 VPIImage right_block_linear = nullptr;
-                VPIImage disparity_block_linear = nullptr;
+            VPIImage disparity_block_linear = nullptr;
 
                 parallax::vpi::ImageWrapper disparity_image;
 
@@ -74,10 +74,6 @@ namespace parallax::stereo {
                         right_block_linear = nullptr;
                     }
 
-                    if (disparity_block_linear != nullptr) {
-                        vpiImageDestroy(disparity_block_linear);
-                        disparity_block_linear = nullptr;
-                    }
                 }
 
                 OutputSlot() = default;

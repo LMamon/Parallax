@@ -134,10 +134,12 @@ namespace parallax::core {
         }
 
         if (!parallax::cuda::disparityToDepth(matcher_output->output.disparity,
+                                              
                                               depth_.depth,
                                               static_cast<float>(calibration_.metadata().virtual_fx),
                                               static_cast<float>(calibration_.metadata().baseline_mm / 1000.0),
                                               parallax::isp::StereoMatchFrame::DisparityScale,
+                                              
                                               parallax::stereo::MinUsefulDepthM,
                                               parallax::stereo::MaxUsefulDepthM,
                                               vpi_stream_.cudaHandle())) {

@@ -7,7 +7,7 @@
 #include <parallax/core/product_store.hpp>
 #include <parallax/core/sensor_extrinsics.hpp>
 #include <parallax/cuda/depth_preview.cuh>
-#include <parallax/visualization/depth_scene.hpp>
+#include <parallax/stereo/depth_geometry.hpp>
 
 #include <parallax/perception/detection.hpp>
 #include <parallax/perception/segmentation.hpp>
@@ -76,6 +76,8 @@ namespace parallax::visualization {
             bool publishDepth(const parallax::core::Product<parallax::isp::DepthFrame>& product,
                               bool publish_image,
                               bool publish_scene);
+            bool prepareDepthPreview(const parallax::isp::DepthFrame& frame);
+            bool publishDepthImage(const parallax::core::Product<parallax::isp::DepthFrame>& product);
             bool publishDepthScene(const parallax::core::Product<parallax::isp::DepthFrame>& product);
             bool publishDisparity(const parallax::isp::StereoMatchFrame& frame);
             bool publishLidarScan(const parallax::lidar::LidarScan& scan);

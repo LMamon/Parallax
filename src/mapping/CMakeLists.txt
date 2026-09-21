@@ -1,5 +1,6 @@
 add_library(parallax_mapping
     local_occupancy_producer.cpp
+    occupancy_snapshot.cpp
 )
 
 target_include_directories(parallax_mapping

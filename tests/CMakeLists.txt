@@ -146,9 +146,9 @@ parallax_add_gtest(
 )
 
 parallax_add_gtest(
-    parallax_depth_scene_test
-    depth_scene_test.cpp
-    parallax_visualization
+    parallax_depth_geometry_test
+    depth_geometry_test.cpp
+    parallax_stereo
 )
 
 parallax_add_gtest(

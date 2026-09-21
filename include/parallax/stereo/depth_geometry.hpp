@@ -6,14 +6,20 @@
 #include <cstdint>
 #include <vector>
 
-namespace parallax::visualization {
+namespace parallax::stereo {
 
-    // Visualization geometry only. Full-resolution graph depth is not retained.
-    inline std::vector<std::array<float, 3>> buildDepthScenePoints(const float* depth,
-                                                                   std::uint32_t width,
-                                                                   std::uint32_t height,
-                                                                   std::uint32_t sample_stride,
-                                                                   const std::array<double, 12>& projection) {
+    /*
+     * Back-project sampled rectified depth into the rectified-left camera frame.
+     *
+     * This is geometry, not visualization. Callers choose the sampling stride
+     * and own any presentation-specific filtering before this boundary.
+     */
+    inline std::vector<std::array<float, 3>> backProjectDepthSamples(
+        const float* depth,
+        std::uint32_t width,
+        std::uint32_t height,
+        std::uint32_t sample_stride,
+        const std::array<double, 12>& projection) {
 
         std::vector<std::array<float, 3>> points;
         if (depth == nullptr || width == 0 || height == 0 || sample_stride == 0) return points;
@@ -25,7 +31,9 @@ namespace parallax::visualization {
 
         if (!std::isfinite(fx) || !std::isfinite(fy) ||
             !std::isfinite(cx) || !std::isfinite(cy) ||
-            fx <= 0.0 || fy <= 0.0) return points;
+            fx <= 0.0 || fy <= 0.0) {
+            return points;
+        }
 
         const std::size_t columns = (width + sample_stride - 1U) / sample_stride;
         const std::size_t rows = (height + sample_stride - 1U) / sample_stride;
@@ -43,6 +51,7 @@ namespace parallax::visualization {
                 points.push_back({x, y, z});
             }
         }
+
         return points;
     }
 

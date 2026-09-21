@@ -1,4 +1,5 @@
 #include <parallax/mapping/local_occupancy_state.hpp>
+#include <parallax/mapping/occupancy_snapshot.hpp>
 #include <gtest/gtest.h>
 
 TEST(LocalOccupancyState, DefaultsDescribeCheckpointPolicy) {
@@ -27,4 +28,17 @@ TEST(LocalOccupancyStateTest, CellEncodingIsStable) {
     EXPECT_EQ(static_cast<std::uint8_t>(parallax::mapping::OccupancyCell::Unknown), 0U);
     EXPECT_EQ(static_cast<std::uint8_t>(parallax::mapping::OccupancyCell::Free), 1U);
     EXPECT_EQ(static_cast<std::uint8_t>(parallax::mapping::OccupancyCell::Occupied), 2U);
+}
+
+
+TEST(OccupancySnapshotTest, ClassifiesLogOddsWithoutVisualizationPolicy) {
+    using parallax::mapping::OccupancyCell;
+    using parallax::mapping::classifyOccupancyLogOdds;
+
+    EXPECT_EQ(classifyOccupancyLogOdds(1.0F),
+              static_cast<std::uint8_t>(OccupancyCell::Occupied));
+    EXPECT_EQ(classifyOccupancyLogOdds(-1.0F),
+              static_cast<std::uint8_t>(OccupancyCell::Free));
+    EXPECT_EQ(classifyOccupancyLogOdds(0.0F),
+              static_cast<std::uint8_t>(OccupancyCell::Unknown));
 }

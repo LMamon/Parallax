@@ -817,47 +817,72 @@ namespace parallax::visualization {
         return checkFoxglove(foxglove_->leftImageChannel().log(message), "Failed to publish /camera/left/image");
     }
 
-    bool Publisher::publishDepth(const parallax::core::Product<parallax::isp::DepthFrame>& product, bool publish_image, bool publish_scene) {
+    bool Publisher::publishDepth(const parallax::core::Product<parallax::isp::DepthFrame>& product,
+                                 bool publish_image,
+                                 bool publish_scene) {
 
         if (!initialized_ || foxglove_ == nullptr || !product.valid() ||
-            !product.payload->depth.isAllocated() || (!publish_image && !publish_scene)) return false;
+            !product.payload->depth.isAllocated() || (!publish_image && !publish_scene)) {
+            return false;
+        }
 
-        const auto& frame = *product.payload;
+        if (!prepareDepthPreview(*product.payload)) return false;
+        if (publish_image && !publishDepthImage(product)) return false;
+
+        return !publish_scene || publishDepthScene(product);
+    }
+
+    bool Publisher::prepareDepthPreview(const parallax::isp::DepthFrame& frame) {
         if (frame.width != width_ || frame.height != height_) {
             std::cerr << "Visualization depth dimensions changed\n";
             return false;
         }
 
-        if (!parallax::cuda::downsampleDepthRobust(frame.depth, depth_preview_, DepthPreviewStride, stream_)) return false;
-
-        const std::size_t host_pitch = static_cast<std::size_t>(depth_preview_width_) * sizeof(float);
-        
-        if (!depth_preview_.downloadAsync(host_depth_, host_pitch, stream_)) return false;
-        if (cudaStreamSynchronize(stream_) != cudaSuccess) return false;
-
-        if (publish_image) {
-            const std::size_t bytes = static_cast<std::size_t>(depth_preview_width_) * depth_preview_height_ * sizeof(float);
-
-            foxglove::messages::RawImage image;
-            image.timestamp = sourceTimestamp(product.metadata);
-            image.frame_id = coordinate_frame_;
-            image.width = depth_preview_width_;
-            image.height = depth_preview_height_;
-            image.encoding = "32FC1";
-            image.step = depth_preview_width_ * sizeof(float);
-            image.data.resize(bytes);
-            
-            std::memcpy(image.data.data(), host_depth_, bytes);
-            
-            if (!checkFoxglove(foxglove_->depthChannel().log(image), "Failed to publish /stereo/depth")) return false;
+        if (!parallax::cuda::downsampleDepthRobust(
+                frame.depth,
+                depth_preview_,
+                DepthPreviewStride,
+                stream_)) {
+            return false;
         }
 
-        return !publish_scene || publishDepthScene(product);
+        const std::size_t host_pitch =
+            static_cast<std::size_t>(depth_preview_width_) * sizeof(float);
+
+        if (!depth_preview_.downloadAsync(host_depth_, host_pitch, stream_)) return false;
+        return cudaStreamSynchronize(stream_) == cudaSuccess;
+    }
+
+    bool Publisher::publishDepthImage(
+        const parallax::core::Product<parallax::isp::DepthFrame>& product) {
+
+        const std::size_t bytes =
+            static_cast<std::size_t>(depth_preview_width_) *
+            depth_preview_height_ * sizeof(float);
+
+        foxglove::messages::RawImage image;
+        image.timestamp = sourceTimestamp(product.metadata);
+        image.frame_id = coordinate_frame_;
+        image.width = depth_preview_width_;
+        image.height = depth_preview_height_;
+        image.encoding = "32FC1";
+        image.step = depth_preview_width_ * sizeof(float);
+        image.data.resize(bytes);
+
+        std::memcpy(image.data.data(), host_depth_, bytes);
+
+        return checkFoxglove(
+            foxglove_->depthChannel().log(image),
+            "Failed to publish /stereo/depth");
     }
 
     bool Publisher::publishDepthScene(const parallax::core::Product<parallax::isp::DepthFrame>& product) {
-        const auto points = buildDepthScenePoints(host_depth_, depth_preview_width_, depth_preview_height_,
-                                                  DepthSceneSampleStride, depth_preview_projection_);
+        const auto points = parallax::stereo::backProjectDepthSamples(
+            host_depth_,
+            depth_preview_width_,
+            depth_preview_height_,
+            DepthSceneSampleStride,
+            depth_preview_projection_);
 
         foxglove::messages::PointCloud message;
         message.timestamp = sourceTimestamp(product.metadata);

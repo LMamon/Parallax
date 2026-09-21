@@ -72,10 +72,10 @@ namespace parallax::perception {
             return core::SubmitResult::Submitted;
         }
 
-        if(track->metadata.observation==last_track_observation_) return core::SubmitResult::NoWork;
+        if(track->metadata.observation == last_track_observation_) return core::SubmitResult::NoWork;
 
         /* Do not spatialize a current DCF box with depth from a neighboring frame. */
-        const auto depth=products_.find_observation<isp::DepthFrame>(core::ProductId::Depth, track->metadata.observation);
+        const auto depth = products_.find_observation<isp::DepthFrame>(core::ProductId::Depth, track->metadata.observation);
 
         if(!depth||!depth->valid()||!depth->payload) return core::SubmitResult::NoWork;
 

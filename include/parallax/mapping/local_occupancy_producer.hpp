@@ -40,13 +40,7 @@ namespace parallax::mapping {
             static constexpr float KeepRadiusM = 10.0F;
             static constexpr std::size_t DepthHistoryCapacity = 4;
 
-            // 8.1 m x 8.1 m x 4.05 m bounded visualization snapshot.
-            static constexpr std::uint32_t SnapshotColumns = 54;
-            static constexpr std::uint32_t SnapshotRows = 54;
-            static constexpr std::uint32_t SnapshotSlices = 27;
-
             void resetForEpoch(std::uint64_t epoch);
-            bool buildSnapshot(const nvblox::Vector3f& center, LocalOccupancyState* state);
 
             nvblox::Transform worldFromRectifiedCamera(const parallax::localization::LocalizationPose& pose) const;
 

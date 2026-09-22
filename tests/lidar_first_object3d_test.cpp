@@ -6,9 +6,11 @@
 #include <parallax/perception/lidar_detection_associator.hpp>
 #include <parallax/perception/object3d.hpp>
 #include <parallax/perception/object3d_producer.hpp>
+#include <parallax/perception/segmentation.hpp>
 #include <parallax/perception/stereo_roi_associator.hpp>
 #include <parallax/stereo/calibration.hpp>
 
+#include <cuda_runtime.h>
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -156,6 +158,49 @@ namespace {
             std::move(const_payload),
             std::move(completion));
     }
+
+    core::Product<perception::SegmentationMask> segmentationProduct(
+        core::ExecutionContext& context,
+        std::uint64_t sequence,
+        Clock::time_point timestamp) {
+        constexpr std::size_t Bytes = static_cast<std::size_t>(Width) * Height;
+        std::vector<std::uint8_t> host_mask(Bytes, 0);
+        for (std::uint32_t y = 45; y <= 55; ++y)
+            for (std::uint32_t x = 45; x <= 55; ++x)
+                host_mask[static_cast<std::size_t>(y) * Width + x] = 255;
+
+        std::uint8_t* device_mask = nullptr;
+        EXPECT_EQ(cudaMalloc(reinterpret_cast<void**>(&device_mask), Bytes), cudaSuccess);
+        auto& lane = context.stereoLane();
+        EXPECT_EQ(cudaMemcpyAsync(device_mask, host_mask.data(), Bytes,
+                                  cudaMemcpyHostToDevice, lane.cudaHandle()), cudaSuccess);
+        auto completion = context.recordCudaCompletion(lane.cudaHandle());
+        EXPECT_TRUE(completion.valid());
+
+        auto payload = std::make_shared<perception::SegmentationMask>();
+        payload->source_observation = {core::SourceId::StereoCamera, sequence};
+        payload->image_space = perception::ImageSpace::RgbLeft;
+        payload->query_revision = 1;
+        payload->query = "cup";
+        payload->prompt_box = {45.0F, 45.0F, 10.0F, 10.0F};
+        payload->width = Width;
+        payload->height = Height;
+        payload->pitch_bytes = Width;
+        payload->layout = perception::MaskLayout::RowMajor;
+        payload->representation = perception::MaskRepresentation::CudaDevice;
+        payload->confidence = 0.95F;
+        payload->mask_valid = true;
+        payload->storage = std::shared_ptr<const void>(
+            device_mask, [](const void* q) {
+                if (q) cudaFree(const_cast<void*>(q));
+            });
+
+        std::shared_ptr<const perception::SegmentationMask> const_payload = payload;
+        return core::make_product<perception::SegmentationMask>(
+            core::ProductId::Segmentation, cameraMetadata(sequence, timestamp),
+            std::move(const_payload), std::move(completion));
+    }
+
 }
 
 TEST(LidarDetectionAssociatorTest, CenterHitCreatesLidarObject3D) {
@@ -314,6 +359,60 @@ TEST(LidarFirstObject3DTest, LidarHitOverridesAvailableStereoDepth) {
     EXPECT_EQ(object.lidar_evidence->observation.sequence, 50U);
     EXPECT_FLOAT_EQ(object.lidar_evidence->range_m, 2.0F);
     EXPECT_NEAR(object.lidar_evidence->position_m[2], 2.0F, 1.0e-5F);
+
+    context.shutdown();
+}
+
+
+TEST(LidarFirstObject3DTest, LidarMetricAuthorityPreservesFullMaskStereoGeometry) {
+    core::ExecutionContext context;
+    ASSERT_TRUE(context.initialize());
+    auto& store = context.products();
+    store.set_history_capacity(core::ProductId::Depth, 4);
+    store.set_history_capacity(core::ProductId::LidarScan, 4);
+
+    stereo::StereoCalibration calibration;
+    perception::StereoRoiAssociator stereo_associator{calibration, "camera_left_optical"};
+    ASSERT_TRUE(stereo_associator.initialize(
+        Width, Height, identityMapX(), identityMapY(), stereoCameraModel()));
+
+    perception::LidarDetectionAssociator lidar_associator;
+    initializeLidarAssociator(lidar_associator);
+    perception::Object3DProducer producer{stereo_associator, lidar_associator, store};
+
+    const auto now = Clock::now();
+    store.publish(core::make_product<perception::DetectionSet>(
+        core::ProductId::Detection, cameraMetadata(30, now), detectionPayload()));
+    store.publish(depthProduct(context, 4.0F, 30, now));
+    store.publish(segmentationProduct(context, 30, now));
+    store.publish(lidarProduct({{0.0F, 2.0F, 20, true}}, 60,
+                               now - std::chrono::milliseconds{10}));
+
+    ASSERT_EQ(producer.submit(context), core::SubmitResult::Submitted);
+    const auto output = store.latest<perception::Object3DSet>(core::ProductId::Object3D);
+    ASSERT_NE(output, nullptr);
+    ASSERT_TRUE(output->valid());
+    ASSERT_EQ(output->payload->size(), 1U);
+
+    const auto& object = output->payload->objects.front();
+
+    // LiDAR remains representative metric authority.
+    EXPECT_EQ(object.method, perception::Object3DMethod::StereoLidarRefined);
+    EXPECT_EQ(object.metric_observation.source, core::SourceId::Rplidar);
+    EXPECT_EQ(object.metric_observation.sequence, 60U);
+    EXPECT_FLOAT_EQ(object.range_m, 2.0F);
+    EXPECT_NEAR(object.position_m[2], 2.0F, 1.0e-5F);
+
+    // Full segmentation-mask stereo support remains the object's geometry.
+    EXPECT_TRUE(object.geometry == perception::Object3DGeometry::Surface ||
+                object.geometry == perception::Object3DGeometry::ObservedExtent);
+    EXPECT_GE(object.surface_points_m.size(),
+              perception::StereoRoiAssociator::MinSurfaceSamples);
+
+    ASSERT_TRUE(object.stereo_evidence.has_value());
+    ASSERT_TRUE(object.lidar_evidence.has_value());
+    EXPECT_FLOAT_EQ(object.stereo_evidence->depth_m, 4.0F);
+    EXPECT_FLOAT_EQ(object.lidar_evidence->range_m, 2.0F);
 
     context.shutdown();
 }

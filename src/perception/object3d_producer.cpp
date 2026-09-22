@@ -131,6 +131,17 @@ namespace parallax::perception {
                         lidar_object.method = Object3DMethod::StereoLidarRefined;
                     }
 
+                    // LiDAR owns the representative metric point/range, not
+                    // the complete visible-object geometry.
+                    lidar_object.image_supported_corners_m = existing->image_supported_corners_m;
+                    lidar_object.surface_points_m = existing->surface_points_m;
+                    lidar_object.observed_extent_center_m = existing->observed_extent_center_m;
+                    lidar_object.observed_extent_size_m = existing->observed_extent_size_m;
+                    lidar_object.observed_extent_support = existing->observed_extent_support;
+                    if (existing->geometry != Object3DGeometry::Point) {
+                        lidar_object.geometry = existing->geometry;
+                    }
+
                     *existing = std::move(lidar_object);
                 } else {
                     objects->objects.push_back(std::move(lidar_object));
@@ -182,21 +193,48 @@ namespace parallax::perception {
                             return object.semantic_index == selected;
                         });
 
-                if (object_it != objects->objects.end() &&
-                    object_it->method != Object3DMethod::LidarAssociation &&
-                    object_it->method != Object3DMethod::StereoLidarRefined) {
-                    // A direct LiDAR hit owns the representative metric point.
-                    // Optional stereo-mask refinement is only allowed to refine
-                    // stereo-backed observations.
+                if (object_it != objects->objects.end()) {
                     auto& lane = context.stereoLane();
 
                     if (!context.waitFor(segmentation->completion, lane)) return core::SubmitResult::Failed;
 
-                    /*
-                    * Failure to obtain enough stereo support under the mask is not an
-                    * Object3D failure. Keep the already-valid StereoRoi result.
-                    */
-                    (void)associator_.refineWithMask(*segmentation->payload, segmentation->metadata, *depth_match.product, context, *object_it);
+                    // A mask may enrich LiDAR-authoritative objects with full
+                    // stereo surface/extent geometry, but it must not replace
+                    // their selected LiDAR metric point.
+                    if (object_it->method == Object3DMethod::LidarAssociation ||
+                        object_it->method == Object3DMethod::StereoLidarRefined) {
+
+                        if (object_it->stereo_evidence) {
+                            Object3D stereo_geometry = *object_it;
+                            stereo_geometry.position_m = object_it->stereo_evidence->position_m;
+                            stereo_geometry.depth_m = object_it->stereo_evidence->depth_m;
+                            stereo_geometry.range_m = 0.0F;
+                            stereo_geometry.metric_observation = object_it->stereo_evidence->observation;
+                            stereo_geometry.source_time_delta = object_it->stereo_evidence->source_time_delta;
+                            stereo_geometry.support_quality = object_it->stereo_evidence->support_quality;
+                            stereo_geometry.method = Object3DMethod::StereoRoi;
+                            stereo_geometry.lidar_evidence.reset();
+
+                            if (associator_.refineWithMask(*segmentation->payload,
+                                                          segmentation->metadata,
+                                                          *depth_match.product,
+                                                          context,
+                                                          stereo_geometry)) {
+                                object_it->surface_points_m = std::move(stereo_geometry.surface_points_m);
+                                object_it->observed_extent_center_m = stereo_geometry.observed_extent_center_m;
+                                object_it->observed_extent_size_m = stereo_geometry.observed_extent_size_m;
+                                object_it->observed_extent_support = stereo_geometry.observed_extent_support;
+                                object_it->geometry = stereo_geometry.geometry;
+                                object_it->stereo_evidence = stereo_geometry.stereo_evidence;
+                            }
+                        }
+                    } else {
+                        (void)associator_.refineWithMask(*segmentation->payload,
+                                                        segmentation->metadata,
+                                                        *depth_match.product,
+                                                        context,
+                                                        *object_it);
+                    }
                 }
             }
         }

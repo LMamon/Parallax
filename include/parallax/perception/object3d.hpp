@@ -32,39 +32,43 @@ namespace parallax::perception {
         StereoLidarRefined
     };
 
-    struct Object3DMetricEvidence {
+    struct StereoMetricEvidence {
         core::SourceObservation observation{};
         std::array<float, 3> position_m{};
         float depth_m = 0.0F;
-
-        // Direct sensor-line range is populated by LiDAR. Stereo depth is
-        // optical-axis Z, so stereo evidence intentionally leaves this zero.
-        float range_m = 0.0F;
-
         std::chrono::steady_clock::duration source_time_delta{};
         float support_quality = 0.0F;
 
-        // TODO: split object3D into explicit components. Represent sensor/method-specific 
-        // states with typed variants rather than encoding valid states through fields + valid().
         [[nodiscard]] bool valid() const noexcept {
-            if (!observation.valid() ||
-                !std::isfinite(position_m[0]) ||
-                !std::isfinite(position_m[1]) ||
-                !std::isfinite(position_m[2]) ||
-                !std::isfinite(depth_m) ||
-                depth_m <= 0.0F ||
-                !std::isfinite(support_quality) ||
-                support_quality < 0.0F ||
-                support_quality > 1.0F) {
+            return observation.valid() &&
+                   observation.source == core::SourceId::StereoCamera &&
+                   std::isfinite(position_m[0]) &&
+                   std::isfinite(position_m[1]) &&
+                   std::isfinite(position_m[2]) &&
+                   std::isfinite(depth_m) && depth_m > 0.0F &&
+                   std::isfinite(support_quality) &&
+                   support_quality >= 0.0F && support_quality <= 1.0F;
+        }
+    };
 
-                return false;
-            }
+    struct LidarMetricEvidence {
+        core::SourceObservation observation{};
+        std::array<float, 3> position_m{};
+        float depth_m = 0.0F;
+        float range_m = 0.0F;
+        std::chrono::steady_clock::duration source_time_delta{};
+        float support_quality = 0.0F;
 
-            if (observation.source == core::SourceId::Rplidar) {
-                return std::isfinite(range_m) && range_m > 0.0F;
-            }
-
-            return observation.source == core::SourceId::StereoCamera;
+        [[nodiscard]] bool valid() const noexcept {
+            return observation.valid() &&
+                   observation.source == core::SourceId::Rplidar &&
+                   std::isfinite(position_m[0]) &&
+                   std::isfinite(position_m[1]) &&
+                   std::isfinite(position_m[2]) &&
+                   std::isfinite(depth_m) && depth_m > 0.0F &&
+                   std::isfinite(range_m) && range_m > 0.0F &&
+                   std::isfinite(support_quality) &&
+                   support_quality >= 0.0F && support_quality <= 1.0F;
         }
     };
 
@@ -123,8 +127,8 @@ namespace parallax::perception {
         // sensor as the representative Object3D position. This lets downstream
         // consumers inspect stereo and LiDAR agreement without reconstructing
         // it from discarded intermediate products.
-        std::optional<Object3DMetricEvidence> stereo_evidence;
-        std::optional<Object3DMetricEvidence> lidar_evidence;
+        std::optional<StereoMetricEvidence> stereo_evidence;
+        std::optional<LidarMetricEvidence> lidar_evidence;
 
         [[nodiscard]] bool valid() const noexcept {
             // TODO: split object3D into explicit components. Represent sensor/method-specific 

@@ -341,7 +341,7 @@ namespace parallax::perception {
             // detector confidence and stereo support independently.
             object.support_quality = static_cast<float>(roi.valid_samples) / static_cast<float>(roi.sampled_pixels);
 
-            Object3DMetricEvidence stereo_evidence{};
+            StereoMetricEvidence stereo_evidence{};
             stereo_evidence.observation = depth.metadata.observation;
             stereo_evidence.position_m = object.position_m;
             stereo_evidence.depth_m = object.depth_m;
@@ -447,7 +447,7 @@ namespace parallax::perception {
             output.geometry = Object3DGeometry::ObservedExtent;
         }
 
-        Object3DMetricEvidence evidence{}; 
+        StereoMetricEvidence evidence{}; 
         evidence.observation = depth.metadata.observation; 
         evidence.position_m = output.position_m;
         evidence.depth_m = output.depth_m; 

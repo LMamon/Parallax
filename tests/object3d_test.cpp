@@ -67,7 +67,7 @@ TEST(Object3DTest, PreservesSemanticAndMetricProvenanceIndependently) {
 TEST(Object3DMetricEvidenceTest, ValidatesStereoAndLidarIndependently) {
     using namespace parallax;
 
-    perception::Object3DMetricEvidence stereo{};
+    perception::StereoMetricEvidence stereo{};
     stereo.observation = {core::SourceId::StereoCamera, 10};
     stereo.position_m = {0.1F, 0.0F, 2.0F};
     stereo.depth_m = 2.0F;
@@ -75,7 +75,7 @@ TEST(Object3DMetricEvidenceTest, ValidatesStereoAndLidarIndependently) {
 
     EXPECT_TRUE(stereo.valid());
 
-    perception::Object3DMetricEvidence lidar{};
+    perception::LidarMetricEvidence lidar{};
     lidar.observation = {core::SourceId::Rplidar, 20};
     lidar.position_m = {0.0F, 0.0F, 1.8F};
     lidar.depth_m = 1.8F;
@@ -95,7 +95,7 @@ TEST(Object3DTest, FusedMetricRequiresBothValidEvidenceRecords) {
     object.method = perception::Object3DMethod::StereoLidarRefined;
     object.range_m = 1.8F;
 
-    perception::Object3DMetricEvidence stereo{};
+    perception::StereoMetricEvidence stereo{};
     stereo.observation = {core::SourceId::StereoCamera, 42};
     stereo.position_m = object.position_m;
     stereo.depth_m = object.depth_m;
@@ -104,7 +104,7 @@ TEST(Object3DTest, FusedMetricRequiresBothValidEvidenceRecords) {
 
     EXPECT_FALSE(object.valid());
 
-    perception::Object3DMetricEvidence lidar{};
+    perception::LidarMetricEvidence lidar{};
     lidar.observation = {core::SourceId::Rplidar, 50};
     lidar.position_m = object.position_m;
     lidar.depth_m = object.depth_m;

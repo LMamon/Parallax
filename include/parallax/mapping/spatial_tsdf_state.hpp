@@ -13,7 +13,7 @@ namespace parallax::mapping {
         std::uint64_t integrated_frames = 0;
         std::uint64_t epoch_resets = 0;
         std::size_t allocated_blocks = 0;
-        float voxel_size_m = 0.15F;
+        float voxel_size_m = 0.10F;
         std::array<float, 3> origin_m{};
         std::uint32_t column_count = 0;
         std::uint32_t row_count = 0;

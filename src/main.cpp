@@ -16,12 +16,14 @@ int main() {
     const std::filesystem::path camera_config_path = "config/camera/stereo.yaml";
     const std::filesystem::path isp_config_path = "config/isp.yaml";
     const std::filesystem::path sensor_extrinsics_path = "config/sensors/extrinsics.yaml";
+    const std::filesystem::path mapping_config_path = "config/mapping.yaml";
     const std::filesystem::path nanoowl_engine_path = "models/nanoowl/owl_image_encoder_patch32_fp16.engine";
     const std::filesystem::path calibration_directory = "config/camera/calibration/results/rectification";
 
     if (!runtime.initialize(camera_config_path,
                             isp_config_path,
-                            sensor_extrinsics_path, 
+                            sensor_extrinsics_path,
+                            mapping_config_path,
                             calibration_directory, 
                             nanoowl_engine_path)) {
 

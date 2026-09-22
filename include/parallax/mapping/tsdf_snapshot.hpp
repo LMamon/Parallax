@@ -9,7 +9,7 @@
 
 namespace parallax::mapping {
     struct TsdfSnapshotConfig {
-        float voxel_size_m = 0.15F;
+        float voxel_size_m = 0.10F;
         std::uint32_t column_count = 80;
         std::uint32_t row_count = 80;
         std::uint32_t slice_count = 40;

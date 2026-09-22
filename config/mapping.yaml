@@ -1,0 +1,22 @@
+mapping:
+  voxel_size_m: 0.10
+  depth:
+    min_integration_distance_m: 0.50
+    max_integration_distance_m: 9.00
+    integration_rate_hz: 10.0
+  tsdf:
+    truncation_distance_vox: 4.0
+    max_weight: 5.0
+  mesh:
+    update_rate_hz: 2.0
+    min_weight: 0.10
+    weld_vertices: true
+  color:
+    enabled: true
+    integration_rate_hz: 2.0
+  # Visualization window only. This never clears persistent map state.
+  debug_tsdf:
+    columns: 80
+    rows: 80
+    slices: 40
+    surface_band_m: 0.10

@@ -4,6 +4,7 @@
 #include <parallax/localization/cuvslam_producer.hpp>
 #include <parallax/mapping/local_occupancy_producer.hpp>
 #include <parallax/mapping/spatial_tsdf_producer.hpp>
+#include <parallax/mapping/mapping_config.hpp>
 
 #include <parallax/camera/camera_producer.hpp>
 #include <parallax/camera/camera_config.hpp>
@@ -72,6 +73,7 @@ namespace parallax::core {
             bool initialize(const std::filesystem::path& camera_config_path,
                             const std::filesystem::path& isp_config_path,
                             const std::filesystem::path& sensor_extrinsics_path,
+                            const std::filesystem::path& mapping_config_path,
                             const std::filesystem::path& calibration_directory,
                             const std::filesystem::path& nanoowl_engine_path);
             
@@ -97,6 +99,7 @@ namespace parallax::core {
             void runAutoControl();
             parallax::camera::CameraConfig config_{};
             parallax::isp::IspConfig isp_config_{};
+            parallax::mapping::MappingConfig mapping_config_{};
             SensorExtrinsics sensor_extrinsics_{};
 
             std::unique_ptr<parallax::camera::StereoCamera> camera_;

@@ -22,6 +22,7 @@ namespace parallax::core {
     bool Runtime::initialize(const std::filesystem::path& camera_config_path,
                              const std::filesystem::path& isp_config_path,
                              const std::filesystem::path& sensor_extrinsics_path,
+                             const std::filesystem::path& mapping_config_path,
                              const std::filesystem::path& calibration_directory,
                              const std::filesystem::path& nanoowl_engine_path) {
 
@@ -45,7 +46,12 @@ namespace parallax::core {
 
         if (!sensor_extrinsics_.loadFromFile(sensor_extrinsics_path)) {
             std::cerr << "Runtime: failed to load extrinsics config\n";
-            return false;   
+            return false;
+        }
+
+        if (!mapping_config_.loadFromFile(mapping_config_path)) {
+            std::cerr << "Runtime: failed to load mapping config\n";
+            return false;
         }
 
         camera_ = std::make_unique<parallax::camera::StereoCamera>(config_);
@@ -175,6 +181,7 @@ namespace parallax::core {
 
         spatial_tsdf_producer_ = std::make_unique<parallax::mapping::SpatialTsdfProducer>(pipeline_.calibration(),
                                                                                           sensor_extrinsics_,
+                                                                                          mapping_config_,
                                                                                           context_.products(),
                                                                                           resolver_,
                                                                                           context_.stereoLane().cudaHandle());

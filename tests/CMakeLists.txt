@@ -243,3 +243,9 @@ parallax_add_gtest(
     parallax_mapping
     parallax_core
 )
+
+parallax_add_gtest(
+    parallax_mapping_config_test
+    mapping_config_test.cpp
+    parallax_mapping
+)

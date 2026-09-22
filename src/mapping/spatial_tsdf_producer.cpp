@@ -17,7 +17,7 @@ namespace parallax::mapping {
             const double norm = quaternion.norm();
 
             if (!std::isfinite(norm) || norm <= 1.0e-9) {
-                throw std::invalid_argument("local occupancy received invalid rotation");
+                throw std::invalid_argument("spatial TSDF received invalid rotation");
             }
             
             quaternion.normalize();
@@ -50,17 +50,19 @@ namespace parallax::mapping {
 
     SpatialTsdfProducer::SpatialTsdfProducer(const parallax::stereo::StereoCalibration& calibration,
                                                    const parallax::core::SensorExtrinsics& extrinsics,
+                                                   const MappingConfig& config,
                                                    parallax::core::ProductStore& products,
                                                    const parallax::core::DependencyResolver& resolver,
                                                    cudaStream_t cuda_stream) : 
                                                 calibration_(calibration),
+                                                config_(config),
                                                 products_(products),
                                                 resolver_(resolver),
                                                 cuda_stream_(cuda_stream),
                                                 nvblox_stream_(std::make_shared<nvblox::CudaStreamNonOwning>(&cuda_stream_)) {
 
         if (!calibration.loaded() || cuda_stream_ == nullptr) {
-            throw std::invalid_argument("local occupancy requires calibration and CUDA stream");
+            throw std::invalid_argument("spatial TSDF requires calibration and CUDA stream");
         }
 
         const auto& p1 = calibration.P1();
@@ -95,7 +97,7 @@ namespace parallax::mapping {
 
     parallax::core::ExecutionPolicy SpatialTsdfProducer::execution_policy() const noexcept {
         parallax::core::ExecutionPolicy policy{};
-        policy.target_hz = 10.0;
+        policy.target_hz = config_.integration_rate_hz;
         policy.drop_policy = parallax::core::DropPolicy::Supersede;
         policy.priority = 5;
         policy.affinity = parallax::core::ResourceAffinity::Gpu;
@@ -105,12 +107,10 @@ namespace parallax::mapping {
     }
 
     void SpatialTsdfProducer::resetForEpoch(std::uint64_t epoch) {
-        mapper_ = std::make_unique<nvblox::Mapper>(VoxelSizeM,
+        mapper_ = std::make_unique<nvblox::Mapper>(config_.voxel_size_m,
                                                    nvblox::BlockMemoryPoolParams{},
                                                    nvblox::ProjectiveLayerType::kTsdf,
                                                    nvblox_stream_);
-
-        mapper_->occupancy_decay_integrator().decay_to_free(false);
         epoch_ = epoch;
         last_integrated_.reset();
     }
@@ -187,7 +187,7 @@ namespace parallax::mapping {
         last_integrated_ = pose->metadata.observation;
 
         /*
-        * The nvblox occupancy layer is runtime-baseline state. Keep integrating it
+        * The nvblox TSDF layer is runtime-baseline state. Keep integrating it
         * even with no viewer attached, but do not copy its bounded visualization
         * window back to the CPU unless Foxglove is actually subscribed.
         *
@@ -205,7 +205,12 @@ namespace parallax::mapping {
 
         state->allocated_blocks = mapper_->tsdf_layer().numAllocatedBlocks();
 
-        const TsdfSnapshotConfig snapshot_config{VoxelSizeM, 80, 80, 40, VoxelSizeM};
+        const TsdfSnapshotConfig snapshot_config{
+            config_.voxel_size_m,
+            config_.debug_columns,
+            config_.debug_rows,
+            config_.debug_slices,
+            config_.debug_surface_band_m};
         if (!buildTsdfSnapshot(mapper_->tsdf_layer(),
                                world_from_camera.translation(),
                                cuda_stream_,

@@ -3,6 +3,7 @@ add_library(parallax_mapping
     local_occupancy_producer.cpp
     occupancy_snapshot.cpp
     spatial_tsdf_producer.cpp
+    spatial_mesh_snapshot.cpp
     tsdf_snapshot.cpp
 )
 

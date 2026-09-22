@@ -694,6 +694,22 @@ namespace parallax::visualization {
             }
         }
 
+        if (foxglove_->spatialMeshChannel().hasSinks()) {
+            const auto mesh=store.latest<parallax::mapping::SpatialMeshState>(
+                parallax::core::ProductId::SpatialMesh);
+            if (mesh && mesh->valid() && mesh->payload && mesh->payload->valid()) {
+                const bool changed=!has_published_spatial_mesh_ ||
+                    mesh->payload->localization_epoch!=last_spatial_mesh_epoch_ ||
+                    mesh->payload->mesh_revision!=last_spatial_mesh_revision_;
+                if (changed) {
+                    if (!publishSpatialMesh(*mesh)) return false;
+                    last_spatial_mesh_epoch_=mesh->payload->localization_epoch;
+                    last_spatial_mesh_revision_=mesh->payload->mesh_revision;
+                    has_published_spatial_mesh_=true;
+                }
+            }
+        }
+
         if (foxglove_->localizationLandmarksChannel().hasSinks()) {
             const auto landmarks = store.latest<parallax::localization::VisualLandmarkSet>(parallax::core::ProductId::LocalizationLandmarks);
 
@@ -869,6 +885,52 @@ namespace parallax::visualization {
         return checkFoxglove(
             foxglove_->spatialTsdfChannel().log(message),
             "Failed to publish /mapping/spatial_tsdf");
+    }
+
+    bool Publisher::publishSpatialMesh(
+        const parallax::core::Product<parallax::mapping::SpatialMeshState>& product) {
+        if (!initialized_ || foxglove_==nullptr || !product.valid() ||
+            !product.payload || !product.payload->valid()) return false;
+
+        const auto& mesh=*product.payload;
+        foxglove::messages::PointCloud message;
+        message.timestamp=sourceTimestamp(product.metadata);
+        message.frame_id="localization_world";
+
+        foxglove::messages::Pose pose;
+        foxglove::messages::Quaternion orientation;
+        orientation.w=1.0;
+        pose.orientation=orientation;
+        message.pose=pose;
+
+        constexpr std::uint32_t Stride=3U*sizeof(float)+4U;
+        message.point_stride=Stride;
+
+        auto f32=[&](const char* name,std::uint32_t off) {
+            foxglove::messages::PackedElementField f; f.name=name; f.offset=off;
+            f.type=foxglove::messages::PackedElementField::NumericType::FLOAT32;
+            message.fields.push_back(std::move(f));
+        };
+        auto u8=[&](const char* name,std::uint32_t off) {
+            foxglove::messages::PackedElementField f; f.name=name; f.offset=off;
+            f.type=foxglove::messages::PackedElementField::NumericType::UINT8;
+            message.fields.push_back(std::move(f));
+        };
+        f32("x",0); f32("y",sizeof(float)); f32("z",2U*sizeof(float));
+        u8("red",3U*sizeof(float)); u8("green",3U*sizeof(float)+1U);
+        u8("blue",3U*sizeof(float)+2U); u8("alpha",3U*sizeof(float)+3U);
+
+        message.data.resize(mesh.vertices_m.size()*Stride);
+        for (std::size_t i=0;i<mesh.vertices_m.size();++i) {
+            const auto base=i*Stride;
+            std::memcpy(message.data.data()+base,mesh.vertices_m[i].data(),3U*sizeof(float));
+            message.data[base+3U*sizeof(float)]=static_cast<std::byte>(mesh.colors_rgb[i][0]);
+            message.data[base+3U*sizeof(float)+1U]=static_cast<std::byte>(mesh.colors_rgb[i][1]);
+            message.data[base+3U*sizeof(float)+2U]=static_cast<std::byte>(mesh.colors_rgb[i][2]);
+            message.data[base+3U*sizeof(float)+3U]=static_cast<std::byte>(255);
+        }
+        return checkFoxglove(foxglove_->spatialMeshChannel().log(message),
+                             "Failed to publish /mapping/spatial_mesh");
     }
 
     bool Publisher::publishLeftImage(const parallax::core::Product<parallax::isp::RectifiedStereoFrame>& product,

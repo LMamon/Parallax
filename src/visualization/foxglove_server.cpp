@@ -268,6 +268,15 @@ namespace parallax::visualization {
         spatial_tsdf_channel_.emplace(std::move(spatial_tsdf.value()));
         bindProduct(spatial_tsdf_channel_->id(), ProductId::SpatialTsdf);
 
+        auto spatial_mesh = foxglove::messages::PointCloudChannel::create("/mapping/spatial_mesh", context_);
+        if (!spatial_mesh.has_value()) {
+            std::cerr << "Failed to create /mapping/spatial_mesh channel: "
+                      << foxglove::strerror(spatial_mesh.error()) << '\n';
+            return false;
+        }
+        spatial_mesh_channel_.emplace(std::move(spatial_mesh.value()));
+        bindProduct(spatial_mesh_channel_->id(), ProductId::SpatialMesh);
+
         auto marker_pose = foxglove::messages::PoseInFrameChannel::create("/marker/pose", context_);
         if (!marker_pose.has_value()) {
             std::cerr << "Failed to create /marker/pose channel: "
@@ -699,6 +708,11 @@ namespace parallax::visualization {
         if (local_occupancy_channel_) {
             local_occupancy_channel_->close();
             local_occupancy_channel_.reset();
+        }
+
+        if (spatial_mesh_channel_) {
+            spatial_mesh_channel_->close();
+            spatial_mesh_channel_.reset();
         }
 
         if (marker_pose_channel_) {

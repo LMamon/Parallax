@@ -74,7 +74,6 @@ namespace parallax::mapping {
         body_from_rectified_rotation_ = multiply(body_from_raw, transpose(calibration.R1()));
         body_from_rectified_translation_ = extrinsics.left_camera.translation_m;
 
-        resetForEpoch(0);
         epoch_.reset();
     }
 

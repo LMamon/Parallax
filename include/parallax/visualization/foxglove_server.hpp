@@ -98,6 +98,7 @@ namespace parallax::visualization {
             [[nodiscard]] foxglove::messages::PointCloudChannel& depthSceneChannel() noexcept { return *depth_scene_channel_; }
             [[nodiscard]] foxglove::messages::VoxelGridChannel& localOccupancyChannel() noexcept { return *local_occupancy_channel_; }
             [[nodiscard]] foxglove::messages::VoxelGridChannel& spatialTsdfChannel() noexcept { return *spatial_tsdf_channel_; }
+            [[nodiscard]] foxglove::messages::PointCloudChannel& spatialMeshChannel() noexcept { return *spatial_mesh_channel_; }
             [[nodiscard]] foxglove::messages::RawImageChannel& segmentationMaskChannel() noexcept { return *segmentation_mask_channel_; }
             
             [[nodiscard]] foxglove::messages::FrameTransformChannel& localizationTransformChannel() noexcept { return *localization_transform_channel_; }
@@ -175,6 +176,7 @@ namespace parallax::visualization {
             std::optional<foxglove::messages::PointCloudChannel> depth_scene_channel_;
             std::optional<foxglove::messages::VoxelGridChannel> local_occupancy_channel_;
             std::optional<foxglove::messages::VoxelGridChannel> spatial_tsdf_channel_;
+            std::optional<foxglove::messages::PointCloudChannel> spatial_mesh_channel_;
             
             std::optional<foxglove::RawChannel> localization_state_channel_;
             std::optional<foxglove::RawChannel> runtime_telemetry_channel_;

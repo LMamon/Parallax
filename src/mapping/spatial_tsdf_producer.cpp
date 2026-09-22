@@ -1,11 +1,13 @@
 #include <parallax/mapping/spatial_tsdf_producer.hpp>
 #include <parallax/mapping/tsdf_snapshot.hpp>
+#include <parallax/mapping/spatial_mesh_snapshot.hpp>
 
 #include <parallax/core/execution_context.hpp>
 #include <parallax/isp/frame_types.hpp>
 
 #include <Eigen/Geometry>
 
+#include <chrono>
 #include <cmath>
 #include <stdexcept>
 
@@ -76,7 +78,6 @@ namespace parallax::mapping {
         body_from_rectified_rotation_ = multiply(body_from_raw, transpose(calibration.R1()));
         body_from_rectified_translation_ = extrinsics.left_camera.translation_m;
 
-        resetForEpoch(0);
         epoch_.reset();
     }
 
@@ -111,8 +112,16 @@ namespace parallax::mapping {
                                                    nvblox::BlockMemoryPoolParams{},
                                                    nvblox::ProjectiveLayerType::kTsdf,
                                                    nvblox_stream_);
+        mapper_->tsdf_integrator().max_integration_distance_m(config_.max_integration_distance_m);
+        mapper_->tsdf_integrator().truncation_distance_vox(config_.tsdf_truncation_distance_vox);
+        mapper_->tsdf_integrator().max_weight(config_.tsdf_max_weight);
+        mapper_->color_integrator().max_integration_distance_m(config_.max_integration_distance_m);
+
         epoch_ = epoch;
         last_integrated_.reset();
+        last_color_integrated_.reset();
+        last_color_integration_ = {};
+        last_mesh_update_ = {};
     }
 
     nvblox::Transform SpatialTsdfProducer::worldFromRectifiedCamera(const parallax::localization::LocalizationPose& pose) const {
@@ -182,6 +191,59 @@ namespace parallax::mapping {
 
         mapper_->integrateDepth(masked_depth, world_from_camera, camera_);
 
+        const auto now = parallax::core::ExecutionContext::now();
+        const bool mesh_demanded =
+            resolver_.demand(parallax::core::ProductId::SpatialMesh,
+                             parallax::core::DemandSource::FoxgloveSubscriber) > 0;
+
+        if (config_.color_enabled && mesh_demanded) {
+            const auto color_period = std::chrono::duration<double>(
+                1.0 / static_cast<double>(config_.color_integration_rate_hz));
+            const bool color_due = last_color_integration_.time_since_epoch().count()==0 ||
+                                   now-last_color_integration_ >= color_period;
+            if (color_due) {
+                const auto rgb = products_.find_observation<parallax::isp::RectifiedStereoFrame>(
+                    parallax::core::ProductId::RectifiedRgb, pose->metadata.observation);
+                if (rgb && rgb->valid() && rgb->payload && rgb->payload->left.isAllocated()) {
+                    if (!context.waitFor(rgb->completion, cuda_stream_))
+                        return parallax::core::SubmitResult::Failed;
+
+                    const auto& cf=*rgb->payload;
+                    nvblox::ColorImageConstView color_view(
+                        static_cast<int>(cf.height), static_cast<int>(cf.width),
+                        static_cast<int>(cf.left.pitch()), 3,
+                        reinterpret_cast<const nvblox::Color*>(cf.left.dataAs<std::uint8_t>()));
+                    const nvblox::MaskedColorImageConstView masked_color(
+                        color_view, nvblox::kMaskActiveEverywhere);
+                    mapper_->integrateColor(masked_color, world_from_camera, camera_);
+                    last_color_integrated_=pose->metadata.observation;
+                    last_color_integration_=now;
+                }
+            }
+        }
+
+        if (mesh_demanded && config_.color_enabled && last_color_integrated_) {
+            const auto mesh_period=std::chrono::duration<double>(
+                1.0/static_cast<double>(config_.mesh_update_rate_hz));
+            const bool mesh_due=last_mesh_update_.time_since_epoch().count()==0 ||
+                                now-last_mesh_update_ >= mesh_period;
+            if (mesh_due) {
+                mapper_->updateFlatColorMesh();
+                auto state=std::make_shared<SpatialMeshState>();
+                state->localization_epoch=pose->payload->epoch;
+                state->integrated_frames=integrated_frames_+1;
+                state->mesh_revision=++mesh_revision_;
+                if (buildSpatialMeshSnapshot(mapper_->flat_color_mesh(), state.get())) {
+                    auto metadata=pose->metadata;
+                    metadata.production_timestamp=now;
+                    metadata.valid=true;
+                    std::shared_ptr<const SpatialMeshState> published=std::move(state);
+                    products_.publish(parallax::core::make_product(
+                        parallax::core::ProductId::SpatialMesh, metadata, std::move(published)));
+                }
+                last_mesh_update_=now;
+            }
+        }
 
         ++integrated_frames_;
         last_integrated_ = pose->metadata.observation;

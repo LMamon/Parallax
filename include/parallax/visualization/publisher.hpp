@@ -20,6 +20,7 @@
 #include <parallax/localization/localization.hpp>
 #include <parallax/mapping/local_occupancy_state.hpp>
 #include <parallax/mapping/spatial_tsdf_state.hpp>
+#include <parallax/mapping/spatial_mesh_state.hpp>
 
 #include <functional>
 #include <foxglove/websocket.hpp>
@@ -95,6 +96,7 @@ namespace parallax::visualization {
             bool publishLocalizationState(const parallax::localization::LocalizationState& state);
             bool publishLocalOccupancy(const parallax::core::Product<parallax::mapping::LocalOccupancyState>& product);
             bool publishSpatialTsdf(const parallax::core::Product<parallax::mapping::SpatialTsdfState>& product);
+            bool publishSpatialMesh(const parallax::core::Product<parallax::mapping::SpatialMeshState>& product);
             bool publishLocalizedObject3DScene(const parallax::core::Product<parallax::perception::LocalizedSpatialObservation>& product);
 
             bool publishObject3DScene(const parallax::perception::Object3DSet& objects,
@@ -211,6 +213,9 @@ namespace parallax::visualization {
              * lifetime or subscription semantics.
              */
             FoxgloveServer* foxglove_ = nullptr;
+            std::uint64_t last_spatial_mesh_epoch_ = 0;
+            std::uint64_t last_spatial_mesh_revision_ = 0;
+            bool has_published_spatial_mesh_ = false;
             bool initialized_ = false;
             std::string coordinate_frame_;
     };

@@ -40,6 +40,7 @@ namespace parallax::core {
         LocalizationLandmarks,
         LidarScan,
         LocalOccupancy,
-        SpatialTsdf
+        SpatialTsdf,
+        SpatialMesh
     };
 }

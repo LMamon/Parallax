@@ -173,6 +173,12 @@ namespace parallax::core {
                                                                                                 resolver_,
                                                                                                 context_.stereoLane().cudaHandle());
 
+        spatial_tsdf_producer_ = std::make_unique<parallax::mapping::SpatialTsdfProducer>(pipeline_.calibration(),
+                                                                                          sensor_extrinsics_,
+                                                                                          context_.products(),
+                                                                                          resolver_,
+                                                                                          context_.stereoLane().cudaHandle());
+
         localized_spatial_producer_ = std::make_unique<parallax::perception::LocalizedSpatialProducer>(pipeline_.calibration(),
                                                                                                        sensor_extrinsics_,
                                                                                                        context_.products());
@@ -199,6 +205,7 @@ namespace parallax::core {
         graph_.register_producer(*segmented_depth_producer_);
         graph_.register_producer(*cuvslam_producer_);
         graph_.register_producer(*local_occupancy_producer_);
+        graph_.register_producer(*spatial_tsdf_producer_);
 
         graph_.finalize();
 
@@ -217,6 +224,7 @@ namespace parallax::core {
         resolver_.acquire(ProductId::Disparity, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::LocalizationOdometry, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::LocalOccupancy, DemandSource::RuntimeBaseline);
+        resolver_.acquire(ProductId::SpatialTsdf, DemandSource::RuntimeBaseline);
         if (lidar_producer_) resolver_.acquire(ProductId::LidarScan, DemandSource::RuntimeBaseline);
 
 

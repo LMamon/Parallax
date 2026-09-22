@@ -19,6 +19,7 @@
 #include <parallax/perception/object3d.hpp>
 #include <parallax/localization/localization.hpp>
 #include <parallax/mapping/local_occupancy_state.hpp>
+#include <parallax/mapping/spatial_tsdf_state.hpp>
 
 #include <functional>
 #include <foxglove/websocket.hpp>
@@ -93,6 +94,7 @@ namespace parallax::visualization {
             bool publishLocalizationTrajectory(const parallax::localization::LocalizationTrajectory& trajectory);
             bool publishLocalizationState(const parallax::localization::LocalizationState& state);
             bool publishLocalOccupancy(const parallax::core::Product<parallax::mapping::LocalOccupancyState>& product);
+            bool publishSpatialTsdf(const parallax::core::Product<parallax::mapping::SpatialTsdfState>& product);
             bool publishLocalizedObject3DScene(const parallax::core::Product<parallax::perception::LocalizedSpatialObservation>& product);
 
             bool publishObject3DScene(const parallax::perception::Object3DSet& objects,
@@ -199,6 +201,9 @@ namespace parallax::visualization {
             std::uint64_t last_local_occupancy_integrated_frames_ = 0;
             std::uint64_t last_local_occupancy_epoch_ = 0;
             bool has_published_local_occupancy_ = false;
+            std::uint64_t last_spatial_tsdf_integrated_frames_ = 0;
+            std::uint64_t last_spatial_tsdf_epoch_ = 0;
+            bool has_published_spatial_tsdf_ = false;
             
             /**
              * Runtime owns FoxgloveServer and shuts Publisher down before the server.

@@ -236,3 +236,10 @@ parallax_add_gtest(
     parallax_mapping
     parallax_core
 )
+
+parallax_add_gtest(
+    parallax_spatial_tsdf_test
+    spatial_tsdf_test.cpp
+    parallax_mapping
+    parallax_core
+)

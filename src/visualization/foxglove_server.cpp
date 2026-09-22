@@ -259,6 +259,15 @@ namespace parallax::visualization {
         local_occupancy_channel_.emplace(std::move(local_occupancy.value()));
         bindProduct(local_occupancy_channel_->id(), ProductId::LocalOccupancy);
 
+        auto spatial_tsdf = foxglove::messages::VoxelGridChannel::create("/mapping/spatial_tsdf", context_);
+        if (!spatial_tsdf.has_value()) {
+            std::cerr << "Failed to create /mapping/spatial_tsdf channel: "
+                      << foxglove::strerror(spatial_tsdf.error()) << '\n';
+            return false;
+        }
+        spatial_tsdf_channel_.emplace(std::move(spatial_tsdf.value()));
+        bindProduct(spatial_tsdf_channel_->id(), ProductId::SpatialTsdf);
+
         auto marker_pose = foxglove::messages::PoseInFrameChannel::create("/marker/pose", context_);
         if (!marker_pose.has_value()) {
             std::cerr << "Failed to create /marker/pose channel: "

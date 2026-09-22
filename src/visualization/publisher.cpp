@@ -48,7 +48,7 @@ namespace parallax::visualization {
             timestamp.nsec = static_cast<std::uint32_t>(ns % 1'000'000'000LL);
             return timestamp;
         }
-        
+
         foxglove::messages::FrameTransform makeFrameTransform(const parallax::core::RigidTransformConfig& config) {
                 foxglove::messages::FrameTransform message;
                 message.parent_frame_id = config.parent_frame;
@@ -59,18 +59,18 @@ namespace parallax::visualization {
                 translation.y = config.translation_m[1];
                 translation.z = config.translation_m[2];
                 message.translation = translation;
-                
+
                 foxglove::messages::Quaternion rotation;
                 rotation.x = config.rotation_xyzw[0];
                 rotation.y = config.rotation_xyzw[1];
                 rotation.z = config.rotation_xyzw[2];
                 rotation.w = config.rotation_xyzw[3];
-                
+
                 message.rotation = rotation;
 
                 return message;
         }
-        
+
         const char* sourceIdName(parallax::core::SourceId source) noexcept {
             switch (source) {
                 case parallax::core::SourceId::StereoCamera:
@@ -111,7 +111,7 @@ namespace parallax::visualization {
             }
             return object.depth_m;
         }
-    
+
         std::string formatDepth(float depth_m) {
             if (!std::isfinite(depth_m) || depth_m <= 0.0F) return {};
 
@@ -137,8 +137,8 @@ namespace parallax::visualization {
 
     Publisher::~Publisher() { shutdown(); }
 
-    bool Publisher::initialize(FoxgloveServer& foxglove, 
-                               std::uint32_t width, 
+    bool Publisher::initialize(FoxgloveServer& foxglove,
+                               std::uint32_t width,
                                std::uint32_t height,
                                std::uint32_t fps,
                                std::string coordinate_frame,
@@ -404,7 +404,7 @@ namespace parallax::visualization {
 
         if (foxglove_->detectionChannel().hasSinks()) {
             const auto detections = store.latest<parallax::perception::DetectionSet>(parallax::core::ProductId::Detection);
-            
+
             if (detections && detections->valid()) {
                 const bool new_observation = !has_published_detection_ ||
                                               detections->metadata.observation != last_detection_observation_ ||
@@ -429,7 +429,7 @@ namespace parallax::visualization {
 
                 if (new_annotation) {
                     if (!publishDetectionAnnotations(*detections)) return false;
-                    
+
                     last_detection_annotation_observation_ = detections->metadata.observation;
                     last_detection_annotation_query_revision_ = detections->payload->query_revision;
                     has_published_detection_annotation_ = true;
@@ -678,6 +678,22 @@ namespace parallax::visualization {
             }
         }
 
+        if (foxglove_->spatialTsdfChannel().hasSinks()) {
+            const auto tsdf = store.latest<parallax::mapping::SpatialTsdfState>(
+                parallax::core::ProductId::SpatialTsdf);
+            if (tsdf && tsdf->valid() && tsdf->payload && tsdf->payload->gridValid()) {
+                const bool changed = !has_published_spatial_tsdf_ ||
+                    tsdf->payload->localization_epoch != last_spatial_tsdf_epoch_ ||
+                    tsdf->payload->integrated_frames != last_spatial_tsdf_integrated_frames_;
+                if (changed) {
+                    if (!publishSpatialTsdf(*tsdf)) return false;
+                    last_spatial_tsdf_epoch_ = tsdf->payload->localization_epoch;
+                    last_spatial_tsdf_integrated_frames_ = tsdf->payload->integrated_frames;
+                    has_published_spatial_tsdf_ = true;
+                }
+            }
+        }
+
         if (foxglove_->localizationLandmarksChannel().hasSinks()) {
             const auto landmarks = store.latest<parallax::localization::VisualLandmarkSet>(parallax::core::ProductId::LocalizationLandmarks);
 
@@ -756,9 +772,9 @@ namespace parallax::visualization {
             // visual comparison against stereo scene points and LiDAR hits.
             std::uint8_t red = 0, green = 0, blue = 0, alpha = 0;
             if (cell == parallax::mapping::OccupancyCell::Occupied) {
-                red = 255; 
-                green = 80; 
-                blue = 80; 
+                red = 255;
+                green = 80;
+                blue = 80;
                 alpha = 220;
             }
 
@@ -773,6 +789,88 @@ namespace parallax::visualization {
             "Failed to publish /mapping/local_occupancy");
     }
 
+    bool Publisher::publishSpatialTsdf(
+        const parallax::core::Product<parallax::mapping::SpatialTsdfState>& product) {
+
+        if (!initialized_ || foxglove_ == nullptr ||
+            !product.valid() || !product.payload || !product.payload->gridValid()) {
+            return false;
+        }
+
+        const auto& grid = *product.payload;
+
+        foxglove::messages::VoxelGrid message;
+        message.timestamp = sourceTimestamp(product.metadata);
+        message.frame_id = "localization_world";
+        message.row_count = grid.row_count;
+        message.column_count = grid.column_count;
+
+        foxglove::messages::Pose pose;
+        foxglove::messages::Vector3 position;
+        position.x = grid.origin_m[0];
+        position.y = grid.origin_m[1];
+        position.z = grid.origin_m[2];
+        pose.position = position;
+
+        foxglove::messages::Quaternion orientation;
+        orientation.w = 1.0;
+        pose.orientation = orientation;
+        message.pose = pose;
+
+        foxglove::messages::Vector3 cell_size;
+        cell_size.x = grid.voxel_size_m;
+        cell_size.y = grid.voxel_size_m;
+        cell_size.z = grid.voxel_size_m;
+        message.cell_size = cell_size;
+
+        constexpr std::uint32_t CellStride = 5;
+        message.cell_stride = CellStride;
+        message.row_stride = grid.column_count * CellStride;
+        message.slice_stride = grid.row_count * message.row_stride;
+
+        auto addField = [&message](const char* name, std::uint32_t offset) {
+            foxglove::messages::PackedElementField field;
+            field.name = name;
+            field.offset = offset;
+            field.type = foxglove::messages::PackedElementField::NumericType::UINT8;
+            message.fields.push_back(std::move(field));
+        };
+
+        addField("occupancy", 0);
+        addField("red", 1);
+        addField("green", 2);
+        addField("blue", 3);
+        addField("alpha", 4);
+
+        message.data.resize(grid.cells.size() * CellStride);
+        for (std::size_t i = 0; i < grid.cells.size(); ++i) {
+            const auto cell = static_cast<parallax::mapping::TsdfCell>(grid.cells[i]);
+
+            const std::size_t base = i * CellStride;
+            message.data[base] = static_cast<std::byte>(grid.cells[i]);
+
+            // Free/unknown cells remain in the product but stay invisible in
+            // the default RGBA debug view. Occupied evidence is the useful
+            // visual comparison against stereo scene points and LiDAR hits.
+            std::uint8_t red = 0, green = 0, blue = 0, alpha = 0;
+            if (cell == parallax::mapping::TsdfCell::Surface) {
+                red = 70;
+                green = 170;
+                blue = 255;
+                alpha = 220;
+            }
+
+            message.data[base + 1] = static_cast<std::byte>(red);
+            message.data[base + 2] = static_cast<std::byte>(green);
+            message.data[base + 3] = static_cast<std::byte>(blue);
+            message.data[base + 4] = static_cast<std::byte>(alpha);
+        }
+
+        return checkFoxglove(
+            foxglove_->spatialTsdfChannel().log(message),
+            "Failed to publish /mapping/spatial_tsdf");
+    }
+
     bool Publisher::publishLeftImage(const parallax::core::Product<parallax::isp::RectifiedStereoFrame>& product,
                                     const parallax::pose::CharucoPoseResult* pose) {
 
@@ -780,22 +878,22 @@ namespace parallax::visualization {
 
         const auto& frame = *product.payload;
         if (frame.width != width_ || frame.height != height_) return false;
-        
+
         const std::size_t host_pitch = static_cast<std::size_t>(width_) * 3U * sizeof(std::uint8_t);
-        
+
         if (!frame.left.downloadAsync(host_rgb_, host_pitch, stream_)) return false;
         if (cudaStreamSynchronize(stream_) != cudaSuccess) return false;
 
         cv::Mat image(static_cast<int>(height_), static_cast<int>(width_), CV_8UC3, host_rgb_, host_pitch);
-        
+
         if (pose != nullptr && pose->pose_valid) {
             std::vector<cv::Point> polygon;
             polygon.reserve(4);
-        
+
             for (const auto& point : pose->projected_plane) {
                 polygon.emplace_back(static_cast<int>(std::lround(point.x)), static_cast<int>(std::lround(point.y)));
             }
-        
+
             cv::polylines(image, polygon, true, cv::Scalar(0, 255, 0), 5, cv::LINE_AA);
             cv::circle(image, cv::Point(static_cast<int>(std::lround(pose->projected_center.x)), static_cast<int>(std::lround(pose->projected_center.y))), 8, cv::Scalar(255, 0, 0), -1);
         }
@@ -1049,7 +1147,7 @@ namespace parallax::visualization {
 
         return checkFoxglove(foxglove_->detectionChannel().log(
                             reinterpret_cast<const std::byte*>(serialized.data()),
-                            serialized.size()), 
+                            serialized.size()),
                             "Failed to publish /perception/detections");
     }
 
@@ -1231,7 +1329,7 @@ namespace parallax::visualization {
         std::memcpy(message.data.data(), host_segmentation_mask_, bytes);
         return checkFoxglove(foxglove_->segmentationMaskChannel().log(message), "Failed to publish /perception/segmentation");
     }
-    
+
     bool Publisher::publishTrackAnnotations(const parallax::core::Product<parallax::tracking::Track2D>& product) {
         if (!initialized_ ||
             foxglove_ == nullptr ||
@@ -1545,32 +1643,32 @@ namespace parallax::visualization {
                 !object.surface_points_m.empty()) {
                 constexpr std::size_t MaxVisibleSurfacePoints = 64;
                 const std::size_t visible = std::min(object.surface_points_m.size(), MaxVisibleSurfacePoints);
-                
+
                 entity.spheres.reserve(entity.spheres.size() + visible);
 
                 for (std::size_t point_index = 0; point_index < visible; ++point_index) {
                     const auto& sample = object.surface_points_m[point_index];
-                    
+
                     foxglove::messages::SpherePrimitive point;
                     foxglove::messages::Pose pose;
-                    
+
                     foxglove::messages::Vector3 position;
                     position.x = sample[0];
                     position.y = sample[1];
                     position.z = sample[2];
                     pose.position = position;
-                    
+
                     foxglove::messages::Quaternion orientation;
                     orientation.w = 1.0;
                     pose.orientation = orientation;
                     point.pose = pose;
-                    
+
                     foxglove::messages::Vector3 size;
                     size.x = 0.012;
                     size.y = 0.012;
                     size.z = 0.012;
                     point.size = size;
-                    
+
                     foxglove::messages::Color color;
                     color.r = 0.0;
                     color.g = 0.75;
@@ -1922,12 +2020,12 @@ namespace parallax::visualization {
             cudaFreeHost(host_segmentation_mask_);
             host_segmentation_mask_ = nullptr;
         }
-        
+
         if (stream_ != nullptr) {
             cudaStreamDestroy(stream_);
             stream_ = nullptr;
         }
-        
+
         disparity_float_.clear();
 
         last_segmentation_observation_ = {};

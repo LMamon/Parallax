@@ -11,6 +11,7 @@ namespace parallax::mapping {
         float integration_rate_hz = 10.0F;
         float tsdf_truncation_distance_vox = 4.0F;
         float tsdf_max_weight = 5.0F;
+        float tsdf_visualization_rate_hz = 1.0F;
         float mesh_update_rate_hz = 2.0F;
         float mesh_min_weight = 0.10F;
         bool mesh_weld_vertices = true;

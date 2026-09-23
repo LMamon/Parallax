@@ -7,6 +7,7 @@ mapping:
   tsdf:
     truncation_distance_vox: 4.0
     max_weight: 5.0
+    visualization_rate_hz: 1.0
   mesh:
     update_rate_hz: 2.0
     min_weight: 0.10

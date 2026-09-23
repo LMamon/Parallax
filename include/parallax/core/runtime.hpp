@@ -2,7 +2,10 @@
 
 #include <parallax/localization/cuvslam_localizer.hpp>
 #include <parallax/localization/cuvslam_producer.hpp>
+#include <parallax/mapping/spatial_map.hpp>
 #include <parallax/mapping/spatial_tsdf_producer.hpp>
+#include <parallax/mapping/tsdf_snapshot_producer.hpp>
+#include <parallax/mapping/spatial_mesh_producer.hpp>
 #include <parallax/mapping/mapping_config.hpp>
 
 #include <parallax/camera/camera_producer.hpp>
@@ -165,7 +168,10 @@ namespace parallax::core {
             // Demand controls its products, not the lifetime of the estimator.
             std::unique_ptr<parallax::localization::CuVslamLocalizer> cuvslam_localizer_;
             std::unique_ptr<parallax::localization::CuVslamProducer> cuvslam_producer_;
+            std::unique_ptr<parallax::mapping::SpatialMap> spatial_map_;
             std::unique_ptr<parallax::mapping::SpatialTsdfProducer> spatial_tsdf_producer_;
+            std::unique_ptr<parallax::mapping::TsdfSnapshotProducer> tsdf_snapshot_producer_;
+            std::unique_ptr<parallax::mapping::SpatialMeshProducer> spatial_mesh_producer_;
 
             
             bool initialized_ = false;

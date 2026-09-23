@@ -19,6 +19,7 @@ bool MappingConfig::loadFromFile(const std::filesystem::path& path) {
         if (const auto n=m["tsdf"]) {
             if (n["truncation_distance_vox"]) tsdf_truncation_distance_vox=n["truncation_distance_vox"].as<float>();
             if (n["max_weight"]) tsdf_max_weight=n["max_weight"].as<float>();
+            if (n["visualization_rate_hz"]) tsdf_visualization_rate_hz=n["visualization_rate_hz"].as<float>();
         }
         if (const auto n=m["mesh"]) {
             if (n["update_rate_hz"]) mesh_update_rate_hz=n["update_rate_hz"].as<float>();
@@ -41,7 +42,7 @@ bool MappingConfig::loadFromFile(const std::filesystem::path& path) {
     if (!positive(voxel_size_m) || !positive(min_integration_distance_m) ||
         !positive(max_integration_distance_m) || max_integration_distance_m <= min_integration_distance_m ||
         !positive(integration_rate_hz) || !positive(tsdf_truncation_distance_vox) || !positive(tsdf_max_weight) ||
-        !positive(mesh_update_rate_hz) || !positive(mesh_min_weight) || !positive(color_integration_rate_hz) ||
+        !positive(tsdf_visualization_rate_hz) || !positive(mesh_update_rate_hz) || !positive(mesh_min_weight) || !positive(color_integration_rate_hz) ||
         debug_columns==0 || debug_rows==0 || debug_slices==0 || !positive(debug_surface_band_m)) {
         std::cerr << "Mapping config: invalid parameters\n"; return false;
     }

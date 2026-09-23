@@ -173,12 +173,18 @@ namespace parallax::core {
         
         cuvslam_producer_ = std::make_unique<parallax::localization::CuVslamProducer>(*cuvslam_localizer_, context_.products());
 
-        spatial_tsdf_producer_ = std::make_unique<parallax::mapping::SpatialTsdfProducer>(pipeline_.calibration(),
-                                                                                          sensor_extrinsics_,
-                                                                                          mapping_config_,
-                                                                                          context_.products(),
-                                                                                          resolver_,
-                                                                                          context_.stereoLane().cudaHandle());
+        spatial_map_ = std::make_unique<parallax::mapping::SpatialMap>(
+            mapping_config_, context_.stereoLane().cudaHandle());
+
+        spatial_tsdf_producer_ = std::make_unique<parallax::mapping::SpatialTsdfProducer>(
+            pipeline_.calibration(), sensor_extrinsics_, mapping_config_,
+            *spatial_map_, context_.products());
+
+        tsdf_snapshot_producer_ = std::make_unique<parallax::mapping::TsdfSnapshotProducer>(
+            mapping_config_, *spatial_map_, context_.products());
+
+        spatial_mesh_producer_ = std::make_unique<parallax::mapping::SpatialMeshProducer>(
+            mapping_config_, pipeline_.calibration(), *spatial_map_, context_.products());
 
         localized_spatial_producer_ = std::make_unique<parallax::perception::LocalizedSpatialProducer>(pipeline_.calibration(),
                                                                                                        sensor_extrinsics_,
@@ -206,6 +212,8 @@ namespace parallax::core {
         graph_.register_producer(*segmented_depth_producer_);
         graph_.register_producer(*cuvslam_producer_);
         graph_.register_producer(*spatial_tsdf_producer_);
+        graph_.register_producer(*tsdf_snapshot_producer_);
+        graph_.register_producer(*spatial_mesh_producer_);
 
         graph_.finalize();
 
@@ -223,7 +231,9 @@ namespace parallax::core {
         resolver_.acquire(ProductId::RectifiedRgb, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::Disparity, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::LocalizationOdometry, DemandSource::RuntimeBaseline);
-        resolver_.acquire(ProductId::SpatialTsdf, DemandSource::RuntimeBaseline);
+        // Persistent mapping is baseline state. TSDF and mesh are derived,
+        // demand-driven materializations and are not baseline products.
+        resolver_.acquire(ProductId::SpatialMapState, DemandSource::RuntimeBaseline);
         if (lidar_producer_) resolver_.acquire(ProductId::LidarScan, DemandSource::RuntimeBaseline);
 
 

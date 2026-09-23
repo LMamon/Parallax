@@ -74,6 +74,35 @@ void Runtime::runAutoControl() {
         }
     }
 
+void Runtime::runLocalization() {
+        using namespace std::chrono_literals;
+
+        if (!cuvslam_producer_) return;
+        auto& stats = producer_execution_stats_.at(cuvslam_producer_.get());
+
+        while (running_.load()) {
+            ++stats.considered;
+            const SubmitResult result = cuvslam_producer_->submit(context_);
+
+            if (result == SubmitResult::Failed) {
+                ++stats.failed;
+                std::cerr << "Runtime: localization producer failed: "
+                          << cuvslam_producer_->name() << '\n';
+                running_.store(false);
+                return;
+            }
+
+            if (result == SubmitResult::NoWork) {
+                ++stats.no_work;
+                // ProductStore history is not a blocking queue.
+                std::this_thread::sleep_for(1ms);
+                continue;
+            }
+
+            ++stats.submitted;
+        }
+    }
+
 void Runtime::runLidarSource() {
         /**
         * Resolve the independently clocked LiDAR branch once. LidarScan is a

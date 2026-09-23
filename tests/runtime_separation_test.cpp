@@ -53,3 +53,32 @@ TEST(RuntimeSeparationTest, ExistingExecutionSemanticsRemainInExecutionUnit) {
     EXPECT_NE(execution.find("submission_decision"), std::string::npos);
     EXPECT_NE(execution.find("producer->submit(context_)"), std::string::npos);
 }
+
+TEST(RuntimeSeparationTest, LocalizationUsesDedicatedOrderedWorker) {
+    const std::string execution = readSource("src/core/runtime_execution.cpp");
+    const std::string workers = readSource("src/core/runtime_workers.cpp");
+    const std::string shutdown = readSource("src/core/runtime_shutdown.cpp");
+    EXPECT_NE(execution.find("execution_plan.erase"), std::string::npos);
+    EXPECT_NE(execution.find("cuvslam_producer_.get()"), std::string::npos);
+    EXPECT_NE(execution.find("std::thread(&Runtime::runLocalization"), std::string::npos);
+    EXPECT_NE(workers.find("Runtime::runLocalization"), std::string::npos);
+    EXPECT_NE(workers.find("cuvslam_producer_->submit(context_)"), std::string::npos);
+    EXPECT_NE(shutdown.find("localization_thread_.joinable()"), std::string::npos);
+}
+
+TEST(RuntimeSeparationTest, HostWaitReleasesCompletionRegistryBeforeSync) {
+    const std::string context = readSource("src/core/execution_context.cpp");
+    const auto begin = context.find("ExecutionContext::waitForHost");
+    ASSERT_NE(begin, std::string::npos);
+    const auto end = context.find("void ExecutionContext::shutdown", begin);
+    ASSERT_NE(end, std::string::npos);
+    const std::string body = context.substr(begin, end - begin);
+    const auto lease_comment = body.find("// The ticket keeps this completion slot leased");
+    ASSERT_NE(lease_comment, std::string::npos);
+    const auto vpi_sync = body.find("vpiEventSync");
+    const auto cuda_sync = body.find("cudaEventSynchronize");
+    ASSERT_NE(vpi_sync, std::string::npos);
+    ASSERT_NE(cuda_sync, std::string::npos);
+    EXPECT_GT(vpi_sync, lease_comment);
+    EXPECT_GT(cuda_sync, lease_comment);
+}

@@ -43,6 +43,13 @@ void Runtime::run(const volatile std::sig_atomic_t& stop_requested) {
                                                 snapshot.products.end());
 
             execution_plan = resolver_.resolve(snapshot.products);
+
+            // cuVSLAM consumes retained RectifiedGray generations in observation
+            // order on its own worker. Keep its dependencies in this plan.
+            execution_plan.erase(
+                std::remove(execution_plan.begin(), execution_plan.end(), cuvslam_producer_.get()),
+                execution_plan.end());
+
             execution_plan_revision = snapshot.revision;
         };
 
@@ -58,6 +65,7 @@ void Runtime::run(const volatile std::sig_atomic_t& stop_requested) {
         visualization_failed_.store(false);
         visualization_thread_ = std::thread(&Runtime::runVisualization, this);
         if (auto_controller_) auto_control_thread_ = std::thread(&Runtime::runAutoControl, this);
+        if (cuvslam_producer_) localization_thread_ = std::thread(&Runtime::runLocalization, this);
         if (lidar_producer_) lidar_thread_ = std::thread(&Runtime::runLidarSource, this);
 
         while (running_.load() && !stop_requested) {
@@ -275,6 +283,7 @@ void Runtime::run(const volatile std::sig_atomic_t& stop_requested) {
         running_.store(false);
         if (auto_control_thread_.joinable()) auto_control_thread_.join();
         if (visualization_thread_.joinable()) visualization_thread_.join();
+        if (localization_thread_.joinable()) localization_thread_.join();
         
         if (visualization_failed_.load()) {
             std::cerr << "Runtime: visualization worker stopped after a publication error\n";

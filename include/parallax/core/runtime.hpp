@@ -97,6 +97,7 @@ namespace parallax::core {
             std::chrono::steady_clock::time_point last_telemetry_publish_{};
             
             void runLidarSource();
+            void runLocalization();
             void runVisualization();
             void runAutoControl();
             parallax::camera::CameraConfig config_{};
@@ -108,6 +109,7 @@ namespace parallax::core {
             std::atomic_bool running_{false};
             std::atomic_bool visualization_failed_{false};
             std::thread lidar_thread_;
+            std::thread localization_thread_;
             std::thread visualization_thread_;
             std::thread auto_control_thread_;
             

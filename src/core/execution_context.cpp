@@ -320,39 +320,39 @@ namespace parallax::core {
 
         if (!completion.ticket) return false;
 
-        const auto& ticket = *completion.ticket;
+        const auto ticket = completion.ticket;
+        VPIEvent vpi_event = nullptr;
+        cudaEvent_t cuda_event = nullptr;
 
-        std::lock_guard<std::mutex> lock(completion_mutex_);
-        switch (completion.kind) {
-            case CompletionKind::Vpi: {
-                if (ticket.slot >= vpi_completion_slots_.size()) return false;
+        {
+            std::lock_guard<std::mutex> lock(completion_mutex_);
 
-                const auto& slot = vpi_completion_slots_[ticket.slot];
-                if (slot.generation != ticket.generation || slot.event == nullptr) {
-                    return false;
+            switch (completion.kind) {
+                case CompletionKind::Vpi: {
+                    if (ticket->slot >= vpi_completion_slots_.size()) return false;
+                    const auto& slot = vpi_completion_slots_[ticket->slot];
+                    if (slot.generation != ticket->generation || slot.event == nullptr) return false;
+                    vpi_event = slot.event;
+                    break;
                 }
-                
-                ++runtime_metrics().host_waits;
-                return vpiEventSync(slot.event) == VPI_SUCCESS;
-            }
-
-            case CompletionKind::Cuda: {
-                if (ticket.slot >= cuda_completion_slots_.size()) return false;
-
-                const auto& slot = cuda_completion_slots_[ticket.slot];
-                if (slot.generation != ticket.generation || slot.event == nullptr) {
-                    return false;
+                case CompletionKind::Cuda: {
+                    if (ticket->slot >= cuda_completion_slots_.size()) return false;
+                    const auto& slot = cuda_completion_slots_[ticket->slot];
+                    if (slot.generation != ticket->generation || slot.event == nullptr) return false;
+                    cuda_event = slot.event;
+                    break;
                 }
-                
-                ++runtime_metrics().host_waits;
-                return cudaEventSynchronize(slot.event) == cudaSuccess;
+                case CompletionKind::None:
+                case CompletionKind::CpuReady:
+                default:
+                    return true;
             }
-
-            case CompletionKind::None:
-            case CompletionKind::CpuReady:
-            default:
-                return true;
         }
+
+        // The ticket keeps this completion slot leased while the host waits.
+        ++runtime_metrics().host_waits;
+        if (completion.kind == CompletionKind::Vpi) return vpiEventSync(vpi_event) == VPI_SUCCESS;
+        return cudaEventSynchronize(cuda_event) == cudaSuccess;
     }
 
     void ExecutionContext::shutdown() noexcept {

@@ -25,6 +25,7 @@ void Runtime::shutdown() {
 
         if (auto_control_thread_.joinable()) auto_control_thread_.join();
         if (lidar_thread_.joinable()) lidar_thread_.join();
+        if (localization_thread_.joinable()) localization_thread_.join();
         if (visualization_thread_.joinable()) visualization_thread_.join();
 
         // Stop physical hardware as soon as its worker can no longer access it.

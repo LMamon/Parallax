@@ -340,8 +340,8 @@ namespace parallax::visualization {
                     const parallax::pose::CharucoPoseResult* overlay = nullptr;
                     const auto marker = store.latest<parallax::pose::CharucoPoseResult>(parallax::core::ProductId::MarkerDepth);
                     if (marker && marker->valid() && parallax::core::same_source_observation(*marker, rgb->metadata.observation)) overlay = marker->payload.get();
-                    if (!rgb->completion.valid()) return false;
-                    if (rgb->completion.requires_wait() && !wait_for_host(rgb->completion)) return false;
+                    if (!rgb->storage.completion.valid()) return false;
+                    if (rgb->storage.completion.requires_wait() && !wait_for_host(rgb->storage.completion)) return false;
                     if (!publishLeftImage(*rgb, overlay)) return false;
                     last_left_image_observation_ = rgb->metadata.observation;
                     last_left_image_publish_ = now;
@@ -360,8 +360,8 @@ namespace parallax::visualization {
             const auto stereo = store.latest<parallax::isp::StereoMatchFrame>(parallax::core::ProductId::Disparity);
 
             if (stereo && stereo->valid() && (!has_published_disparity_ || stereo->metadata.observation != last_disparity_observation_)) {
-                if (!stereo->completion.valid()) return false;
-                if (stereo->completion.requires_wait() && !wait_for_host(stereo->completion)) {
+                if (!stereo->storage.completion.valid()) return false;
+                if (stereo->storage.completion.requires_wait() && !wait_for_host(stereo->storage.completion)) {
                     return false;
                 }
 
@@ -383,8 +383,8 @@ namespace parallax::visualization {
                 const bool due = !has_published_depth_ || now - last_depth_publish_ >= interval;
 
                 if (due) {
-                    if (!depth->completion.valid()) return false;
-                    if (depth->completion.requires_wait() && !wait_for_host(depth->completion)) return false;
+                    if (!depth->storage.completion.valid()) return false;
+                    if (depth->storage.completion.requires_wait() && !wait_for_host(depth->storage.completion)) return false;
                     if (!publishDepth(*depth, depth_image_requested, depth_scene_requested)) return false;
                     last_depth_observation_ = depth->metadata.observation;
                     last_depth_publish_ = now;
@@ -472,8 +472,8 @@ namespace parallax::visualization {
                                                last_segmentation_query_revision_;
 
                 if (new_segmentation) {
-                    if (!segmentation->completion.valid()) return false;
-                    if (segmentation->completion.requires_wait() && !wait_for_host(segmentation->completion)) {
+                    if (!segmentation->storage.completion.valid()) return false;
+                    if (segmentation->storage.completion.requires_wait() && !wait_for_host(segmentation->storage.completion)) {
                         return false;
                     }
 

@@ -43,7 +43,7 @@ namespace parallax::stereo {
             return parallax::core::SubmitResult::NoWork;
         }
 
-        if (!context.waitFor(rectified->completion, lane)) {
+        if (!context.waitFor(rectified->storage.completion, lane)) {
             return parallax::core::SubmitResult::Failed;
         }
 

@@ -210,7 +210,7 @@ namespace parallax::perception {
         // Depth may still be in flight when the product is visible in the
         // store. Add a generation-specific accelerator dependency instead of
         // globally synchronizing stereo or the device.
-        if (!context.waitFor(depth.completion, lane)) return false;
+        if (!context.waitFor(depth.storage.completion, lane)) return false;
 
 
         // CudaBuffer copies the fixed scratch row. Even though only
@@ -373,7 +373,7 @@ namespace parallax::perception {
 
         auto& lane = context.stereoLane();
         const cudaStream_t stream = lane.cudaHandle();
-        if (stream == nullptr || !context.waitFor(depth.completion, lane)) return false;
+        if (stream == nullptr || !context.waitFor(depth.storage.completion, lane)) return false;
 
         if (!cuda::sampleBoxDepth(track.box.x, track.box.y, track.box.width, track.box.height, depth.payload->depth,
             rectified_to_rgb_x_device_, rectified_to_rgb_y_device_, camera_model_.fx_px,camera_model_.fy_px, 
@@ -525,7 +525,7 @@ namespace parallax::perception {
         auto& lane = context.stereoLane();
         const cudaStream_t stream = lane.cudaHandle();
 
-        if (stream == nullptr || !context.waitFor(depth.completion, lane)) {
+        if (stream == nullptr || !context.waitFor(depth.storage.completion, lane)) {
             return false;
         }
 

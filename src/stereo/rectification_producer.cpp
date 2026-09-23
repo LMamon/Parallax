@@ -49,7 +49,7 @@ namespace parallax::stereo {
 
         auto& lane = context.preprocessLane();
 
-        if (!context.waitFor(gray->completion, lane)) {
+        if (!context.waitFor(gray->storage.completion, lane)) {
             return parallax::core::SubmitResult::Failed;
         }
 

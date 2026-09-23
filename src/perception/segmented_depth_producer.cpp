@@ -62,7 +62,7 @@ namespace parallax::perception {
         }
 
         auto& lane = context.stereoLane();
-        if (!context.waitFor(mask->completion, lane)) {
+        if (!context.waitFor(mask->storage.completion, lane)) {
             return core::SubmitResult::Failed;
         }
 

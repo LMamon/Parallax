@@ -75,7 +75,7 @@ namespace parallax::pose {
                  * Chain this reduction behind the exact depth generation rather
                  * than synchronizing the entire stereo pipeline.
                  */
-                if (!context.waitFor(depth->completion, lane)) {
+                if (!context.waitFor(depth->storage.completion, lane)) {
                     return parallax::core::SubmitResult::Failed;
                 }
 

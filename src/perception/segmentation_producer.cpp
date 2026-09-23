@@ -82,7 +82,7 @@ namespace parallax::perception {
 
         // The exact retained RGB generation may still have accelerator work
         // completing. Order this neural submission without blocking the host
-        if (!context.waitFor(rgb->completion, stream)) {
+        if (!context.waitFor(rgb->storage.completion, stream)) {
             return parallax::core::SubmitResult::Failed;
         }
 

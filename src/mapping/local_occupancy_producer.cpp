@@ -164,7 +164,7 @@ namespace parallax::mapping {
             resetForEpoch(pose->payload->epoch);
         }
 
-        if (!context.waitFor(depth->completion, cuda_stream_)) {
+        if (!context.waitFor(depth->storage.completion, cuda_stream_)) {
             return parallax::core::SubmitResult::Failed;
         }
 

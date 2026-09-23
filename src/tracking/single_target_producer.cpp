@@ -154,7 +154,7 @@ namespace parallax::tracking {
         if (!rgb || !rgb->valid()) return false;
 
         // DCF owns a separate VPI stream, so make this dependency explicit.
-        if (!context.waitForHost(rgb->completion)) return false;
+        if (!context.waitForHost(rgb->storage.completion)) return false;
 
         const auto best = std::max_element(detection->payload->scores.begin(), detection->payload->scores.end());
         if (best == detection->payload->scores.end()) return false;
@@ -216,7 +216,7 @@ namespace parallax::tracking {
         const auto rgb = products_.find_observation<isp::StereoRgbFrame>(
             core::ProductId::RgbLeft, detection->metadata.observation);
         if (!rgb || !rgb->valid() || !rgb->payload) return false;
-        if (!context.waitForHost(rgb->completion)) return false;
+        if (!context.waitForHost(rgb->storage.completion)) return false;
 
         const auto best = std::max_element(
             detection->payload->scores.begin(), detection->payload->scores.end());
@@ -289,7 +289,7 @@ namespace parallax::tracking {
         }
 
         // DCF reads this RGB generation on its own VPI stream.
-        if (!context.waitForHost(rgb->completion)) return core::SubmitResult::Failed;
+        if (!context.waitForHost(rgb->storage.completion)) return core::SubmitResult::Failed;
 
         ++metrics_.tracker_updates;
 

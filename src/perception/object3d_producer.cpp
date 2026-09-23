@@ -196,7 +196,7 @@ namespace parallax::perception {
                 if (object_it != objects->objects.end()) {
                     auto& lane = context.stereoLane();
 
-                    if (!context.waitFor(segmentation->completion, lane)) return core::SubmitResult::Failed;
+                    if (!context.waitFor(segmentation->storage.completion, lane)) return core::SubmitResult::Failed;
 
                     // A mask may enrich LiDAR-authoritative objects with full
                     // stereo surface/extent geometry, but it must not replace

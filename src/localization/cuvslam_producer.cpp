@@ -147,7 +147,7 @@ namespace parallax::localization {
 
         // cuVSLAM owns its internal CUDA scheduling but does not accept our
         // completion handle, so this is the real host/API readiness boundary.
-        if (!context.waitForHost(input->completion)) return parallax::core::SubmitResult::Failed;
+        if (!context.waitForHost(input->storage.completion)) return parallax::core::SubmitResult::Failed;
 
         const auto& gray = *input->payload;
 

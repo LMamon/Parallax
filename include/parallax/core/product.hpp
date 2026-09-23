@@ -65,11 +65,16 @@ namespace parallax::core {
         bool wall_timestamp_valid = false;
     };
 
+    // Execution/storage state is separate from product meaning.
+    struct ProductStorageState {
+        CompletionHandle completion{};
+        std::shared_ptr<const void> lifetime_dependency{};
+    };
+
     template <typename T> struct Product {
         ProductId id{};
         ProductMetadata metadata{};
-        CompletionHandle completion{};
-        std::shared_ptr<const void> lifetime_dependency{};
+        ProductStorageState storage{};
         std::shared_ptr<const T> payload{};
 
         [[nodiscard]] bool valid() const noexcept {
@@ -87,6 +92,14 @@ namespace parallax::core {
                                                                 CompletionHandle completion = CompletionHandle::cpu_ready(),
                                                                 std::shared_ptr<const void> lifetime_dependency = {}) {
 
-        return Product<T>{id, metadata, std::move(completion), std::move(lifetime_dependency), std::move(payload)};
+        return Product<T>{
+            id,
+            metadata,
+            ProductStorageState{
+                std::move(completion),
+                std::move(lifetime_dependency),
+            },
+            std::move(payload),
+        };
     }
 }

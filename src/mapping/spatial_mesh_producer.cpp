@@ -74,7 +74,7 @@ parallax::core::SubmitResult SpatialMeshProducer::submit(
     if (!rgb || !rgb->valid() || !rgb->payload || !rgb->payload->left.isAllocated()) {
         return parallax::core::SubmitResult::NoWork;
     }
-    if (!context.waitFor(rgb->completion, map_.cudaStream())) {
+    if (!context.waitFor(rgb->storage.completion, map_.cudaStream())) {
         return parallax::core::SubmitResult::Failed;
     }
 

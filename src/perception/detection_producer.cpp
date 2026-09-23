@@ -85,7 +85,7 @@ namespace parallax::perception {
          * This inserts accelerator ordering onto the neural CUDA lane rather
          * than synchronizing the host.
          */
-        if (!context.waitFor(input->completion, stream)) {
+        if (!context.waitFor(input->storage.completion, stream)) {
             return parallax::core::SubmitResult::Failed;
         }
 

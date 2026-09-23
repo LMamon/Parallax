@@ -153,7 +153,7 @@ parallax::core::SubmitResult SpatialTsdfProducer::submit(
         resetForEpoch(pose->payload->epoch);
     }
 
-    if (!context.waitFor(depth->completion, map_.cudaStream())) {
+    if (!context.waitFor(depth->storage.completion, map_.cudaStream())) {
         return parallax::core::SubmitResult::Failed;
     }
 

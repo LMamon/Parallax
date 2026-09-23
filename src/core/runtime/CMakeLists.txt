@@ -1,5 +1,9 @@
 add_library(parallax_runtime STATIC
     ../runtime.cpp
+    ../runtime_bootstrap.cpp
+    ../runtime_execution.cpp
+    ../runtime_workers.cpp
+    ../runtime_shutdown.cpp
 )
 
 target_include_directories(parallax_runtime

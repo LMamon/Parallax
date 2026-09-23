@@ -246,3 +246,13 @@ parallax_add_gtest(
 add_executable(parallax_spatial_mesh_test spatial_mesh_test.cpp)
 target_link_libraries(parallax_spatial_mesh_test PRIVATE parallax_mapping GTest::gtest_main)
 add_test(NAME SpatialMeshTest COMMAND parallax_spatial_mesh_test)
+
+parallax_add_gtest(
+    parallax_runtime_separation_test
+    runtime_separation_test.cpp
+    parallax_runtime
+)
+target_compile_definitions(
+    parallax_runtime_separation_test
+    PRIVATE PARALLAX_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+)

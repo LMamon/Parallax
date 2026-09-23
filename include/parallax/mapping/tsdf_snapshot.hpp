@@ -2,7 +2,7 @@
 
 #include <parallax/mapping/spatial_tsdf_state.hpp>
 
-#include <cuda_runtime.h>
+#include <nvblox/core/cuda_stream.h>
 #include <nvblox/map/common_names.h>
 #include <nvblox/map/layer.h>
 #include <nvblox/map/voxels.h>
@@ -22,7 +22,7 @@ namespace parallax::mapping {
 
     bool buildTsdfSnapshot(const nvblox::TsdfLayer& layer,
                            const nvblox::Vector3f& center,
-                           cudaStream_t stream,
+                           nvblox::CudaStream* stream,
                            const TsdfSnapshotConfig& config,
                            SpatialTsdfState* state);
 }

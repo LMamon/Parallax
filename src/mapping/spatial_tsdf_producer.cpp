@@ -275,7 +275,7 @@ namespace parallax::mapping {
             config_.debug_surface_band_m};
         if (!buildTsdfSnapshot(mapper_->tsdf_layer(),
                                world_from_camera.translation(),
-                               cuda_stream_,
+                               nvblox_stream_.get(),
                                snapshot_config,
                                state.get())) {
             return parallax::core::SubmitResult::Failed;

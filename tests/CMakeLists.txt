@@ -231,13 +231,6 @@ target_link_libraries(parallax_efficientvit_sam_smoke
         parallax_perception
 )
 parallax_add_gtest(
-    parallax_local_occupancy_test
-    local_occupancy_test.cpp
-    parallax_mapping
-    parallax_core
-)
-
-parallax_add_gtest(
     parallax_spatial_tsdf_test
     spatial_tsdf_test.cpp
     parallax_mapping

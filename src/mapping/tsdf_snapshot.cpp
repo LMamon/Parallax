@@ -4,7 +4,6 @@
 
 #include <cmath>
 #include <cstddef>
-#include <memory>
 #include <vector>
 
 namespace parallax::mapping {
@@ -24,7 +23,7 @@ namespace parallax::mapping {
 
     bool buildTsdfSnapshot(const nvblox::TsdfLayer& layer,
                            const nvblox::Vector3f& center,
-                           cudaStream_t stream,
+                           nvblox::CudaStream* stream,
                            const TsdfSnapshotConfig& config,
                            SpatialTsdfState* state) {
         if (!state || !stream || config.voxel_size_m <= 0.0F ||
@@ -86,14 +85,11 @@ namespace parallax::mapping {
         std::vector<nvblox::TsdfVoxel> voxels;
         std::vector<bool> success_flags;
 
-        auto nvblox_stream =
-            std::make_shared<nvblox::CudaStreamNonOwning>(&stream);
-
         layer.getVoxels(
             positions,
             &voxels,
             &success_flags,
-            nvblox_stream.get());
+            stream);
 
         if (voxels.size() != cell_count ||
             success_flags.size() != cell_count) {

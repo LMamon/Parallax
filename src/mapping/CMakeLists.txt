@@ -1,7 +1,5 @@
 add_library(parallax_mapping
     mapping_config.cpp
-    local_occupancy_producer.cpp
-    occupancy_snapshot.cpp
     spatial_tsdf_producer.cpp
     spatial_mesh_snapshot.cpp
     tsdf_snapshot.cpp

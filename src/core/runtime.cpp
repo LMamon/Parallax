@@ -173,12 +173,6 @@ namespace parallax::core {
         
         cuvslam_producer_ = std::make_unique<parallax::localization::CuVslamProducer>(*cuvslam_localizer_, context_.products());
 
-        local_occupancy_producer_ = std::make_unique<parallax::mapping::LocalOccupancyProducer>(pipeline_.calibration(),
-                                                                                                sensor_extrinsics_,
-                                                                                                context_.products(),
-                                                                                                resolver_,
-                                                                                                context_.stereoLane().cudaHandle());
-
         spatial_tsdf_producer_ = std::make_unique<parallax::mapping::SpatialTsdfProducer>(pipeline_.calibration(),
                                                                                           sensor_extrinsics_,
                                                                                           mapping_config_,
@@ -211,7 +205,6 @@ namespace parallax::core {
         graph_.register_producer(*segmentation_producer_);
         graph_.register_producer(*segmented_depth_producer_);
         graph_.register_producer(*cuvslam_producer_);
-        graph_.register_producer(*local_occupancy_producer_);
         graph_.register_producer(*spatial_tsdf_producer_);
 
         graph_.finalize();
@@ -230,7 +223,6 @@ namespace parallax::core {
         resolver_.acquire(ProductId::RectifiedRgb, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::Disparity, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::LocalizationOdometry, DemandSource::RuntimeBaseline);
-        resolver_.acquire(ProductId::LocalOccupancy, DemandSource::RuntimeBaseline);
         resolver_.acquire(ProductId::SpatialTsdf, DemandSource::RuntimeBaseline);
         if (lidar_producer_) resolver_.acquire(ProductId::LidarScan, DemandSource::RuntimeBaseline);
 

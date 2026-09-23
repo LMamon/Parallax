@@ -15,6 +15,9 @@ mapping:
   color:
     enabled: true
     integration_rate_hz: 2.0
+  # Diagnostic only. Keep false for normal asynchronous runtime.
+  profiling:
+    synchronize_gpu_stages: false
   # Visualization window only. This never clears persistent map state.
   debug_tsdf:
     columns: 80

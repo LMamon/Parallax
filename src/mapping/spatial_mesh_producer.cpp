@@ -1,4 +1,5 @@
 #include <parallax/mapping/spatial_mesh_producer.hpp>
+#include <parallax/mapping/mapping_metrics.hpp>
 #include <parallax/mapping/spatial_mesh_snapshot.hpp>
 #include <parallax/mapping/spatial_mesh_state.hpp>
 #include <parallax/core/execution_context.hpp>
@@ -94,17 +95,17 @@ parallax::core::SubmitResult SpatialMeshProducer::submit(
     const auto& t = map_state->payload->world_from_camera_translation_m;
     world_from_camera.translation() = nvblox::Vector3f(t[0], t[1], t[2]);
 
-    map_.mapper().integrateColor(masked_color, world_from_camera, camera_);
-    map_.mapper().updateFlatColorMesh();
+    { ScopedStageTimer timer(mapping_metrics().color_integration); map_.mapper().integrateColor(masked_color, world_from_camera, camera_); if(config_.profiling_sync) map_.stream()->synchronize(); }
+    { ScopedStageTimer timer(mapping_metrics().mesh_update_and_flatten); map_.mapper().updateFlatColorMesh(); if(config_.profiling_sync) map_.stream()->synchronize(); }
 
     auto state = std::make_shared<SpatialMeshState>();
     state->localization_epoch = map_state->payload->localization_epoch;
     state->integrated_frames = map_state->payload->integrated_frames;
     state->mesh_revision = ++mesh_revision_;
 
-    if (!buildSpatialMeshSnapshot(map_.mapper().flat_color_mesh(), state.get())) {
-        return parallax::core::SubmitResult::NoWork;
-    }
+    { ScopedStageTimer timer(mapping_metrics().mesh_snapshot); if (!buildSpatialMeshSnapshot(map_.mapper().flat_color_mesh(), state.get())) return parallax::core::SubmitResult::NoWork; }
+    const std::uint64_t host_bytes=static_cast<std::uint64_t>(state->vertices_m.size())*sizeof(std::array<float,3>)+static_cast<std::uint64_t>(state->colors_rgb.size())*sizeof(std::array<std::uint8_t,3>)+static_cast<std::uint64_t>(state->triangles.size())*sizeof(std::array<std::uint32_t,3>);
+    mapping_metrics().mesh_materialized_host_bytes.fetch_add(host_bytes);
 
     auto metadata = map_state->metadata;
     metadata.production_timestamp = parallax::core::ExecutionContext::now();

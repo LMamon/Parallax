@@ -1,4 +1,5 @@
 #include <parallax/mapping/spatial_tsdf_producer.hpp>
+#include <parallax/mapping/mapping_metrics.hpp>
 
 #include <parallax/core/execution_context.hpp>
 #include <parallax/isp/frame_types.hpp>
@@ -165,7 +166,7 @@ parallax::core::SubmitResult SpatialTsdfProducer::submit(
 
     const nvblox::Transform world_from_camera =
         worldFromRectifiedCamera(*pose->payload);
-    map_.mapper().integrateDepth(masked_depth, world_from_camera, camera_);
+    { ScopedStageTimer timer(mapping_metrics().depth_integration); map_.mapper().integrateDepth(masked_depth, world_from_camera, camera_); if (config_.profiling_sync) map_.stream()->synchronize(); }
 
     ++integrated_frames_;
     ++map_revision_;
@@ -177,6 +178,8 @@ parallax::core::SubmitResult SpatialTsdfProducer::submit(
     state->integrated_frames = integrated_frames_;
     state->epoch_resets = epoch_resets_;
     state->allocated_blocks = map_.mapper().tsdf_layer().numAllocatedBlocks();
+    mapping_metrics().profiling_sync.store(config_.profiling_sync);
+    mapping_metrics().observeBlocks(static_cast<std::uint64_t>(state->allocated_blocks));
 
     const auto& r = world_from_camera.linear();
     state->world_from_camera_rotation = {

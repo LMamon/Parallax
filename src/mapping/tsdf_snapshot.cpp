@@ -1,4 +1,5 @@
 #include <parallax/mapping/tsdf_snapshot.hpp>
+#include <parallax/mapping/mapping_metrics.hpp>
 
 #include <nvblox/core/cuda_stream.h>
 
@@ -96,6 +97,8 @@ namespace parallax::mapping {
             return false;
         }
 
+        std::uint64_t copied_voxels=0; for(const bool ok:success_flags) if(ok) ++copied_voxels;
+        if(copied_voxels){ auto& m=mapping_metrics(); m.tsdf_d2h_transfers.fetch_add(copied_voxels); m.tsdf_d2h_bytes.fetch_add(copied_voxels*sizeof(nvblox::TsdfVoxel)); }
         state->voxel_size_m = config.voxel_size_m;
         state->origin_m = {origin.x(), origin.y(), origin.z()};
         state->column_count = config.column_count;

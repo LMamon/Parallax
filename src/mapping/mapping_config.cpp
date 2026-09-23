@@ -30,6 +30,9 @@ bool MappingConfig::loadFromFile(const std::filesystem::path& path) {
             if (n["enabled"]) color_enabled=n["enabled"].as<bool>();
             if (n["integration_rate_hz"]) color_integration_rate_hz=n["integration_rate_hz"].as<float>();
         }
+        if (const auto n=m["profiling"]) {
+            if (n["synchronize_gpu_stages"]) profiling_sync=n["synchronize_gpu_stages"].as<bool>();
+        }
         if (const auto n=m["debug_tsdf"]) {
             if (n["columns"]) debug_columns=n["columns"].as<std::uint32_t>();
             if (n["rows"]) debug_rows=n["rows"].as<std::uint32_t>();

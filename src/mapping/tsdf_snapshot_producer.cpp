@@ -1,4 +1,5 @@
 #include <parallax/mapping/tsdf_snapshot_producer.hpp>
+#include <parallax/mapping/mapping_metrics.hpp>
 #include <parallax/mapping/spatial_tsdf_state.hpp>
 #include <parallax/mapping/tsdf_snapshot.hpp>
 #include <parallax/core/execution_context.hpp>
@@ -64,13 +65,8 @@ parallax::core::SubmitResult TsdfSnapshotProducer::submit(
         config_.debug_slices,
         config_.debug_surface_band_m};
 
-    if (!buildTsdfSnapshot(map_.mapper().tsdf_layer(),
-                           center,
-                           map_.stream(),
-                           snapshot_config,
-                           state.get())) {
-        return parallax::core::SubmitResult::Failed;
-    }
+    { ScopedStageTimer timer(mapping_metrics().tsdf_snapshot);
+        if (!buildTsdfSnapshot(map_.mapper().tsdf_layer(), center, map_.stream(), snapshot_config, state.get())) return parallax::core::SubmitResult::Failed; }
 
     auto metadata = map_state->metadata;
     metadata.production_timestamp = parallax::core::ExecutionContext::now();

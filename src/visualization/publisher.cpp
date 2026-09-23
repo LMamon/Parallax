@@ -1,4 +1,5 @@
 #include <parallax/visualization/publisher.hpp>
+#include <parallax/mapping/mapping_metrics.hpp>
 #include <parallax/pose/charuco_pose.hpp>
 #include <opencv4/opencv2/imgproc.hpp>
 #include <opencv4/opencv2/imgcodecs.hpp>
@@ -732,6 +733,7 @@ namespace parallax::visualization {
         }
 
         const auto& grid = *product.payload;
+        parallax::mapping::ScopedStageTimer mapping_timer(parallax::mapping::mapping_metrics().tsdf_publication);
 
         foxglove::messages::VoxelGrid message;
         message.timestamp = sourceTimestamp(product.metadata);
@@ -893,6 +895,7 @@ namespace parallax::visualization {
             !product.payload || !product.payload->valid()) return false;
 
         const auto& mesh=*product.payload;
+        parallax::mapping::ScopedStageTimer mapping_timer(parallax::mapping::mapping_metrics().mesh_publication);
         foxglove::messages::PointCloud message;
         message.timestamp=sourceTimestamp(product.metadata);
         message.frame_id="localization_world";

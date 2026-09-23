@@ -4,6 +4,7 @@
 #include <parallax/pose/charuco_pose.hpp>
 #include <parallax/core/history_configuration.hpp>
 #include <parallax/core/runtime_metrics.hpp>
+#include <parallax/mapping/mapping_metrics.hpp>
 #include <parallax/application/foxglove_command.hpp>
 #include <parallax/camera/arducam_controls.hpp>
 
@@ -569,6 +570,10 @@ namespace parallax::core {
                                         {"accelerator_waits", metrics.accelerator_waits.load()},
                                         {"host_waits", metrics.host_waits.load()},
                                         {"context_drains", metrics.context_drains.load()}};
+
+                const auto& mm=parallax::mapping::mapping_metrics();
+                const auto stage_json=[](const parallax::mapping::StageMetrics& s){ const auto n=s.samples.load(); const auto total=s.total_us.load(); return nlohmann::json{{"samples",n},{"last_ms",static_cast<double>(s.last_us.load())/1000.0},{"mean_ms",n?static_cast<double>(total)/static_cast<double>(n)/1000.0:0.0},{"max_ms",static_cast<double>(s.max_us.load())/1000.0}}; };
+                message["mapping"]={{"profiling_sync",mm.profiling_sync.load()},{"depth_integration",stage_json(mm.depth_integration)},{"tsdf_snapshot",stage_json(mm.tsdf_snapshot)},{"color_integration",stage_json(mm.color_integration)},{"mesh_update_and_flatten",stage_json(mm.mesh_update_and_flatten)},{"mesh_snapshot",stage_json(mm.mesh_snapshot)},{"tsdf_publication",stage_json(mm.tsdf_publication)},{"mesh_publication",stage_json(mm.mesh_publication)},{"tsdf_d2h_transfers",mm.tsdf_d2h_transfers.load()},{"tsdf_d2h_bytes",mm.tsdf_d2h_bytes.load()},{"mesh_materialized_host_bytes",mm.mesh_materialized_host_bytes.load()},{"mesh_d2h_bytes_exact",nullptr},{"map_allocated_blocks",mm.map_allocated_blocks.load()},{"map_peak_allocated_blocks",mm.map_peak_allocated_blocks.load()}};
 
                 if (!publisher_.publishRuntimeTelemetry(message.dump())) {
                     std::cerr << "Runtime: telemetry publication failed\n";

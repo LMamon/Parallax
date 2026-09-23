@@ -16,6 +16,8 @@ namespace parallax::mapping {
         float mesh_min_weight = 0.10F;
         bool mesh_weld_vertices = true;
         bool color_enabled = true;
+        // Diagnostic only: synchronize nvblox GPU stages for completed-work timing.
+        bool profiling_sync = false;
         float color_integration_rate_hz = 2.0F;
         std::uint32_t debug_columns = 80;
         std::uint32_t debug_rows = 80;

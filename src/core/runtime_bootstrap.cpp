@@ -182,6 +182,9 @@ bool Runtime::initialize(const std::filesystem::path& camera_config_path,
         tsdf_snapshot_producer_ = std::make_unique<parallax::mapping::TsdfSnapshotProducer>(
             mapping_config_, *spatial_map_, context_.products());
 
+        esdf_producer_ = std::make_unique<parallax::mapping::EsdfProducer>(
+            mapping_config_, *spatial_map_, context_.products());
+
         spatial_mesh_producer_ = std::make_unique<parallax::mapping::SpatialMeshProducer>(
             mapping_config_, pipeline_.calibration(), *spatial_map_, context_.products());
 
@@ -212,6 +215,7 @@ bool Runtime::initialize(const std::filesystem::path& camera_config_path,
         graph_.register_producer(*cuvslam_producer_);
         graph_.register_producer(*spatial_tsdf_producer_);
         graph_.register_producer(*tsdf_snapshot_producer_);
+        graph_.register_producer(*esdf_producer_);
         graph_.register_producer(*spatial_mesh_producer_);
 
         graph_.finalize();

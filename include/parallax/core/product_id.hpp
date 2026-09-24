@@ -42,6 +42,7 @@ namespace parallax::core {
         LocalOccupancy,
         SpatialMapState,
         SpatialTsdf,
+        SpatialEsdf,
         SpatialMesh
     };
 }

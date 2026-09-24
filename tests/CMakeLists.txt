@@ -243,6 +243,13 @@ parallax_add_gtest(
     parallax_mapping
 )
 
+parallax_add_gtest(
+    parallax_spatial_esdf_test
+    spatial_esdf_test.cpp
+    parallax_mapping
+    parallax_core
+)
+
 add_executable(parallax_spatial_mesh_test spatial_mesh_test.cpp)
 target_link_libraries(parallax_spatial_mesh_test PRIVATE parallax_mapping GTest::gtest_main)
 add_test(NAME SpatialMeshTest COMMAND parallax_spatial_mesh_test)

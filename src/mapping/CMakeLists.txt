@@ -2,6 +2,7 @@ add_library(parallax_mapping
     mapping_config.cpp
     spatial_tsdf_producer.cpp
     tsdf_snapshot_producer.cpp
+    esdf_producer.cpp
     spatial_mesh_producer.cpp
     spatial_mesh_snapshot.cpp
     tsdf_snapshot.cpp

@@ -5,6 +5,7 @@
 #include <parallax/mapping/spatial_map.hpp>
 #include <parallax/mapping/spatial_tsdf_producer.hpp>
 #include <parallax/mapping/tsdf_snapshot_producer.hpp>
+#include <parallax/mapping/esdf_producer.hpp>
 #include <parallax/mapping/spatial_mesh_producer.hpp>
 #include <parallax/mapping/mapping_config.hpp>
 
@@ -173,6 +174,7 @@ namespace parallax::core {
             std::unique_ptr<parallax::mapping::SpatialMap> spatial_map_;
             std::unique_ptr<parallax::mapping::SpatialTsdfProducer> spatial_tsdf_producer_;
             std::unique_ptr<parallax::mapping::TsdfSnapshotProducer> tsdf_snapshot_producer_;
+            std::unique_ptr<parallax::mapping::EsdfProducer> esdf_producer_;
             std::unique_ptr<parallax::mapping::SpatialMeshProducer> spatial_mesh_producer_;
 
             

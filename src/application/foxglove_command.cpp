@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cmath>
 #include <string>
 
 namespace parallax::application {
@@ -26,6 +27,40 @@ namespace parallax::application {
 
         const std::string verb = command_it->get<std::string>();
         const std::string target = target_it->get<std::string>();
+
+        if (verb == "navigation_goal") {
+            if (!target.empty()) {
+                return {{}, CommandParseError::UnexpectedArgument,
+                        "navigation_goal does not accept a target"};
+            }
+
+            const auto x_it = json.find("x");
+            const auto y_it = json.find("y");
+            const auto z_it = json.find("z");
+
+            if (x_it == json.end() || y_it == json.end() || z_it == json.end() ||
+                !x_it->is_number() || !y_it->is_number() || !z_it->is_number()) {
+                return {{}, CommandParseError::UnexpectedArgument,
+                        "navigation_goal requires numeric x, y, z"};
+            }
+
+            const float x = x_it->get<float>();
+            const float y = y_it->get<float>();
+            const float z = z_it->get<float>();
+
+            if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+                return {{}, CommandParseError::UnexpectedArgument,
+                        "navigation_goal coordinates must be finite"};
+            }
+
+            Command command{
+                CommandVerb::NavigationGoal,
+                CommandBehavior::Persistent,
+                {}};
+            command.position_m = {x, y, z};
+
+            return {std::move(command), CommandParseError::None, {}};
+        }
 
         if (verb == "marker_depth") {
             if (!target.empty()) {

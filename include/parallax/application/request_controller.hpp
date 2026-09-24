@@ -4,6 +4,7 @@
 #include <parallax/core/dependency_resolver.hpp>
 #include <parallax/core/product_id.hpp>
 
+#include <array>
 #include <string>
 #include <cstdint>
 #include <mutex>
@@ -44,6 +45,10 @@ namespace parallax::application {
         std::string tracking_target;
             
         std::uint64_t tracking_query_revision = 0;
+
+        bool navigation_goal_requested = false;
+        std::array<float, 3> navigation_goal_m{};
+        std::uint64_t navigation_goal_revision = 0;
     };
 
     class RequestController {
@@ -83,5 +88,6 @@ namespace parallax::application {
             
             std::uint64_t next_tracking_query_revision_ = 1;
             std::uint64_t next_detection_query_revision_ = 1;
+            std::uint64_t next_navigation_goal_revision_ = 1;
     };
 }

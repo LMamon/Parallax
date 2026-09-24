@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
 
@@ -12,7 +13,7 @@ namespace parallax::application {
     // details. RequestController is responsible for translating commands into
     // application-owned state and dependency-graph demand.
     enum class CommandVerb : std::uint8_t {
-        MarkerDepth, Detect, Track, StopTracking, Segment
+        MarkerDepth, Detect, Track, StopTracking, Segment, NavigationGoal
     };
 
     // Commands may represent either a bounded request or persistent application
@@ -30,6 +31,7 @@ namespace parallax::application {
         CommandBehavior behavior;
         std::string target;
         DepthRequest depth = DepthRequest::Unspecified;
+        std::array<float, 3> position_m{};
     };
 
     enum class CommandParseError : std::uint8_t {

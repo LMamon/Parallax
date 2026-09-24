@@ -1,5 +1,6 @@
 #include <parallax/application/request_controller.hpp>
 
+#include <cmath>
 #include <utility>
 
 namespace parallax::application {
@@ -121,6 +122,25 @@ namespace parallax::application {
                 acquire_once(core::ProductId::Segmentation, segmentation_demand_owned_);
 
                 return {RequestStatus::Applied, "segmentation requested"};
+            }
+
+            case CommandVerb::NavigationGoal: {
+                const auto& position = command.position_m;
+
+                if (!std::isfinite(position[0]) ||
+                    !std::isfinite(position[1]) ||
+                    !std::isfinite(position[2])) {
+                    return {RequestStatus::Invalid,
+                            "navigation goal coordinates must be finite"};
+                }
+
+                state_.navigation_goal_requested = true;
+                state_.navigation_goal_m = position;
+                state_.navigation_goal_revision =
+                    next_navigation_goal_revision_++;
+
+                return {RequestStatus::Applied,
+                        "navigation goal updated"};
             }
 
             case CommandVerb::StopTracking: {

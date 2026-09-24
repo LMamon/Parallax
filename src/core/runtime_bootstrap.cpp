@@ -6,6 +6,7 @@
 #include <parallax/core/runtime_metrics.hpp>
 #include <parallax/mapping/mapping_metrics.hpp>
 #include <parallax/application/foxglove_command.hpp>
+#include <parallax/application/navigation_goal.hpp>
 #include <parallax/camera/arducam_controls.hpp>
 
 #include <nlohmann/json.hpp>
@@ -276,6 +277,33 @@ bool Runtime::initialize(const std::filesystem::path& camera_config_path,
                 }
 
                 const auto result = request_controller_.apply(parsed.command);
+
+                if (result.applied() &&
+                    parsed.command.verb ==
+                        parallax::application::CommandVerb::NavigationGoal) {
+                    const auto state = request_controller_.state();
+
+                    auto goal =
+                        std::make_shared<parallax::application::NavigationGoal>();
+                    goal->position_m = state.navigation_goal_m;
+                    goal->revision = state.navigation_goal_revision;
+
+                    parallax::core::ProductMetadata metadata{};
+                    metadata.timestamp =
+                        parallax::core::ExecutionContext::now();
+                    metadata.production_timestamp = metadata.timestamp;
+                    metadata.valid = true;
+
+                    std::shared_ptr<const parallax::application::NavigationGoal>
+                        published = std::move(goal);
+
+                    context_.products().publish(
+                        parallax::core::make_product(
+                            ProductId::NavigationGoal,
+                            metadata,
+                            std::move(published)));
+                }
+
                 if (result.applied() && foxglove_.requestStateChannel().hasSinks()) {
 
                     const auto state = request_controller_.state();
@@ -288,7 +316,13 @@ bool Runtime::initialize(const std::filesystem::path& camera_config_path,
                                                  {"tracking_target", state.tracking_target},
                                                  {"tracking_query_revision", state.tracking_query_revision},
                                                  {"segmentation_requested", state.segmentation_requested},
-                                                 {"segmentation_target", state.segmentation_target}};
+                                                 {"segmentation_target", state.segmentation_target},
+                                                 {"navigation_goal_requested", state.navigation_goal_requested},
+                                                 {"navigation_goal", {
+                                                     state.navigation_goal_m[0],
+                                                     state.navigation_goal_m[1],
+                                                     state.navigation_goal_m[2]}},
+                                                 {"navigation_goal_revision", state.navigation_goal_revision}};
 
                     const std::string serialized_state = request_state.dump();
                     const auto error = foxglove_.requestStateChannel().log(reinterpret_cast<const std::byte*>(

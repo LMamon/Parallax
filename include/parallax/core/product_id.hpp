@@ -43,6 +43,7 @@ namespace parallax::core {
         SpatialMapState,
         SpatialTsdf,
         SpatialEsdf,
-        SpatialMesh
+        SpatialMesh,
+        NavigationGoal
     };
 }

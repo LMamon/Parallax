@@ -1,24 +1,31 @@
 name: parallax
+
 services:
   parallax:
-    image: roylvzn/parallax:latest
+    image: roylvzn/parallax:v3.1
     container_name: parallax
     build:
       context: .
       dockerfile: Dockerfile
 
+    runtime: nvidia
     network_mode: host
     ipc: host
 
     stdin_open: true
     tty: true
 
-    privileged: true
+    # Keep hardware access explicit. Add the C1 serial device when its ROS
+    # driver is integrated rather than granting the container every host device.
+    devices:
+      - /dev/video0:/dev/video0
+
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-31}
 
     volumes:
       - .:/workspace/Parallax
       - /tmp/argus_socket:/tmp/argus_socket
 
     working_dir: /workspace/Parallax
-
     restart: unless-stopped

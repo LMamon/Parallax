@@ -83,9 +83,8 @@ struct RawSnapshot {
 };
 
 struct RectifiedHostSnapshot {
-  std::vector<std::uint8_t> left_gray;
-  std::vector<std::uint8_t> right_gray;
   std::vector<std::uint8_t> left_rgb;
+  std::vector<std::uint8_t> right_rgb;
   std::uint64_t sequence = 0;
   std::chrono::system_clock::time_point wall_timestamp{};
 };
@@ -182,9 +181,8 @@ class StereoNode final : public rclcpp::Node {
         static_cast<std::size_t>(calibration_.metadata().image_width) *
         static_cast<std::size_t>(calibration_.metadata().image_height);
     for (auto& slot : host_slots_) {
-      slot.left_gray.resize(rect_pixels);
-      slot.right_gray.resize(rect_pixels);
       slot.left_rgb.resize(rect_pixels * 3U);
+      slot.right_rgb.resize(rect_pixels * 3U);
     }
 
     if (cudaStreamCreateWithFlags(
@@ -447,19 +445,16 @@ class StereoNode final : public rclcpp::Node {
       const int next = 1 - host_write_slot_;
       auto& host = host_slots_[next];
 
-      const auto mono_pitch =
-          static_cast<std::size_t>(rectified->gray.width);
       const auto rgb_pitch =
           static_cast<std::size_t>(rectified->rgb.width) * 3U;
 
-      // Host observation is a side branch. One dedicated CUDA stream batches
-      // the three downloads; ROS/JPEG publication happens on separate threads.
-      if (!rectified->gray.left.downloadAsync(
-              host.left_gray.data(), mono_pitch, download_stream_) ||
-          !rectified->gray.right.downloadAsync(
-              host.right_gray.data(), mono_pitch, download_stream_) ||
-          !rectified->rgb.left.downloadAsync(
+      // Isaac ROS 3.2 DisparityNode accepts rgb8/bgr8, not mono8.
+      // ROS publication and JPEG remain observation workers and cannot retain
+      // accelerator/source ownership.
+      if (!rectified->rgb.left.downloadAsync(
               host.left_rgb.data(), rgb_pitch, download_stream_) ||
+          !rectified->rgb.right.downloadAsync(
+              host.right_rgb.data(), rgb_pitch, download_stream_) ||
           cudaStreamSynchronize(download_stream_) != cudaSuccess) {
         RCLCPP_ERROR_THROTTLE(
             get_logger(), *get_clock(), 2000,
@@ -505,20 +500,20 @@ class StereoNode final : public rclcpp::Node {
       left.header.frame_id = kLeftFrame;
       left.height = height;
       left.width = width;
-      left.encoding = "mono8";
+      left.encoding = "rgb8";
       left.is_bigendian = false;
-      left.step = width;
-      left.data = std::move(frame.left_gray);
+      left.step = width * 3U;
+      left.data = std::move(frame.left_rgb);
 
       sensor_msgs::msg::Image right;
       right.header.stamp = stamp;
       right.header.frame_id = kRightFrame;
       right.height = height;
       right.width = width;
-      right.encoding = "mono8";
+      right.encoding = "rgb8";
       right.is_bigendian = false;
-      right.step = width;
-      right.data = std::move(frame.right_gray);
+      right.step = width * 3U;
+      right.data = std::move(frame.right_rgb);
 
       left_info_.header.stamp = stamp;
       right_info_.header.stamp = stamp;

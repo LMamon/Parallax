@@ -66,6 +66,33 @@ sensor_msgs::msg::CameraInfo makeRectifiedInfo(
   return info;
 }
 
+sensor_msgs::msg::CameraInfo scaledCameraInfo(
+    const sensor_msgs::msg::CameraInfo& source,
+    std::uint32_t width,
+    std::uint32_t height) {
+  auto info = source;
+  const double sx =
+      static_cast<double>(width) / static_cast<double>(source.width);
+  const double sy =
+      static_cast<double>(height) / static_cast<double>(source.height);
+
+  info.width = width;
+  info.height = height;
+
+  info.k[0] *= sx;
+  info.k[2] *= sx;
+  info.k[4] *= sy;
+  info.k[5] *= sy;
+
+  info.p[0] *= sx;
+  info.p[2] *= sx;
+  info.p[3] *= sx;
+  info.p[5] *= sy;
+  info.p[6] *= sy;
+
+  return info;
+}
+
 rclcpp::Time wallStamp(
     std::chrono::system_clock::time_point wall_timestamp) {
   return rclcpp::Time(
@@ -161,6 +188,10 @@ class StereoNode final : public rclcpp::Node {
         "/stereo/left/camera_info", qos);
     right_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
         "/stereo/right/camera_info", qos);
+    spatial_left_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
+        "/spatial/left/camera_info", qos);
+    spatial_right_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
+        "/spatial/right/camera_info", qos);
     color_preview_pub_ =
         create_publisher<sensor_msgs::msg::CompressedImage>(
             "/stereo/left/image_rect_color/compressed", qos);
@@ -169,6 +200,8 @@ class StereoNode final : public rclcpp::Node {
         makeRectifiedInfo(calibration_, calibration_.P1(), kLeftFrame);
     right_info_ =
         makeRectifiedInfo(calibration_, calibration_.P2(), kRightFrame);
+    spatial_left_info_ = scaledCameraInfo(left_info_, 960U, 600U);
+    spatial_right_info_ = scaledCameraInfo(right_info_, 960U, 600U);
 
     const auto raw_pixels =
         static_cast<std::size_t>(camera_config_.width) *
@@ -517,11 +550,15 @@ class StereoNode final : public rclcpp::Node {
 
       left_info_.header.stamp = stamp;
       right_info_.header.stamp = stamp;
+      spatial_left_info_.header.stamp = stamp;
+      spatial_right_info_.header.stamp = stamp;
 
       left_image_pub_->publish(std::move(left));
       right_image_pub_->publish(std::move(right));
       left_info_pub_->publish(left_info_);
       right_info_pub_->publish(right_info_);
+      spatial_left_info_pub_->publish(spatial_left_info_);
+      spatial_right_info_pub_->publish(spatial_right_info_);
     }
   }
 
@@ -611,11 +648,15 @@ class StereoNode final : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr right_image_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr left_info_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr right_info_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr spatial_left_info_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr spatial_right_info_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr
       color_preview_pub_;
 
   sensor_msgs::msg::CameraInfo left_info_{};
   sensor_msgs::msg::CameraInfo right_info_{};
+  sensor_msgs::msg::CameraInfo spatial_left_info_{};
+  sensor_msgs::msg::CameraInfo spatial_right_info_{};
 
   int preview_fps_ = 20;
   int jpeg_quality_ = 85;

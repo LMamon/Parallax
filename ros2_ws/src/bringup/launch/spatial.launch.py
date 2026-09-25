@@ -35,7 +35,7 @@ def generate_launch_description():
             ('image', '/stereo/left/image_rect'),
             ('camera_info', '/stereo/left/camera_info'),
             ('resize/image', '/spatial/left/image_rect'),
-            ('resize/camera_info', '/spatial/left/camera_info'),
+            ('resize/camera_info', '/spatial/left/camera_info_unused'),
         ],
     )
 
@@ -75,7 +75,7 @@ def generate_launch_description():
             ('image', '/stereo/right/image_rect'),
             ('camera_info', '/stereo/right/camera_info'),
             ('resize/image', '/spatial/right/image_rect'),
-            ('resize/camera_info', '/spatial/right/camera_info'),
+            ('resize/camera_info', '/spatial/right/camera_info_unused'),
         ],
     )
 
@@ -101,8 +101,10 @@ def generate_launch_description():
         plugin='nvidia::isaac_ros::stereo_image_proc::DisparityNode',
         name='disparity_node',
         parameters=[{
-            'backends': 'CUDA',
+            'backend': 'CUDA',
             'max_disparity': 128.0,
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
         }],
         remappings=[
             ('left/image_rect', '/spatial/left/image_rect'),
@@ -117,6 +119,10 @@ def generate_launch_description():
         package='isaac_ros_stereo_image_proc',
         plugin='nvidia::isaac_ros::stereo_image_proc::DisparityToDepthNode',
         name='disparity_to_depth_node',
+        parameters=[{
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
+        }],
         remappings=[
             ('disparity', '/stereo/disparity'),
             ('depth', '/stereo/depth'),

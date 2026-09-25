@@ -25,18 +25,19 @@
     integrate_color_rate_hz: 0.0
     update_mesh_rate_hz: 1.0
     update_esdf_rate_hz: 2.0
-    publish_layer_rate_hz: 1.0
-    publish_debug_vis_rate_hz: 0.25
+    # Layer transport is observability, not the planning interface.
+    publish_layer_rate_hz: 0.1
+    publish_debug_vis_rate_hz: 0.1
     clear_map_outside_radius_rate_hz: 0.5
 
     map_clearing_radius_m: 8.0
     publish_esdf_distance_slice: true
     layer_streamer_bandwidth_limit_mbps: 5.0
 
-    print_rates_to_console: true
+    print_rates_to_console: false
     print_timings_to_console: false
     print_delays_to_console: false
-    print_queue_drops_to_console: true
+    print_queue_drops_to_console: false
     print_statistics_on_console_period_ms: 5000
 
     static_mapper:

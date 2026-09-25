@@ -14,37 +14,86 @@ set -eo pipefail
 source /opt/ros/humble/setup.bash
 source /workspace/Parallax/ros2_ws/install/setup.bash
 
+fail=0
+
+require_node() {
+  if ros2 node list | grep -qx "$1"; then
+    printf "PASS node %s\n" "$1"
+  else
+    printf "FAIL node %s\n" "$1"
+    fail=1
+  fi
+}
+
 echo "=== required nodes ==="
-ros2 node list | grep -E   "^/(disparity_node|disparity_to_depth_node|foxglove_bridge|nvblox_node|spatial_left_resize|spatial_right_resize|spatial_left_mono|spatial_right_mono|stereo_camera|visual_slam)$"   | sort || true
+for node in /stereo_camera /spatial_left_resize /spatial_right_resize /spatial_left_mono /spatial_right_mono /disparity_node /disparity_to_depth_node /visual_slam /nvblox_node /foxglove_bridge; do
+  require_node "$node"
+done
 
 echo
-echo "=== computational image boundary ==="
-ros2 topic info /spatial/left/image_rect || true
-ros2 topic info /spatial/left/image_rect_mono || true
-timeout 5 ros2 topic echo /spatial/left/camera_info --once --field width || true
-timeout 5 ros2 topic echo /spatial/left/camera_info --once --field height || true
+echo "=== spatial boundary ==="
+width="$(timeout 5 ros2 topic echo /spatial/left/camera_info --qos-reliability best_effort --once --field width 2>/dev/null | grep -Eo "[0-9]+" | head -1 || true)"
+height="$(timeout 5 ros2 topic echo /spatial/left/camera_info --qos-reliability best_effort --once --field height 2>/dev/null | grep -Eo "[0-9]+" | head -1 || true)"
+if [[ "$width" == "960" && "$height" == "600" ]]; then
+  echo "PASS camera_info 960x600"
+else
+  echo "FAIL camera_info ${width:-?}x${height:-?}"
+  fail=1
+fi
 
 echo
-echo "=== spatial topics ==="
-ros2 topic list | grep -E   "^/(spatial|stereo/(depth|disparity)|visual_slam|nvblox_node)" | sort || true
+echo "=== depth ==="
+if timeout 8 ros2 topic echo /stereo/depth --qos-reliability best_effort --once --field header >/tmp/parallax_depth_check 2>&1; then
+  echo "PASS /stereo/depth"
+  cat /tmp/parallax_depth_check
+else
+  echo "FAIL /stereo/depth"
+  cat /tmp/parallax_depth_check || true
+  fail=1
+fi
+rm -f /tmp/parallax_depth_check
 
 echo
-echo "=== depth sample ==="
-timeout 5 ros2 topic echo /stereo/depth --once --field header || true
+echo "=== cuVSLAM odometry ==="
+if timeout 8 ros2 topic echo /visual_slam/tracking/odometry --once --field header >/tmp/parallax_odom_check 2>&1; then
+  echo "PASS /visual_slam/tracking/odometry"
+  cat /tmp/parallax_odom_check
+else
+  echo "FAIL /visual_slam/tracking/odometry"
+  cat /tmp/parallax_odom_check || true
+  fail=1
+fi
+rm -f /tmp/parallax_odom_check
 
 echo
-echo "=== cuVSLAM odometry sample ==="
-timeout 5 ros2 topic echo /visual_slam/tracking/odometry --once --field header || true
+echo "=== TF map -> base_link ==="
+timeout 8 ros2 run tf2_ros tf2_echo map base_link >/tmp/parallax_tf_check 2>&1 || true
+if grep -q "Translation:" /tmp/parallax_tf_check; then
+  echo "PASS map -> base_link"
+  tail -n 12 /tmp/parallax_tf_check
+else
+  echo "FAIL map -> base_link"
+  cat /tmp/parallax_tf_check || true
+  fail=1
+fi
+rm -f /tmp/parallax_tf_check
 
 echo
-echo "=== TF: map -> base_link ==="
-timeout 8 ros2 run tf2_ros tf2_echo map base_link || true
+echo "=== nvblox ESDF interface ==="
+if ros2 service list | grep -qx /nvblox_node/get_esdf_and_gradient; then
+  echo "PASS /nvblox_node/get_esdf_and_gradient"
+else
+  echo "FAIL /nvblox_node/get_esdf_and_gradient"
+  fail=1
+fi
 
 echo
-echo "=== TF: base_link -> left optical ==="
-timeout 5 ros2 run tf2_ros tf2_echo base_link left_camera_optical_frame || true
-
+echo "=== producer rates ==="
+echo "depth:"
+timeout 8 ros2 topic hz /stereo/depth --qos-reliability best_effort 2>/dev/null || true
 echo
-echo "=== nvblox services ==="
-ros2 service list | grep "^/nvblox_node/" | sort || true
+echo "odometry:"
+timeout 8 ros2 topic hz /visual_slam/tracking/odometry 2>/dev/null || true
+
+exit "$fail"
 '

@@ -21,7 +21,7 @@ set(INHERITED_LIBS
   "${PARALLAX_BUILD}/src/camera/libparallax_camera.a"
   "${PARALLAX_BUILD}/src/vpi/libparallax_vpi.a"
   "${PARALLAX_BUILD}/src/cuda/libparallax_cuda.a"
-    "${PARALLAX_BUILD}/src/core/libparallax_core.a"
+  "${PARALLAX_BUILD}/src/core/libparallax_core.a"
 )
 
 foreach(lib IN LISTS INHERITED_LIBS)

@@ -18,11 +18,11 @@ docker compose exec parallax bash -lc '
         cmake --build build -j"$(nproc)"
     fi
 
-    if [ ! -f ros2_ws/install/setup.bash ]; then
-        cd ros2_ws
-        colcon build --symlink-install
-        cd ..
-    fi
+    # Rebuild the overlay before launch so source changes cannot run through
+    # a stale installed stereo node.
+    cd ros2_ws
+    colcon build --symlink-install
+    cd ..
 
     source ros2_ws/install/setup.bash
 

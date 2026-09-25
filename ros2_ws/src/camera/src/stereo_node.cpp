@@ -1,19 +1,14 @@
 #include <parallax/camera/arducam_controls.hpp>
 #include <parallax/camera/camera_config.hpp>
-#include <parallax/camera/camera_producer.hpp>
+#include <parallax/camera/frame_types.hpp>
 #include <parallax/camera/stereo_camera.hpp>
 #include <parallax/core/execution_context.hpp>
-#include <parallax/core/product_id.hpp>
-#include <parallax/core/product_store.hpp>
-#include <parallax/core/producer.hpp>
 #include <parallax/isp/auto_control.hpp>
 #include <parallax/isp/frame_types.hpp>
 #include <parallax/isp/isp.hpp>
 #include <parallax/isp/isp_config.hpp>
-#include <parallax/isp/isp_producer.hpp>
 #include <parallax/stereo/calibration.hpp>
 #include <parallax/stereo/rectification.hpp>
-#include <parallax/stereo/rectification_producer.hpp>
 
 #include <cuda_runtime.h>
 
@@ -30,17 +25,17 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <cstring>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
 
 namespace {
-
-using parallax::core::ProductId;
-using parallax::core::SubmitResult;
 
 constexpr char kLeftFrame[] = "left_camera_optical_frame";
 constexpr char kRightFrame[] = "right_camera_optical_frame";
@@ -71,16 +66,29 @@ sensor_msgs::msg::CameraInfo makeRectifiedInfo(
   return info;
 }
 
-rclcpp::Time productStamp(const parallax::core::ProductMetadata& metadata) {
-  if (!metadata.wall_timestamp_valid) {
-    return rclcpp::Clock(RCL_SYSTEM_TIME).now();
-  }
-
+rclcpp::Time wallStamp(
+    std::chrono::system_clock::time_point wall_timestamp) {
   return rclcpp::Time(
       std::chrono::duration_cast<std::chrono::nanoseconds>(
-          metadata.wall_timestamp.time_since_epoch()).count(),
+          wall_timestamp.time_since_epoch()).count(),
       RCL_SYSTEM_TIME);
 }
+
+struct RawSnapshot {
+  std::vector<std::uint16_t> pixels;
+  std::uint64_t sequence = 0;
+  std::chrono::nanoseconds timestamp{0};
+  std::chrono::system_clock::time_point wall_timestamp{};
+  bool valid = false;
+};
+
+struct RectifiedHostSnapshot {
+  std::vector<std::uint8_t> left_gray;
+  std::vector<std::uint8_t> right_gray;
+  std::vector<std::uint8_t> left_rgb;
+  std::uint64_t sequence = 0;
+  std::chrono::system_clock::time_point wall_timestamp{};
+};
 
 class StereoNode final : public rclcpp::Node {
  public:
@@ -91,6 +99,7 @@ class StereoNode final : public rclcpp::Node {
         declare_parameter<std::string>("isp_config", "");
     const auto calibration_dir =
         declare_parameter<std::string>("calibration_dir", "");
+
     preview_fps_ = declare_parameter<int>("preview_fps", 20);
     jpeg_quality_ = declare_parameter<int>("jpeg_quality", 85);
 
@@ -102,10 +111,12 @@ class StereoNode final : public rclcpp::Node {
         !camera_config_.loadFromFile(camera_config_path)) {
       throw std::runtime_error("failed to load stereo camera config");
     }
+
     if (isp_config_path.empty() ||
         !isp_config_.loadFromFile(isp_config_path)) {
       throw std::runtime_error("failed to load ISP config");
     }
+
     if (calibration_dir.empty() || !calibration_.load(calibration_dir)) {
       throw std::runtime_error("failed to load stereo calibration");
     }
@@ -124,25 +135,22 @@ class StereoNode final : public rclcpp::Node {
       throw std::runtime_error("failed to initialize ISP");
     }
 
-    // Match the proven graph path: rectification consumes ISP-owned device
-    // storage on the shared preprocess lane. No host synchronization here.
-    auto& preprocess = context_.preprocessLane();
-    if (!rectifier_.initialize(
-            calibration_, isp_.rgb(), isp_.gray(), preprocess.handle())) {
-      throw std::runtime_error("failed to initialize stereo rectifier");
+    auto isp_seed = isp_.acquireOutput();
+    if (!isp_seed) {
+      throw std::runtime_error("failed to acquire ISP initialization slot");
     }
 
-    initializeAutoControl();
+    auto& preprocess = context_.preprocessLane();
+    if (!rectifier_.initialize(
+            calibration_,
+            isp_seed->rgb,
+            isp_seed->gray,
+            preprocess.handle())) {
+      throw std::runtime_error("failed to initialize stereo rectifier");
+    }
+    isp_seed.reset();
 
-    camera_producer_ =
-        std::make_unique<parallax::camera::CameraProducer>(
-            *camera_, context_.products());
-    isp_producer_ =
-        std::make_unique<parallax::isp::IspProducer>(
-            isp_, context_.products());
-    rectification_producer_ =
-        std::make_unique<parallax::stereo::RectificationProducer>(
-            rectifier_, calibration_, context_.products());
+    initializeAutoControl();
 
     const auto qos = rclcpp::SensorDataQoS().keep_last(1);
 
@@ -154,9 +162,6 @@ class StereoNode final : public rclcpp::Node {
         "/stereo/left/camera_info", qos);
     right_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
         "/stereo/right/camera_info", qos);
-
-    // Foxglove-facing preview. This is intentionally not part of the
-    // acquisition/compute cadence.
     color_preview_pub_ =
         create_publisher<sensor_msgs::msg::CompressedImage>(
             "/stereo/left/image_rect_color/compressed", qos);
@@ -166,43 +171,66 @@ class StereoNode final : public rclcpp::Node {
     right_info_ =
         makeRectifiedInfo(calibration_, calibration_.P2(), kRightFrame);
 
-    const auto pixels =
+    const auto raw_pixels =
+        static_cast<std::size_t>(camera_config_.width) *
+        static_cast<std::size_t>(camera_config_.height);
+    for (auto& slot : raw_slots_) {
+      slot.pixels.resize(raw_pixels);
+    }
+
+    const auto rect_pixels =
         static_cast<std::size_t>(calibration_.metadata().image_width) *
-        calibration_.metadata().image_height;
-    left_gray_.resize(pixels);
-    right_gray_.resize(pixels);
-    left_rgb_.resize(pixels * 3U);
+        static_cast<std::size_t>(calibration_.metadata().image_height);
+    for (auto& slot : host_slots_) {
+      slot.left_gray.resize(rect_pixels);
+      slot.right_gray.resize(rect_pixels);
+      slot.left_rgb.resize(rect_pixels * 3U);
+    }
+
+    if (cudaStreamCreateWithFlags(
+            &download_stream_, cudaStreamNonBlocking) != cudaSuccess) {
+      throw std::runtime_error("failed to create ROS download stream");
+    }
 
     running_.store(true);
-    capture_thread_ = std::thread(&StereoNode::captureLoop, this);
-    publication_thread_ = std::thread(&StereoNode::publicationLoop, this);
-    auto_control_thread_ = std::thread(&StereoNode::autoControlLoop, this);
+    acquisition_thread_ =
+        std::thread(&StereoNode::acquisitionLoop, this);
+    compute_thread_ =
+        std::thread(&StereoNode::computeLoop, this);
+    mono_thread_ =
+        std::thread(&StereoNode::monoPublicationLoop, this);
+    preview_thread_ =
+        std::thread(&StereoNode::previewPublicationLoop, this);
+    auto_control_thread_ =
+        std::thread(&StereoNode::autoControlLoop, this);
 
     RCLCPP_INFO(
         get_logger(),
-        "AR0234 graph boundary ready: capture -> async ISP -> async VPI; "
-        "rectified mono ROS + %dHz compressed RGB preview; AE=%s AWB=%s",
-        preview_fps_,
-        isp_config_.auto_exposure.enable ? "on" : "off",
-        isp_config_.auto_white_balance.enable ? "on" : "off");
+        "AR0234 stereo ready: acquisition independent; ISP/rectification "
+        "latest-value compute; mono ROS + %dHz JPEG preview",
+        preview_fps_);
   }
 
   ~StereoNode() override {
     running_.store(false);
+    raw_cv_.notify_all();
+    host_cv_.notify_all();
 
-    if (capture_thread_.joinable()) capture_thread_.join();
-    if (publication_thread_.joinable()) publication_thread_.join();
+    if (acquisition_thread_.joinable()) acquisition_thread_.join();
+    if (compute_thread_.joinable()) compute_thread_.join();
+    if (mono_thread_.joinable()) mono_thread_.join();
+    if (preview_thread_.joinable()) preview_thread_.join();
     if (auto_control_thread_.joinable()) auto_control_thread_.join();
 
-    // Drain accelerator work before releasing product generations/storage.
     (void)context_.drain();
-    context_.products().clear();
 
-    rectification_producer_.reset();
-    isp_producer_.reset();
-    camera_producer_.reset();
+    if (download_stream_ != nullptr) {
+      cudaStreamSynchronize(download_stream_);
+      cudaStreamDestroy(download_stream_);
+      download_stream_ = nullptr;
+    }
+
     auto_controller_.reset();
-
     rectifier_.shutdown();
     isp_.shutdown();
 
@@ -295,210 +323,268 @@ class StereoNode final : public rclcpp::Node {
     }
   }
 
-  void captureLoop() {
+  void acquisitionLoop() {
     unsigned failures = 0;
+    std::uint64_t sequence = 0;
 
     while (running_.load() && rclcpp::ok()) {
-      const auto camera_result = camera_producer_->submit(context_);
-      if (camera_result != SubmitResult::Submitted) {
-        if (++failures >= 10) {
-          RCLCPP_ERROR(get_logger(), "camera producer repeatedly failed");
-          running_.store(false);
-          return;
-        }
-        continue;
-      }
-
-      const auto isp_result = isp_producer_->submit(context_);
-      if (isp_result == SubmitResult::Failed) {
-        if (++failures >= 10) {
-          RCLCPP_ERROR(get_logger(), "ISP producer repeatedly failed");
-          running_.store(false);
-          return;
-        }
-        continue;
-      }
-      if (isp_result == SubmitResult::NoWork) {
-        // Fixed pools are intentionally bounded. A slow consumer causes this
-        // observation to be superseded rather than growing a frame queue.
-        continue;
-      }
-
-      const auto rect_result =
-          rectification_producer_->submit(context_);
-      if (rect_result == SubmitResult::Failed) {
+      parallax::camera::RawFrame frame{};
+      if (!camera_->capture(frame)) {
         if (++failures >= 10) {
           RCLCPP_ERROR(
-              get_logger(), "rectification producer repeatedly failed");
+              get_logger(), "camera repeatedly failed to capture");
           running_.store(false);
+          raw_cv_.notify_all();
+          host_cv_.notify_all();
           return;
         }
         continue;
       }
 
-      if (rect_result == SubmitResult::Submitted) {
-        failures = 0;
+      failures = 0;
+
+      const std::size_t expected_bytes =
+          static_cast<std::size_t>(camera_config_.width) *
+          static_cast<std::size_t>(camera_config_.height) *
+          sizeof(std::uint16_t);
+
+      if (frame.data == nullptr || frame.bytes < expected_bytes) {
+        camera_->release(frame);
+        RCLCPP_ERROR(
+            get_logger(), "camera returned a short BA10 frame");
+        continue;
       }
+
+      int next = 0;
+      {
+        std::lock_guard<std::mutex> lock(raw_mutex_);
+        next = 1 - raw_write_slot_;
+      }
+
+      auto& slot = raw_slots_[next];
+
+      // Copy the MMAP frame, then immediately return the V4L2 buffer.
+      // Acquisition never waits for ISP, VPI, ROS, JPEG, or Foxglove.
+      std::memcpy(
+          slot.pixels.data(), frame.data, expected_bytes);
+
+      slot.timestamp = frame.timestamp;
+      const auto steady_now = std::chrono::steady_clock::now();
+      const auto system_now = std::chrono::system_clock::now();
+      slot.wall_timestamp =
+          system_now +
+          (std::chrono::steady_clock::time_point{frame.timestamp} -
+           steady_now);
+      slot.sequence = ++sequence;
+      slot.valid = true;
+
+      if (!camera_->release(frame)) {
+        RCLCPP_ERROR(get_logger(), "failed to requeue camera buffer");
+        running_.store(false);
+        raw_cv_.notify_all();
+        host_cv_.notify_all();
+        return;
+      }
+
+      {
+        std::lock_guard<std::mutex> lock(raw_mutex_);
+        raw_write_slot_ = next;
+        raw_sequence_ = slot.sequence;
+      }
+      raw_cv_.notify_one();
     }
   }
 
-  bool download(
-      const parallax::cuda::CudaBuffer& source,
-      std::uint8_t* destination,
-      std::size_t host_pitch) {
-    return cudaMemcpy2D(
-               destination,
-               host_pitch,
-               source.data(),
-               source.pitch(),
-               source.rowBytes(),
-               source.height(),
-               cudaMemcpyDeviceToHost) == cudaSuccess;
-  }
-
-  void publishMono(
-      const parallax::core::Product<
-          parallax::isp::RectifiedStereoGrayFrame>& product) {
-    const auto& frame = *product.payload;
-    const auto width = frame.width;
-    const auto height = frame.height;
-
-    if (!download(frame.left, left_gray_.data(), width) ||
-        !download(frame.right, right_gray_.data(), width)) {
-      RCLCPP_ERROR_THROTTLE(
-          get_logger(), *get_clock(), 2000,
-          "rectified mono download failed");
-      return;
-    }
-
-    const auto stamp = productStamp(product.metadata);
-
-    sensor_msgs::msg::Image left;
-    left.header.stamp = stamp;
-    left.header.frame_id = kLeftFrame;
-    left.height = height;
-    left.width = width;
-    left.encoding = "mono8";
-    left.is_bigendian = false;
-    left.step = width;
-    left.data = left_gray_;
-
-    sensor_msgs::msg::Image right;
-    right.header.stamp = stamp;
-    right.header.frame_id = kRightFrame;
-    right.height = height;
-    right.width = width;
-    right.encoding = "mono8";
-    right.is_bigendian = false;
-    right.step = width;
-    right.data = right_gray_;
-
-    left_info_.header.stamp = stamp;
-    right_info_.header.stamp = stamp;
-
-    left_image_pub_->publish(std::move(left));
-    right_image_pub_->publish(std::move(right));
-    left_info_pub_->publish(left_info_);
-    right_info_pub_->publish(right_info_);
-  }
-
-  void publishColorPreview(
-      const parallax::core::Product<
-          parallax::isp::RectifiedStereoFrame>& product) {
-    const auto now = std::chrono::steady_clock::now();
-    const auto interval =
-        std::chrono::duration<double>(
-            1.0 / static_cast<double>(preview_fps_));
-
-    if (has_preview_publish_ &&
-        now - last_preview_publish_ < interval) {
-      return;
-    }
-
-    const auto& frame = *product.payload;
-    const std::size_t pitch =
-        static_cast<std::size_t>(frame.width) * 3U;
-
-    if (!download(frame.left, left_rgb_.data(), pitch)) {
-      RCLCPP_ERROR_THROTTLE(
-          get_logger(), *get_clock(), 2000,
-          "rectified RGB preview download failed");
-      return;
-    }
-
-    cv::Mat rgb(
-        static_cast<int>(frame.height),
-        static_cast<int>(frame.width),
-        CV_8UC3,
-        left_rgb_.data(),
-        pitch);
-    cv::Mat bgr;
-    cv::cvtColor(rgb, bgr, cv::COLOR_RGB2BGR);
-
-    std::vector<std::uint8_t> jpeg;
-    const std::vector<int> parameters{
-        cv::IMWRITE_JPEG_QUALITY, jpeg_quality_};
-    if (!cv::imencode(".jpg", bgr, jpeg, parameters)) {
-      return;
-    }
-
-    sensor_msgs::msg::CompressedImage message;
-    message.header.stamp = productStamp(product.metadata);
-    message.header.frame_id = kLeftFrame;
-    message.format = "jpeg";
-    message.data = std::move(jpeg);
-
-    color_preview_pub_->publish(std::move(message));
-    last_preview_publish_ = now;
-    has_preview_publish_ = true;
-  }
-
-  void publicationLoop() {
-    using namespace std::chrono_literals;
-
-    parallax::core::SourceObservation last_mono{};
-    parallax::core::SourceObservation last_preview{};
+  void computeLoop() {
+    std::uint64_t last_raw = 0;
 
     while (running_.load() && rclcpp::ok()) {
-      // ProductStore is latest-value storage, not a frame queue. If publication
-      // is slower than capture, intermediate observations disappear here rather
-      // than accumulating latency.
-      const auto gray =
-          context_.products().latest<
-              parallax::isp::RectifiedStereoGrayFrame>(
-              ProductId::RectifiedGray);
+      RawSnapshot raw;
 
-      if (gray && gray->valid() &&
-          gray->metadata.observation != last_mono) {
-        if (context_.waitForHost(gray->completion)) {
-          publishMono(*gray);
-          last_mono = gray->metadata.observation;
-        }
+      {
+        std::unique_lock<std::mutex> lock(raw_mutex_);
+        raw_cv_.wait(lock, [&] {
+          return !running_.load() || raw_sequence_ > last_raw;
+        });
+        if (!running_.load()) return;
+
+        const auto& latest = raw_slots_[raw_write_slot_];
+        raw = latest;
+        last_raw = latest.sequence;
       }
 
-      const auto rgb =
-          context_.products().latest<
-              parallax::isp::RectifiedStereoFrame>(
-              ProductId::RectifiedRgb);
+      parallax::camera::RawFrame frame{};
+      frame.width = static_cast<std::uint32_t>(camera_config_.width);
+      frame.height = static_cast<std::uint32_t>(camera_config_.height);
+      frame.data = raw.pixels.data();
+      frame.bytes = raw.pixels.size() * sizeof(std::uint16_t);
+      frame.timestamp = raw.timestamp;
 
-      if (rgb && rgb->valid() &&
-          rgb->metadata.observation != last_preview) {
-        const auto now = std::chrono::steady_clock::now();
-        const auto interval =
-            std::chrono::duration<double>(
-                1.0 / static_cast<double>(preview_fps_));
+      auto isp_output = isp_.acquireOutput();
+      if (!isp_output) continue;
 
-        if ((!has_preview_publish_ ||
-             now - last_preview_publish_ >= interval) &&
-            context_.waitForHost(rgb->completion)) {
-          publishColorPreview(*rgb);
-        }
-
-        // Mark the observation consumed even when preview rate-limited.
-        last_preview = rgb->metadata.observation;
+      if (!isp_.process(frame, *isp_output) || !isp_.synchronize()) {
+        RCLCPP_ERROR_THROTTLE(
+            get_logger(), *get_clock(), 2000, "ISP processing failed");
+        continue;
       }
 
-      std::this_thread::sleep_for(1ms);
+      auto rectified = rectifier_.acquireOutput();
+      if (!rectified) continue;
+
+      auto& preprocess = context_.preprocessLane();
+      if (!rectifier_.process(
+              isp_output->rgb,
+              isp_output->gray,
+              *rectified,
+              preprocess.handle()) ||
+          !preprocess.synchronize()) {
+        RCLCPP_ERROR_THROTTLE(
+            get_logger(), *get_clock(), 2000, "rectification failed");
+        continue;
+      }
+
+      const int next = 1 - host_write_slot_;
+      auto& host = host_slots_[next];
+
+      const auto mono_pitch =
+          static_cast<std::size_t>(rectified->gray.width);
+      const auto rgb_pitch =
+          static_cast<std::size_t>(rectified->rgb.width) * 3U;
+
+      // Host observation is a side branch. One dedicated CUDA stream batches
+      // the three downloads; ROS/JPEG publication happens on separate threads.
+      if (!rectified->gray.left.downloadAsync(
+              host.left_gray.data(), mono_pitch, download_stream_) ||
+          !rectified->gray.right.downloadAsync(
+              host.right_gray.data(), mono_pitch, download_stream_) ||
+          !rectified->rgb.left.downloadAsync(
+              host.left_rgb.data(), rgb_pitch, download_stream_) ||
+          cudaStreamSynchronize(download_stream_) != cudaSuccess) {
+        RCLCPP_ERROR_THROTTLE(
+            get_logger(), *get_clock(), 2000,
+            "rectified host staging failed");
+        continue;
+      }
+
+      host.sequence = raw.sequence;
+      host.wall_timestamp = raw.wall_timestamp;
+
+      {
+        std::lock_guard<std::mutex> lock(host_mutex_);
+        host_write_slot_ = next;
+        host_sequence_ = host.sequence;
+      }
+      host_cv_.notify_all();
+    }
+  }
+
+  void monoPublicationLoop() {
+    std::uint64_t last = 0;
+
+    while (running_.load() && rclcpp::ok()) {
+      RectifiedHostSnapshot frame;
+
+      {
+        std::unique_lock<std::mutex> lock(host_mutex_);
+        host_cv_.wait(lock, [&] {
+          return !running_.load() || host_sequence_ > last;
+        });
+        if (!running_.load()) return;
+
+        frame = host_slots_[host_write_slot_];
+        last = frame.sequence;
+      }
+
+      const auto width = calibration_.metadata().image_width;
+      const auto height = calibration_.metadata().image_height;
+      const auto stamp = wallStamp(frame.wall_timestamp);
+
+      sensor_msgs::msg::Image left;
+      left.header.stamp = stamp;
+      left.header.frame_id = kLeftFrame;
+      left.height = height;
+      left.width = width;
+      left.encoding = "mono8";
+      left.is_bigendian = false;
+      left.step = width;
+      left.data = std::move(frame.left_gray);
+
+      sensor_msgs::msg::Image right;
+      right.header.stamp = stamp;
+      right.header.frame_id = kRightFrame;
+      right.height = height;
+      right.width = width;
+      right.encoding = "mono8";
+      right.is_bigendian = false;
+      right.step = width;
+      right.data = std::move(frame.right_gray);
+
+      left_info_.header.stamp = stamp;
+      right_info_.header.stamp = stamp;
+
+      left_image_pub_->publish(std::move(left));
+      right_image_pub_->publish(std::move(right));
+      left_info_pub_->publish(left_info_);
+      right_info_pub_->publish(right_info_);
+    }
+  }
+
+  void previewPublicationLoop() {
+    using Clock = std::chrono::steady_clock;
+
+    std::uint64_t last = 0;
+    auto next_publish = Clock::now();
+
+    while (running_.load() && rclcpp::ok()) {
+      RectifiedHostSnapshot frame;
+
+      {
+        std::unique_lock<std::mutex> lock(host_mutex_);
+        host_cv_.wait(lock, [&] {
+          return !running_.load() || host_sequence_ > last;
+        });
+        if (!running_.load()) return;
+
+        frame = host_slots_[host_write_slot_];
+        last = frame.sequence;
+      }
+
+      const auto now = Clock::now();
+      if (now < next_publish) continue;
+
+      const auto width = calibration_.metadata().image_width;
+      const auto height = calibration_.metadata().image_height;
+      const std::size_t pitch =
+          static_cast<std::size_t>(width) * 3U;
+
+      cv::Mat rgb(
+          static_cast<int>(height),
+          static_cast<int>(width),
+          CV_8UC3,
+          frame.left_rgb.data(),
+          pitch);
+      cv::Mat bgr;
+      cv::cvtColor(rgb, bgr, cv::COLOR_RGB2BGR);
+
+      std::vector<std::uint8_t> jpeg;
+      const std::vector<int> parameters{
+          cv::IMWRITE_JPEG_QUALITY, jpeg_quality_};
+
+      if (!cv::imencode(".jpg", bgr, jpeg, parameters)) continue;
+
+      sensor_msgs::msg::CompressedImage message;
+      message.header.stamp = wallStamp(frame.wall_timestamp);
+      message.header.frame_id = kLeftFrame;
+      message.format = "jpeg";
+      message.data = std::move(jpeg);
+
+      color_preview_pub_->publish(std::move(message));
+
+      next_publish =
+          now + std::chrono::duration_cast<Clock::duration>(
+                    std::chrono::duration<double>(
+                        1.0 / static_cast<double>(preview_fps_)));
     }
   }
 
@@ -510,12 +596,21 @@ class StereoNode final : public rclcpp::Node {
   std::unique_ptr<parallax::camera::StereoCamera> camera_;
   parallax::isp::ISP isp_{};
   parallax::stereo::StereoRectifier rectifier_{};
-
-  std::unique_ptr<parallax::camera::CameraProducer> camera_producer_;
-  std::unique_ptr<parallax::isp::IspProducer> isp_producer_;
-  std::unique_ptr<parallax::stereo::RectificationProducer>
-      rectification_producer_;
   std::unique_ptr<parallax::isp::AutoController> auto_controller_;
+
+  std::array<RawSnapshot, 2> raw_slots_{};
+  std::mutex raw_mutex_;
+  std::condition_variable raw_cv_;
+  int raw_write_slot_ = 0;
+  std::uint64_t raw_sequence_ = 0;
+
+  std::array<RectifiedHostSnapshot, 2> host_slots_{};
+  std::mutex host_mutex_;
+  std::condition_variable host_cv_;
+  int host_write_slot_ = 0;
+  std::uint64_t host_sequence_ = 0;
+
+  cudaStream_t download_stream_ = nullptr;
 
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr left_image_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr right_image_pub_;
@@ -527,18 +622,14 @@ class StereoNode final : public rclcpp::Node {
   sensor_msgs::msg::CameraInfo left_info_{};
   sensor_msgs::msg::CameraInfo right_info_{};
 
-  std::vector<std::uint8_t> left_gray_;
-  std::vector<std::uint8_t> right_gray_;
-  std::vector<std::uint8_t> left_rgb_;
-
   int preview_fps_ = 20;
   int jpeg_quality_ = 85;
-  std::chrono::steady_clock::time_point last_preview_publish_{};
-  bool has_preview_publish_ = false;
 
   std::atomic<bool> running_{false};
-  std::thread capture_thread_;
-  std::thread publication_thread_;
+  std::thread acquisition_thread_;
+  std::thread compute_thread_;
+  std::thread mono_thread_;
+  std::thread preview_thread_;
   std::thread auto_control_thread_;
 };
 

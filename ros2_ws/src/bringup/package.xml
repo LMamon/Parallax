@@ -14,6 +14,7 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>
   <exec_depend>camera</exec_depend>
+  <exec_depend>isaac_ros_image_proc</exec_depend>
   <exec_depend>isaac_ros_stereo_image_proc</exec_depend>
   <exec_depend>isaac_ros_visual_slam</exec_depend>
   <exec_depend>isaac_ros_nvblox</exec_depend>

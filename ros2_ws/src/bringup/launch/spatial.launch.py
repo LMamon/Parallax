@@ -18,10 +18,16 @@ def generate_launch_description():
         plugin='nvidia::isaac_ros::image_proc::ResizeNode',
         name='spatial_left_resize',
         parameters=[{
+            # ResizeNode resizes; it is not our RGB->mono conversion stage.
+            # Supplying the real input geometry also sizes its GXF pool for
+            # the actual RGB8 960x600 output instead of a mono-sized block.
+            'input_width': 1920,
+            'input_height': 1200,
             'output_width': 960,
             'output_height': 600,
             'keep_aspect_ratio': False,
-            'encoding_desired': 'mono8',
+            'disable_padding': True,
+            'encoding_desired': 'rgb8',
             'input_qos': 'SENSOR_DATA',
             'output_qos': 'SENSOR_DATA',
         }],
@@ -33,15 +39,35 @@ def generate_launch_description():
         ],
     )
 
+    left_mono = ComposableNode(
+        package='isaac_ros_image_proc',
+        plugin='nvidia::isaac_ros::image_proc::ImageFormatConverterNode',
+        name='spatial_left_mono',
+        parameters=[{
+            'image_width': 960,
+            'image_height': 600,
+            'encoding_desired': 'mono8',
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
+        }],
+        remappings=[
+            ('image_raw', '/spatial/left/image_rect'),
+            ('image', '/spatial/left/image_rect_mono'),
+        ],
+    )
+
     right_resize = ComposableNode(
         package='isaac_ros_image_proc',
         plugin='nvidia::isaac_ros::image_proc::ResizeNode',
         name='spatial_right_resize',
         parameters=[{
+            'input_width': 1920,
+            'input_height': 1200,
             'output_width': 960,
             'output_height': 600,
             'keep_aspect_ratio': False,
-            'encoding_desired': 'mono8',
+            'disable_padding': True,
+            'encoding_desired': 'rgb8',
             'input_qos': 'SENSOR_DATA',
             'output_qos': 'SENSOR_DATA',
         }],
@@ -50,6 +76,23 @@ def generate_launch_description():
             ('camera_info', '/stereo/right/camera_info'),
             ('resize/image', '/spatial/right/image_rect'),
             ('resize/camera_info', '/spatial/right/camera_info'),
+        ],
+    )
+
+    right_mono = ComposableNode(
+        package='isaac_ros_image_proc',
+        plugin='nvidia::isaac_ros::image_proc::ImageFormatConverterNode',
+        name='spatial_right_mono',
+        parameters=[{
+            'image_width': 960,
+            'image_height': 600,
+            'encoding_desired': 'mono8',
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
+        }],
+        remappings=[
+            ('image_raw', '/spatial/right/image_rect'),
+            ('image', '/spatial/right/image_rect_mono'),
         ],
     )
 
@@ -101,9 +144,9 @@ def generate_launch_description():
             'base_frame': 'base_link',
         }],
         remappings=[
-            ('visual_slam/image_0', '/spatial/left/image_rect'),
+            ('visual_slam/image_0', '/spatial/left/image_rect_mono'),
             ('visual_slam/camera_info_0', '/spatial/left/camera_info'),
-            ('visual_slam/image_1', '/spatial/right/image_rect'),
+            ('visual_slam/image_1', '/spatial/right/image_rect_mono'),
             ('visual_slam/camera_info_1', '/spatial/right/camera_info'),
         ],
     )
@@ -127,6 +170,8 @@ def generate_launch_description():
         composable_node_descriptions=[
             left_resize,
             right_resize,
+            left_mono,
+            right_mono,
             disparity,
             depth,
             visual_slam,

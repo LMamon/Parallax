@@ -36,6 +36,7 @@ docker exec \
         source install/setup.bash
 
         ros2 pkg prefix bringup >/dev/null
+        ros2 pkg prefix camera >/dev/null
         ros2 pkg prefix isaac_ros_visual_slam >/dev/null
         ros2 pkg prefix isaac_ros_nvblox >/dev/null
         ros2 pkg prefix isaac_ros_stereo_image_proc >/dev/null

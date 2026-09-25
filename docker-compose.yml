@@ -15,10 +15,9 @@ services:
     stdin_open: true
     tty: true
 
-    # Keep hardware access explicit. Add the C1 serial device when its ROS
-    # driver is integrated rather than granting the container every host device.
-    devices:
-      - /dev/video0:/dev/video0
+    # Match the known-good Jetson/Arducam runtime. The Tegra camera path is
+    # not isolated to /dev/video0 even though V4L2 opens that node directly.
+    privileged: true
 
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-31}

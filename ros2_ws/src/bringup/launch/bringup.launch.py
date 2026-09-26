@@ -29,6 +29,7 @@ def generate_launch_description():
             # Visualization is explicitly lower-rate than computation.
             'preview_fps': 12,
             'jpeg_quality': 80,
+            'diagnostics': True,
         }],
     )
 

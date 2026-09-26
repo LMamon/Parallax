@@ -128,6 +128,7 @@ class StereoNode final : public rclcpp::Node {
 
     preview_fps_ = declare_parameter<int>("preview_fps", 20);
     jpeg_quality_ = declare_parameter<int>("jpeg_quality", 85);
+    diagnostics_ = declare_parameter<bool>("diagnostics", false);
 
     if (preview_fps_ < 1 || jpeg_quality_ < 1 || jpeg_quality_ > 100) {
       throw std::runtime_error("invalid preview configuration");
@@ -318,12 +319,21 @@ class StereoNode final : public rclcpp::Node {
 
   void autoControlLoop() {
     using namespace std::chrono_literals;
+    auto diag_start = std::chrono::steady_clock::now();
+    std::uint64_t diag_stats = 0;
+    std::uint64_t diag_exposure = 0;
+    std::uint64_t diag_gain = 0;
+    std::uint64_t diag_wb = 0;
 
     while (running_.load() && rclcpp::ok() && auto_controller_) {
       parallax::isp::IspStatistics statistics{};
 
       if (isp_.tryGetStatistics(statistics)) {
+        ++diag_stats;
         const auto update = auto_controller_->update(statistics);
+        if (update.exposure_changed) ++diag_exposure;
+        if (update.gain_changed) ++diag_gain;
+        if (update.white_balance_changed) ++diag_wb;
 
         if (update.gain_changed &&
             !camera_->setControl(
@@ -350,6 +360,22 @@ class StereoNode final : public rclcpp::Node {
         }
       }
 
+      const auto diag_now = std::chrono::steady_clock::now();
+      if (diagnostics_ &&
+          diag_now - diag_start >= std::chrono::seconds(5)) {
+        const double seconds =
+            std::chrono::duration<double>(diag_now - diag_start).count();
+        RCLCPP_INFO(
+            get_logger(),
+            "camera_diag auto_stats=%.2fHz exposure=%llu gain=%llu wb=%llu",
+            static_cast<double>(diag_stats) / seconds,
+            static_cast<unsigned long long>(diag_exposure),
+            static_cast<unsigned long long>(diag_gain),
+            static_cast<unsigned long long>(diag_wb));
+        diag_stats = diag_exposure = diag_gain = diag_wb = 0;
+        diag_start = diag_now;
+      }
+
       std::this_thread::sleep_for(5ms);
     }
   }
@@ -358,8 +384,18 @@ class StereoNode final : public rclcpp::Node {
     unsigned failures = 0;
     std::uint64_t sequence = 0;
 
+    auto boundary_window_start = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::duration boundary_capture_time{};
+    std::chrono::steady_clock::duration boundary_post_capture_time{};
+    std::uint64_t boundary_frames = 0;
+    auto diag_start = std::chrono::steady_clock::now();
+    std::uint64_t diag_frames = 0;
+    std::chrono::nanoseconds diag_copy{0};
+
     while (running_.load() && rclcpp::ok()) {
+      const auto compute_start = std::chrono::steady_clock::now();
       parallax::camera::RawFrame frame{};
+      const auto boundary_capture_start = std::chrono::steady_clock::now();
       if (!camera_->capture(frame)) {
         if (++failures >= 10) {
           RCLCPP_ERROR(
@@ -372,6 +408,7 @@ class StereoNode final : public rclcpp::Node {
         continue;
       }
 
+      const auto boundary_capture_end = std::chrono::steady_clock::now();
       failures = 0;
 
       const std::size_t expected_bytes =
@@ -396,8 +433,10 @@ class StereoNode final : public rclcpp::Node {
 
       // Copy the MMAP frame, then immediately return the V4L2 buffer.
       // Acquisition never waits for ISP, VPI, ROS, JPEG, or Foxglove.
+      const auto copy_start = std::chrono::steady_clock::now();
       std::memcpy(
           slot.pixels.data(), frame.data, expected_bytes);
+      diag_copy += std::chrono::steady_clock::now() - copy_start;
 
       slot.timestamp = frame.timestamp;
       const auto steady_now = std::chrono::steady_clock::now();
@@ -417,19 +456,77 @@ class StereoNode final : public rclcpp::Node {
         return;
       }
 
+      const auto boundary_iteration_end = std::chrono::steady_clock::now();
+      boundary_capture_time += boundary_capture_end - boundary_capture_start;
+      boundary_post_capture_time += boundary_iteration_end - boundary_capture_end;
+      ++boundary_frames;
+
+      const auto boundary_window = boundary_iteration_end - boundary_window_start;
+      if (diagnostics_ &&
+          boundary_window >= std::chrono::seconds(5) &&
+          boundary_frames != 0) {
+        const double window_s =
+            std::chrono::duration<double>(boundary_window).count();
+        const double capture_ms =
+            std::chrono::duration<double, std::milli>(
+                boundary_capture_time).count() /
+            static_cast<double>(boundary_frames);
+        const double post_ms =
+            std::chrono::duration<double, std::milli>(
+                boundary_post_capture_time).count() /
+            static_cast<double>(boundary_frames);
+
+        RCLCPP_INFO(
+            get_logger(),
+            "camera_boundary dqbuf=%.3fms/frame post_capture=%.3fms/frame "
+            "completed=%.2fHz frames=%llu",
+            capture_ms,
+            post_ms,
+            static_cast<double>(boundary_frames) / window_s,
+            static_cast<unsigned long long>(boundary_frames));
+
+        boundary_window_start = boundary_iteration_end;
+        boundary_capture_time = {};
+        boundary_post_capture_time = {};
+        boundary_frames = 0;
+      }
+
       {
         std::lock_guard<std::mutex> lock(raw_mutex_);
         raw_write_slot_ = next;
         raw_sequence_ = slot.sequence;
       }
       raw_cv_.notify_one();
+      ++diag_frames;
+
+      const auto diag_now = std::chrono::steady_clock::now();
+      if (diagnostics_ &&
+          diag_now - diag_start >= std::chrono::seconds(5)) {
+        const double seconds =
+            std::chrono::duration<double>(diag_now - diag_start).count();
+        const double copy_ms = diag_frames
+            ? std::chrono::duration<double, std::milli>(diag_copy).count() /
+                  static_cast<double>(diag_frames)
+            : 0.0;
+        RCLCPP_INFO(
+            get_logger(), "camera_diag capture=%.2fHz raw_copy=%.3fms/frame",
+            static_cast<double>(diag_frames) / seconds, copy_ms);
+        diag_frames = 0;
+        diag_copy = std::chrono::nanoseconds{0};
+        diag_start = diag_now;
+      }
     }
   }
 
   void computeLoop() {
     std::uint64_t last_raw = 0;
+    auto diag_start = std::chrono::steady_clock::now();
+    std::uint64_t diag_frames = 0;
+    std::uint64_t diag_skipped = 0;
+    std::chrono::nanoseconds diag_compute{0};
 
     while (running_.load() && rclcpp::ok()) {
+      const auto compute_start = std::chrono::steady_clock::now();
       RawSnapshot raw;
 
       {
@@ -441,6 +538,9 @@ class StereoNode final : public rclcpp::Node {
 
         const auto& latest = raw_slots_[raw_write_slot_];
         raw = latest;
+        if (last_raw != 0 && latest.sequence > last_raw + 1) {
+          diag_skipped += latest.sequence - last_raw - 1;
+        }
         last_raw = latest.sequence;
       }
 
@@ -475,7 +575,11 @@ class StereoNode final : public rclcpp::Node {
         continue;
       }
 
-      const int next = 1 - host_write_slot_;
+      int next = 0;
+      {
+        std::lock_guard<std::mutex> lock(host_mutex_);
+        next = 1 - host_write_slot_;
+      }
       auto& host = host_slots_[next];
 
       const auto rgb_pitch =
@@ -504,6 +608,28 @@ class StereoNode final : public rclcpp::Node {
         host_sequence_ = host.sequence;
       }
       host_cv_.notify_all();
+      diag_compute += std::chrono::steady_clock::now() - compute_start;
+      ++diag_frames;
+
+      const auto diag_now = std::chrono::steady_clock::now();
+      if (diagnostics_ &&
+          diag_now - diag_start >= std::chrono::seconds(5)) {
+        const double seconds =
+            std::chrono::duration<double>(diag_now - diag_start).count();
+        const double compute_ms = diag_frames
+            ? std::chrono::duration<double, std::milli>(diag_compute).count() /
+                  static_cast<double>(diag_frames)
+            : 0.0;
+        RCLCPP_INFO(
+            get_logger(),
+            "camera_diag compute=%.2fHz skipped=%llu total=%.3fms/frame",
+            static_cast<double>(diag_frames) / seconds,
+            static_cast<unsigned long long>(diag_skipped), compute_ms);
+        diag_frames = 0;
+        diag_skipped = 0;
+        diag_compute = std::chrono::nanoseconds{0};
+        diag_start = diag_now;
+      }
     }
   }
 
@@ -660,6 +786,7 @@ class StereoNode final : public rclcpp::Node {
 
   int preview_fps_ = 20;
   int jpeg_quality_ = 85;
+  bool diagnostics_ = false;
 
   std::atomic<bool> running_{false};
   std::thread acquisition_thread_;

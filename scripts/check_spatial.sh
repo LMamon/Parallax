@@ -16,8 +16,10 @@ source /workspace/Parallax/ros2_ws/install/setup.bash
 
 fail=0
 
+node_list="$(ros2 node list)"
+
 require_node() {
-  if ros2 node list | grep -qx "$1"; then
+  if grep -Fxq "$1" <<<"$node_list"; then
     printf "PASS node %s\n" "$1"
   else
     printf "FAIL node %s\n" "$1"
@@ -80,7 +82,8 @@ rm -f /tmp/parallax_tf_check
 
 echo
 echo "=== nvblox ESDF interface ==="
-if ros2 service list | grep -qx /nvblox_node/get_esdf_and_gradient; then
+service_list="$(ros2 service list)"
+if grep -Fxq /nvblox_node/get_esdf_and_gradient <<<"$service_list"; then
   echo "PASS /nvblox_node/get_esdf_and_gradient"
 else
   echo "FAIL /nvblox_node/get_esdf_and_gradient"
@@ -89,11 +92,8 @@ fi
 
 echo
 echo "=== producer rates ==="
-echo "depth:"
-timeout 8 ros2 topic hz /stereo/depth --qos-reliability best_effort 2>/dev/null || true
-echo
-echo "odometry:"
-timeout 8 ros2 topic hz /visual_slam/tracking/odometry 2>/dev/null || true
+echo "See camera_diag in T1 for source/compute rates."
+echo "Use nvblox shutdown statistics for integrated depth rate."
 
 exit "$fail"
 '

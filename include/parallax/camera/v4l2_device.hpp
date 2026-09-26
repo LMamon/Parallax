@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <linux/videodev2.h>
@@ -46,6 +47,7 @@ namespace parallax::camera {
             bool setFormat(std::uint32_t width, std::uint32_t height, std::uint32_t fourcc);
 
             bool setControl(std::uint32_t id, std::int32_t value);
+            bool setControls(const std::vector<std::pair<std::uint32_t, std::int32_t>>& controls);
             bool getControl(std::uint32_t id, std::int32_t& value);
             bool getControlRange(std::uint32_t id, ControlRange& range) const;
 

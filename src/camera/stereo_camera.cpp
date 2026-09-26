@@ -6,9 +6,8 @@
 
 #include <linux/videodev2.h>
 #include <iostream>
+#include <iterator>
 #include <utility>
-#include <thread>
-#include <chrono>
 
 namespace parallax::camera {
 
@@ -26,54 +25,39 @@ namespace parallax::camera {
             logMessage("StereoCamera::initialize: camera device is unavailable");
             return false;
         }
-
         if (!device_->open()) {
             std::cout << "open\n";
             return false;
         }
 
-        if (!configureFormat()) {
-            std::cout << "configure format\n";
-            shutdown();
-            return false;
-        }
-        
-        // NOTE:
-        // The Jetson/Arducam driver resets several sensor controls during
-        // VIDIOC_STREAMON, so controls are applied after startStreaming().
-        // Do not move configureControls() before STREAMON unless the driver
-        // behavior changes.
-
-        if (!device_->initializeStreaming()) {
-            std::cout << "initialize streaming\n";
-            shutdown();
-            return false;
-        }
-
-        if (!device_->startStreaming()) {
-            std::cout << "start streaming\n";
-            shutdown();
-            return false;
-        }
-        /*
-        * The Arducam/Jetson driver resets exposure, gain, and frame rate
-        * to defaults during STREAMON. Reapply the YAML configuration after
-        * streaming has started.
-        */
+        // Match the known-good v4l2-ctl transaction.
         if (!configureControls()) {
             std::cout << "configure controls\n";
             shutdown();
             return false;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        initialized_ = true;
+        if (!configureFormat()) {
+            std::cout << "configure format\n";
+            shutdown();
+            return false;
+        }
+        if (!device_->initializeStreaming()) {
+            std::cout << "initialize streaming\n";
+            shutdown();
+            return false;
+        }
+        if (!device_->startStreaming()) {
+            std::cout << "start streaming\n";
+            shutdown();
+            return false;
+        }
 
+        initialized_ = true;
         if (!warmup()) {
             std::cout << "warmup\n";
             shutdown();
             return false;
         }
-
         return true;
     }
 
@@ -174,42 +158,32 @@ namespace parallax::camera {
     }
 
     bool StereoCamera::configureControls() {
-        const ControlSetting settings[] = {{controls::AnalogGain,
-                                            static_cast<std::int32_t>(config_.analogue_gain),
-                                            "analogue_gain"},
-                                        {controls::FrameRate,
-                                            static_cast<std::int32_t>(config_.frame_rate),
-                                            "frame_rate"},
-                                        {controls::TriggerMode,
-                                            static_cast<std::int32_t>(config_.trigger_mode),
-                                            "trigger_mode"},
-                                        {controls::DisableFrameTimeout,
-                                            static_cast<std::int32_t>(config_.disable_frame_timeout),
-                                            "disable_frame_timeout"},
-                                        {controls::FrameTimeout,
-                                            static_cast<std::int32_t>(config_.frame_timeout),
-                                            "frame_timeout"},
-                                        {controls::HorizontalFlip,
-                                            static_cast<std::int32_t>(config_.horizontal_flip),
-                                            "horizontal_flip"},
-                                        {controls::VerticalFlip,
-                                            static_cast<std::int32_t>(config_.vertical_flip),
-                                            "vertical_flip"},
-                                        {controls::Exposure,
-                                            static_cast<std::int32_t>(config_.exposure),
-                                            "exposure"}
+        const ControlSetting settings[] = {
+            {controls::AnalogGain, static_cast<std::int32_t>(config_.analogue_gain), "analogue_gain"},
+            {controls::FrameRate, static_cast<std::int32_t>(config_.frame_rate), "frame_rate"},
+            {controls::TriggerMode, static_cast<std::int32_t>(config_.trigger_mode), "trigger_mode"},
+            {controls::DisableFrameTimeout, static_cast<std::int32_t>(config_.disable_frame_timeout), "disable_frame_timeout"},
+            {controls::FrameTimeout, static_cast<std::int32_t>(config_.frame_timeout), "frame_timeout"},
+            {controls::HorizontalFlip, static_cast<std::int32_t>(config_.horizontal_flip), "horizontal_flip"},
+            {controls::VerticalFlip, static_cast<std::int32_t>(config_.vertical_flip), "vertical_flip"},
+            {controls::Exposure, static_cast<std::int32_t>(config_.exposure), "exposure"},
         };
 
+        std::vector<std::pair<std::uint32_t, std::int32_t>> values;
+        values.reserve(std::size(settings));
+        for (const auto& setting : settings)
+            values.emplace_back(setting.id, setting.value);
+
+        if (!device_->setControls(values)) {
+            logMessage("Failed to configure camera controls");
+            return false;
+        }
+
         for (const auto& setting : settings) {
-            if (!device_->setControl(setting.id, setting.value)) {
-                logError("Failed to configure camera control", setting.name);
-                return false;
-            }
-            int32_t actual{};
-            if (device_->getControl(setting.id, actual)) {
+            std::int32_t actual{};
+            if (device_->getControl(setting.id, actual))
                 std::cout << setting.name << ": requested " << setting.value
                           << " actual " << actual << '\n';
-            }
         }
         return true;
     }

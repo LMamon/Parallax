@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstring>
 #include <iostream>
+#include <map>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/ioctl.h>
@@ -159,6 +161,39 @@ namespace parallax::camera {
             return false;
         }
 
+        return true;
+    }
+
+    bool V4L2Device::setControls(
+        const std::vector<std::pair<std::uint32_t, std::int32_t>>& controls) {
+        if (!isOpen()) {
+            logMessage("setControls: device is not open");
+            return false;
+        }
+        if (controls.empty()) return true;
+
+        std::map<std::uint32_t, std::vector<v4l2_ext_control>> grouped;
+        for (const auto& [id, value] : controls) {
+            v4l2_ext_control control{};
+            control.id = id;
+            control.value = value;
+            grouped[V4L2_CTRL_ID2WHICH(id)].push_back(control);
+        }
+
+        for (auto& [which, values] : grouped) {
+            v4l2_ext_controls ext{};
+            ext.which = which;
+            ext.count = static_cast<std::uint32_t>(values.size());
+            ext.controls = values.data();
+
+            if (::ioctl(fd_, VIDIOC_S_EXT_CTRLS, &ext) < 0) {
+                std::cerr << "VIDIOC_S_EXT_CTRLS failed for class 0x"
+                          << std::hex << which << std::dec
+                          << " at control index " << ext.error_idx
+                          << ": " << std::strerror(errno) << '\n';
+                return false;
+            }
+        }
         return true;
     }
 
@@ -370,10 +405,37 @@ namespace parallax::camera {
         static std::chrono::steady_clock::duration diagnostic_poll_time{};
         static std::chrono::steady_clock::duration diagnostic_dqbuf_time{};
         static std::uint64_t diagnostic_dequeues = 0;
+        static bool diagnostic_have_previous = false;
+        static std::uint32_t diagnostic_previous_sequence = 0;
+        static std::chrono::nanoseconds diagnostic_previous_timestamp{};
+        static std::uint64_t diagnostic_sequence_advance = 0;
+        static std::uint64_t diagnostic_sequence_gaps = 0;
+        static std::chrono::nanoseconds diagnostic_timestamp_advance{};
+
+        const auto driver_timestamp = toTimestamp(buffer.timestamp);
 
         diagnostic_poll_time += poll_elapsed;
         diagnostic_dqbuf_time += dqbuf_elapsed;
         ++diagnostic_dequeues;
+
+        if (diagnostic_have_previous) {
+            const auto sequence_delta =
+                static_cast<std::uint32_t>(buffer.sequence - diagnostic_previous_sequence);
+            const auto timestamp_delta =
+                driver_timestamp - diagnostic_previous_timestamp;
+
+            diagnostic_sequence_advance += sequence_delta;
+            if (sequence_delta > 1U) {
+                diagnostic_sequence_gaps += sequence_delta - 1U;
+            }
+            if (timestamp_delta.count() > 0) {
+                diagnostic_timestamp_advance += timestamp_delta;
+            }
+        }
+
+        diagnostic_previous_sequence = buffer.sequence;
+        diagnostic_previous_timestamp = driver_timestamp;
+        diagnostic_have_previous = true;
 
         const auto diagnostic_now = std::chrono::steady_clock::now();
         const auto diagnostic_window = diagnostic_now - diagnostic_window_start;
@@ -390,12 +452,33 @@ namespace parallax::camera {
                        diagnostic_dqbuf_time).count() / count
                 << "ms/frame dequeued="
                 << count / seconds
-                << "Hz frames=" << diagnostic_dequeues << '\n';
+                << "Hz frames=" << diagnostic_dequeues;
+
+            if (diagnostic_dequeues > 1) {
+                const auto intervals =
+                    static_cast<double>(diagnostic_dequeues - 1);
+                std::cout
+                    << " seq=" << buffer.sequence
+                    << " seq_step="
+                    << static_cast<double>(diagnostic_sequence_advance) / intervals
+                    << " seq_gaps=" << diagnostic_sequence_gaps
+                    << " driver_dt="
+                    << std::chrono::duration<double, std::milli>(
+                           diagnostic_timestamp_advance).count() / intervals
+                    << "ms";
+            }
+
+            std::cout
+                << " flags=0x" << std::hex << buffer.flags << std::dec
+                << '\n';
 
             diagnostic_window_start = diagnostic_now;
             diagnostic_poll_time = {};
             diagnostic_dqbuf_time = {};
             diagnostic_dequeues = 0;
+            diagnostic_sequence_advance = 0;
+            diagnostic_sequence_gaps = 0;
+            diagnostic_timestamp_advance = {};
         }
 
         if (buffer.index >= buffers_.size()) {
@@ -426,7 +509,7 @@ namespace parallax::camera {
         frame.fourcc = fourcc_;
         frame.data = mapped.start;
         frame.bytes = buffer.bytesused;
-        frame.timestamp = toTimestamp(buffer.timestamp);
+        frame.timestamp = driver_timestamp;
         frame.buffer_index = buffer.index;
 
         return true;   

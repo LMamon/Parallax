@@ -281,34 +281,6 @@ namespace parallax::stereo {
             return false;
         }
 
-        status = vpiSubmitRemap(stream,
-                                VPI_BACKEND_CUDA,
-                                left_remap_,
-                                input.gray_left.handle(),
-                                output.gray_left_wrapper.handle(),
-                                VPI_INTERP_LINEAR,
-                                VPI_BORDER_ZERO,
-                                0);
-
-        if (status != VPI_SUCCESS) {
-            logVpiError("Failed to submit left grayscale remap", status);
-            return false;
-        }
-
-        status = vpiSubmitRemap(stream,
-                                VPI_BACKEND_CUDA,
-                                right_remap_,
-                                input.gray_right.handle(),
-                                output.gray_right_wrapper.handle(),
-                                VPI_INTERP_LINEAR,
-                                VPI_BORDER_ZERO,
-                                0);
-
-        if (status != VPI_SUCCESS) {
-            logVpiError("Failed to submit right grayscale remap", status);
-            return false;
-        }
-
         latest_output_ = &output;
         return true;
     }

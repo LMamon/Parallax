@@ -60,23 +60,6 @@ def generate_launch_description():
         ],
     )
 
-    left_mono = ComposableNode(
-        package='isaac_ros_image_proc',
-        plugin='nvidia::isaac_ros::image_proc::ImageFormatConverterNode',
-        name='spatial_left_mono',
-        parameters=[{
-            'image_width': 960,
-            'image_height': 600,
-            'encoding_desired': 'mono8',
-            'input_qos': 'SENSOR_DATA',
-            'output_qos': 'SENSOR_DATA',
-        }],
-        remappings=[
-            ('image_raw', '/spatial/left/image_rect'),
-            ('image', '/spatial/left/image_rect_mono'),
-        ],
-    )
-
     right_resize = ComposableNode(
         package='isaac_ros_image_proc',
         plugin='nvidia::isaac_ros::image_proc::ResizeNode',
@@ -97,23 +80,6 @@ def generate_launch_description():
             ('camera_info', '/stereo/right/camera_info'),
             ('resize/image', '/spatial/right/image_rect'),
             ('resize/camera_info', '/spatial/right/camera_info_unused'),
-        ],
-    )
-
-    right_mono = ComposableNode(
-        package='isaac_ros_image_proc',
-        plugin='nvidia::isaac_ros::image_proc::ImageFormatConverterNode',
-        name='spatial_right_mono',
-        parameters=[{
-            'image_width': 960,
-            'image_height': 600,
-            'encoding_desired': 'mono8',
-            'input_qos': 'SENSOR_DATA',
-            'output_qos': 'SENSOR_DATA',
-        }],
-        remappings=[
-            ('image_raw', '/spatial/right/image_rect'),
-            ('image', '/spatial/right/image_rect_mono'),
         ],
     )
 
@@ -171,9 +137,9 @@ def generate_launch_description():
             'base_frame': 'base_link',
         }],
         remappings=[
-            ('visual_slam/image_0', '/spatial/left/image_rect_mono'),
+            ('visual_slam/image_0', '/spatial/left/image_rect'),
             ('visual_slam/camera_info_0', '/spatial/left/camera_info'),
-            ('visual_slam/image_1', '/spatial/right/image_rect_mono'),
+            ('visual_slam/image_1', '/spatial/right/image_rect'),
             ('visual_slam/camera_info_1', '/spatial/right/camera_info'),
         ],
     )
@@ -198,8 +164,6 @@ def generate_launch_description():
             camera,
             left_resize,
             right_resize,
-            left_mono,
-            right_mono,
             disparity,
             depth,
             visual_slam,

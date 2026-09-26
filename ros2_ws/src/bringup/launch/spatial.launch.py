@@ -6,6 +6,27 @@ from launch.substitutions import PathJoinSubstitution
 
 
 def generate_launch_description():
+    share = FindPackageShare('bringup')
+    camera_config = PathJoinSubstitution([share, 'config', 'camera.yaml'])
+    isp_config = PathJoinSubstitution([share, 'config', 'isp.yaml'])
+    calibration_dir = (
+        '/workspace/Parallax/config/camera/calibration/results/rectification'
+    )
+
+    camera = ComposableNode(
+        package='camera',
+        plugin='parallax::ros::StereoNode',
+        name='stereo_camera',
+        parameters=[{
+            'camera_config': camera_config,
+            'isp_config': isp_config,
+            'calibration_dir': calibration_dir,
+            'preview_fps': 12,
+            'jpeg_quality': 80,
+            'diagnostics': True,
+        }],
+    )
+
     spatial_config = PathJoinSubstitution([
         FindPackageShare('bringup'), 'config', 'spatial.yaml'
     ])
@@ -32,7 +53,7 @@ def generate_launch_description():
             'output_qos': 'SENSOR_DATA',
         }],
         remappings=[
-            ('image', '/stereo/left/image_rect'),
+            ('image', '/compute/stereo/left/image_rect'),
             ('camera_info', '/stereo/left/camera_info'),
             ('resize/image', '/spatial/left/image_rect'),
             ('resize/camera_info', '/spatial/left/camera_info_unused'),
@@ -72,7 +93,7 @@ def generate_launch_description():
             'output_qos': 'SENSOR_DATA',
         }],
         remappings=[
-            ('image', '/stereo/right/image_rect'),
+            ('image', '/compute/stereo/right/image_rect'),
             ('camera_info', '/stereo/right/camera_info'),
             ('resize/image', '/spatial/right/image_rect'),
             ('resize/camera_info', '/spatial/right/camera_info_unused'),
@@ -174,6 +195,7 @@ def generate_launch_description():
         package='rclcpp_components',
         executable='component_container_mt',
         composable_node_descriptions=[
+            camera,
             left_resize,
             right_resize,
             left_mono,

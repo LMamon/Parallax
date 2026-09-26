@@ -17,22 +17,6 @@ def generate_launch_description():
         '/workspace/Parallax/config/camera/calibration/results/rectification'
     )
 
-    camera = Node(
-        package='camera',
-        executable='stereo_node',
-        name='stereo_camera',
-        output='screen',
-        parameters=[{
-            'camera_config': camera_config,
-            'isp_config': isp_config,
-            'calibration_dir': calibration_dir,
-            # Visualization is explicitly lower-rate than computation.
-            'preview_fps': 12,
-            'jpeg_quality': 80,
-            'diagnostics': True,
-        }],
-    )
-
     spatial = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(spatial_launch)
     )
@@ -48,4 +32,4 @@ def generate_launch_description():
         }],
     )
 
-    return LaunchDescription([camera, spatial, foxglove])
+    return LaunchDescription([spatial, foxglove])

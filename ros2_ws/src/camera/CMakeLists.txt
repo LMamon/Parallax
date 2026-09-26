@@ -3,7 +3,10 @@ project(camera LANGUAGES CXX)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(isaac_ros_managed_nitros REQUIRED)
+find_package(isaac_ros_nitros_image_type REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgcodecs imgproc)
 find_package(CUDAToolkit REQUIRED)
 find_package(Threads REQUIRED)
@@ -13,8 +16,6 @@ find_package(vpi 3.2 REQUIRED)
 set(PARALLAX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 set(PARALLAX_BUILD "${PARALLAX_ROOT}/build")
 
-# Temporary compatibility seam: sensor-specific capture, ISP and calibrated
-# remap stay inherited until the ROS/Isaac replacement passes hardware gates.
 set(INHERITED_LIBS
   "${PARALLAX_BUILD}/src/stereo/libparallax_stereo.a"
   "${PARALLAX_BUILD}/src/isp/libparallax_isp.a"
@@ -32,13 +33,19 @@ foreach(lib IN LISTS INHERITED_LIBS)
   endif()
 endforeach()
 
-add_executable(stereo_node src/stereo_node.cpp)
-target_compile_features(stereo_node PRIVATE cxx_std_17)
-target_include_directories(stereo_node PRIVATE "${PARALLAX_ROOT}/include")
-ament_target_dependencies(stereo_node rclcpp sensor_msgs)
+add_library(stereo_component SHARED src/stereo_node.cpp)
+target_compile_features(stereo_component PRIVATE cxx_std_17)
+target_include_directories(stereo_component PRIVATE "${PARALLAX_ROOT}/include")
+ament_target_dependencies(
+  stereo_component
+  rclcpp
+  rclcpp_components
+  sensor_msgs
+  isaac_ros_managed_nitros
+  isaac_ros_nitros_image_type
+)
 
-# Humble's ament_target_dependencies uses the plain link signature.
-target_link_libraries(stereo_node
+target_link_libraries(stereo_component
   ${INHERITED_LIBS}
   CUDA::cudart
   CUDA::nppicc
@@ -46,9 +53,15 @@ target_link_libraries(stereo_node
   Threads::Threads
   vpi
   dl
+  ${OpenCV_LIBS}
 )
 
-target_link_libraries(stereo_node ${OpenCV_LIBS})
+rclcpp_components_register_nodes(stereo_component "parallax::ros::StereoNode")
 
-install(TARGETS stereo_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS stereo_component
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
 ament_package()

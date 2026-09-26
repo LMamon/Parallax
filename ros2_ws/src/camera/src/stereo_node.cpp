@@ -17,6 +17,20 @@
 #include <opencv2/imgproc.hpp>
 
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_components/register_node_macro.hpp>
+#include <isaac_ros_managed_nitros/managed_nitros_publisher.hpp>
+#include <isaac_ros_nitros_image_type/nitros_image.hpp>
+#include <isaac_ros_nitros/types/type_adapter_nitros_context.hpp>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wpedantic"
+#include <gxf/core/entity.hpp>
+#include <gxf/core/gxf.h>
+#include <gxf/multimedia/video.hpp>
+#include <gxf/std/timestamp.hpp>
+#pragma GCC diagnostic pop
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/compressed_image.hpp>
 #include <sensor_msgs/msg/image.hpp>
@@ -35,7 +49,7 @@
 #include <thread>
 #include <vector>
 
-namespace {
+namespace parallax::ros {
 
 constexpr char kLeftFrame[] = "left_camera_optical_frame";
 constexpr char kRightFrame[] = "right_camera_optical_frame";
@@ -116,9 +130,72 @@ struct RectifiedHostSnapshot {
   std::chrono::system_clock::time_point wall_timestamp{};
 };
 
+nvidia::isaac_ros::nitros::NitrosImage makePooledNitrosImage(
+    const std::shared_ptr<parallax::stereo::StereoRectifier::OutputSlot>& owner,
+    const parallax::cuda::CudaBuffer& buffer,
+    const std_msgs::msg::Header& header) {
+  using namespace nvidia;
+
+  auto entity = gxf::Entity::New(
+      isaac_ros::nitros::GetTypeAdapterNitrosContext().getContext());
+  if (!entity) {
+    throw std::runtime_error("failed to create NITROS image entity");
+  }
+
+  auto video = entity->add<gxf::VideoBuffer>(header.frame_id.c_str());
+  if (!video) {
+    throw std::runtime_error("failed to add NITROS video buffer");
+  }
+
+  gxf::ColorPlane plane("RGB", 3, static_cast<std::uint32_t>(buffer.pitch()));
+  plane.width = buffer.width();
+  plane.height = buffer.height();
+  plane.offset = 0;
+  plane.size = buffer.allocatedBytes();
+
+  gxf::VideoBufferInfo info{
+      buffer.width(),
+      buffer.height(),
+      gxf::VideoFormat::GXF_VIDEO_FORMAT_RGB,
+      std::vector<gxf::ColorPlane>{plane},
+      gxf::SurfaceLayout::GXF_SURFACE_LAYOUT_PITCH_LINEAR,
+  };
+
+  auto held_owner = owner;
+  auto wrapped = video.value()->wrapMemory(
+      info,
+      buffer.allocatedBytes(),
+      gxf::MemoryStorageType::kDevice,
+      const_cast<void*>(buffer.data()),
+      [held_owner = std::move(held_owner)](void*) mutable {
+        held_owner.reset();
+        return gxf::Success;
+      });
+  if (!wrapped) {
+    throw std::runtime_error("failed to wrap rectifier CUDA buffer for NITROS");
+  }
+
+  auto timestamp = entity->add<gxf::Timestamp>("timestamp");
+  if (!timestamp) {
+    throw std::runtime_error("failed to add NITROS image timestamp");
+  }
+  timestamp.value()->acqtime =
+      static_cast<std::uint64_t>(header.stamp.sec) * 1000000000ULL +
+      static_cast<std::uint64_t>(header.stamp.nanosec);
+
+  isaac_ros::nitros::NitrosImage image{};
+  image.handle = entity->eid();
+  image.frame_id = header.frame_id;
+  GxfEntityRefCountInc(
+      isaac_ros::nitros::GetTypeAdapterNitrosContext().getContext(),
+      entity->eid());
+  return image;
+}
+
 class StereoNode final : public rclcpp::Node {
  public:
-  StereoNode() : Node("stereo_camera") {
+  explicit StereoNode(const rclcpp::NodeOptions& options)
+      : Node("stereo_camera", options) {
     const auto camera_config_path =
         declare_parameter<std::string>("camera_config", "");
     const auto isp_config_path =
@@ -181,10 +258,23 @@ class StereoNode final : public rclcpp::Node {
 
     const auto qos = rclcpp::SensorDataQoS().keep_last(1);
 
-    left_image_pub_ = create_publisher<sensor_msgs::msg::Image>(
-        "/stereo/left/image_rect", qos);
-    right_image_pub_ = create_publisher<sensor_msgs::msg::Image>(
-        "/stereo/right/image_rect", qos);
+    left_nitros_pub_ = std::make_shared<
+        nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
+            nvidia::isaac_ros::nitros::NitrosImage>>(
+        this,
+        "/compute/stereo/left/image_rect",
+        nvidia::isaac_ros::nitros::nitros_image_rgb8_t::supported_type_name,
+        nvidia::isaac_ros::nitros::NitrosDiagnosticsConfig{},
+        qos);
+    right_nitros_pub_ = std::make_shared<
+        nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
+            nvidia::isaac_ros::nitros::NitrosImage>>(
+        this,
+        "/compute/stereo/right/image_rect",
+        nvidia::isaac_ros::nitros::nitros_image_rgb8_t::supported_type_name,
+        nvidia::isaac_ros::nitros::NitrosDiagnosticsConfig{},
+        qos);
+
     left_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
         "/stereo/left/camera_info", qos);
     right_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
@@ -193,9 +283,6 @@ class StereoNode final : public rclcpp::Node {
         "/spatial/left/camera_info", qos);
     spatial_right_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
         "/spatial/right/camera_info", qos);
-    color_preview_pub_ =
-        create_publisher<sensor_msgs::msg::CompressedImage>(
-            "/stereo/left/image_rect_color/compressed", qos);
 
     left_info_ =
         makeRectifiedInfo(calibration_, calibration_.P1(), kLeftFrame);
@@ -211,56 +298,29 @@ class StereoNode final : public rclcpp::Node {
       slot.pixels.resize(raw_pixels);
     }
 
-    const auto rect_pixels =
-        static_cast<std::size_t>(calibration_.metadata().image_width) *
-        static_cast<std::size_t>(calibration_.metadata().image_height);
-    for (auto& slot : host_slots_) {
-      slot.left_rgb.resize(rect_pixels * 3U);
-      slot.right_rgb.resize(rect_pixels * 3U);
-    }
-
-    if (cudaStreamCreateWithFlags(
-            &download_stream_, cudaStreamNonBlocking) != cudaSuccess) {
-      throw std::runtime_error("failed to create ROS download stream");
-    }
-
     running_.store(true);
     acquisition_thread_ =
         std::thread(&StereoNode::acquisitionLoop, this);
     compute_thread_ =
         std::thread(&StereoNode::computeLoop, this);
-    mono_thread_ =
-        std::thread(&StereoNode::monoPublicationLoop, this);
-    preview_thread_ =
-        std::thread(&StereoNode::previewPublicationLoop, this);
     auto_control_thread_ =
         std::thread(&StereoNode::autoControlLoop, this);
 
     RCLCPP_INFO(
         get_logger(),
         "AR0234 stereo ready: acquisition independent; ISP/rectification "
-        "latest-value compute; mono ROS + %dHz JPEG preview",
-        preview_fps_);
+        "latest-value compute; direct pooled NITROS spatial ingress");
   }
 
   ~StereoNode() override {
     running_.store(false);
     raw_cv_.notify_all();
-    host_cv_.notify_all();
 
     if (acquisition_thread_.joinable()) acquisition_thread_.join();
     if (compute_thread_.joinable()) compute_thread_.join();
-    if (mono_thread_.joinable()) mono_thread_.join();
-    if (preview_thread_.joinable()) preview_thread_.join();
     if (auto_control_thread_.joinable()) auto_control_thread_.join();
 
     (void)context_.drain();
-
-    if (download_stream_ != nullptr) {
-      cudaStreamSynchronize(download_stream_);
-      cudaStreamDestroy(download_stream_);
-      download_stream_ = nullptr;
-    }
 
     auto_controller_.reset();
     rectifier_.shutdown();
@@ -402,7 +462,6 @@ class StereoNode final : public rclcpp::Node {
               get_logger(), "camera repeatedly failed to capture");
           running_.store(false);
           raw_cv_.notify_all();
-          host_cv_.notify_all();
           return;
         }
         continue;
@@ -452,7 +511,6 @@ class StereoNode final : public rclcpp::Node {
         RCLCPP_ERROR(get_logger(), "failed to requeue camera buffer");
         running_.store(false);
         raw_cv_.notify_all();
-        host_cv_.notify_all();
         return;
       }
 
@@ -575,39 +633,37 @@ class StereoNode final : public rclcpp::Node {
         continue;
       }
 
-      int next = 0;
-      {
-        std::lock_guard<std::mutex> lock(host_mutex_);
-        next = 1 - host_write_slot_;
-      }
-      auto& host = host_slots_[next];
+      std_msgs::msg::Header left_header;
+      left_header.stamp = wallStamp(raw.wall_timestamp);
+      left_header.frame_id = kLeftFrame;
+      std_msgs::msg::Header right_header;
+      right_header.stamp = left_header.stamp;
+      right_header.frame_id = kRightFrame;
 
-      const auto rgb_pitch =
-          static_cast<std::size_t>(rectified->rgb.width) * 3U;
+      try {
+        auto left_image = makePooledNitrosImage(
+            rectified, rectified->rgb.left, left_header);
+        auto right_image = makePooledNitrosImage(
+            rectified, rectified->rgb.right, right_header);
 
-      // Isaac ROS 3.2 DisparityNode accepts rgb8/bgr8, not mono8.
-      // ROS publication and JPEG remain observation workers and cannot retain
-      // accelerator/source ownership.
-      if (!rectified->rgb.left.downloadAsync(
-              host.left_rgb.data(), rgb_pitch, download_stream_) ||
-          !rectified->rgb.right.downloadAsync(
-              host.right_rgb.data(), rgb_pitch, download_stream_) ||
-          cudaStreamSynchronize(download_stream_) != cudaSuccess) {
+        left_nitros_pub_->publish(left_image);
+        right_nitros_pub_->publish(right_image);
+      } catch (const std::exception& e) {
         RCLCPP_ERROR_THROTTLE(
             get_logger(), *get_clock(), 2000,
-            "rectified host staging failed");
+            "NITROS spatial publication failed: %s", e.what());
         continue;
       }
 
-      host.sequence = raw.sequence;
-      host.wall_timestamp = raw.wall_timestamp;
-
-      {
-        std::lock_guard<std::mutex> lock(host_mutex_);
-        host_write_slot_ = next;
-        host_sequence_ = host.sequence;
-      }
-      host_cv_.notify_all();
+      // Resize synchronizes each image with its full-resolution CameraInfo.
+      left_info_.header.stamp = left_header.stamp;
+      right_info_.header.stamp = right_header.stamp;
+      spatial_left_info_.header.stamp = left_header.stamp;
+      spatial_right_info_.header.stamp = right_header.stamp;
+      left_info_pub_->publish(left_info_);
+      right_info_pub_->publish(right_info_);
+      spatial_left_info_pub_->publish(spatial_left_info_);
+      spatial_right_info_pub_->publish(spatial_right_info_);
       diag_compute += std::chrono::steady_clock::now() - compute_start;
       ++diag_frames;
 
@@ -633,119 +689,6 @@ class StereoNode final : public rclcpp::Node {
     }
   }
 
-  void monoPublicationLoop() {
-    std::uint64_t last = 0;
-
-    while (running_.load() && rclcpp::ok()) {
-      RectifiedHostSnapshot frame;
-
-      {
-        std::unique_lock<std::mutex> lock(host_mutex_);
-        host_cv_.wait(lock, [&] {
-          return !running_.load() || host_sequence_ > last;
-        });
-        if (!running_.load()) return;
-
-        frame = host_slots_[host_write_slot_];
-        last = frame.sequence;
-      }
-
-      const auto width = calibration_.metadata().image_width;
-      const auto height = calibration_.metadata().image_height;
-      const auto stamp = wallStamp(frame.wall_timestamp);
-
-      sensor_msgs::msg::Image left;
-      left.header.stamp = stamp;
-      left.header.frame_id = kLeftFrame;
-      left.height = height;
-      left.width = width;
-      left.encoding = "rgb8";
-      left.is_bigendian = false;
-      left.step = width * 3U;
-      left.data = std::move(frame.left_rgb);
-
-      sensor_msgs::msg::Image right;
-      right.header.stamp = stamp;
-      right.header.frame_id = kRightFrame;
-      right.height = height;
-      right.width = width;
-      right.encoding = "rgb8";
-      right.is_bigendian = false;
-      right.step = width * 3U;
-      right.data = std::move(frame.right_rgb);
-
-      left_info_.header.stamp = stamp;
-      right_info_.header.stamp = stamp;
-      spatial_left_info_.header.stamp = stamp;
-      spatial_right_info_.header.stamp = stamp;
-
-      left_image_pub_->publish(std::move(left));
-      right_image_pub_->publish(std::move(right));
-      left_info_pub_->publish(left_info_);
-      right_info_pub_->publish(right_info_);
-      spatial_left_info_pub_->publish(spatial_left_info_);
-      spatial_right_info_pub_->publish(spatial_right_info_);
-    }
-  }
-
-  void previewPublicationLoop() {
-    using Clock = std::chrono::steady_clock;
-
-    std::uint64_t last = 0;
-    auto next_publish = Clock::now();
-
-    while (running_.load() && rclcpp::ok()) {
-      RectifiedHostSnapshot frame;
-
-      {
-        std::unique_lock<std::mutex> lock(host_mutex_);
-        host_cv_.wait(lock, [&] {
-          return !running_.load() || host_sequence_ > last;
-        });
-        if (!running_.load()) return;
-
-        frame = host_slots_[host_write_slot_];
-        last = frame.sequence;
-      }
-
-      const auto now = Clock::now();
-      if (now < next_publish) continue;
-
-      const auto width = calibration_.metadata().image_width;
-      const auto height = calibration_.metadata().image_height;
-      const std::size_t pitch =
-          static_cast<std::size_t>(width) * 3U;
-
-      cv::Mat rgb(
-          static_cast<int>(height),
-          static_cast<int>(width),
-          CV_8UC3,
-          frame.left_rgb.data(),
-          pitch);
-      cv::Mat bgr;
-      cv::cvtColor(rgb, bgr, cv::COLOR_RGB2BGR);
-
-      std::vector<std::uint8_t> jpeg;
-      const std::vector<int> parameters{
-          cv::IMWRITE_JPEG_QUALITY, jpeg_quality_};
-
-      if (!cv::imencode(".jpg", bgr, jpeg, parameters)) continue;
-
-      sensor_msgs::msg::CompressedImage message;
-      message.header.stamp = wallStamp(frame.wall_timestamp);
-      message.header.frame_id = kLeftFrame;
-      message.format = "jpeg";
-      message.data = std::move(jpeg);
-
-      color_preview_pub_->publish(std::move(message));
-
-      next_publish =
-          now + std::chrono::duration_cast<Clock::duration>(
-                    std::chrono::duration<double>(
-                        1.0 / static_cast<double>(preview_fps_)));
-    }
-  }
-
   parallax::camera::CameraConfig camera_config_{};
   parallax::isp::IspConfig isp_config_{};
   parallax::stereo::StereoCalibration calibration_{};
@@ -762,23 +705,15 @@ class StereoNode final : public rclcpp::Node {
   int raw_write_slot_ = 0;
   std::uint64_t raw_sequence_ = 0;
 
-  std::array<RectifiedHostSnapshot, 2> host_slots_{};
-  std::mutex host_mutex_;
-  std::condition_variable host_cv_;
-  int host_write_slot_ = 0;
-  std::uint64_t host_sequence_ = 0;
+  std::shared_ptr<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
+      nvidia::isaac_ros::nitros::NitrosImage>> left_nitros_pub_;
+  std::shared_ptr<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
+      nvidia::isaac_ros::nitros::NitrosImage>> right_nitros_pub_;
 
-  cudaStream_t download_stream_ = nullptr;
-
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr left_image_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr right_image_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr left_info_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr right_info_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr spatial_left_info_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr spatial_right_info_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr
-      color_preview_pub_;
-
   sensor_msgs::msg::CameraInfo left_info_{};
   sensor_msgs::msg::CameraInfo right_info_{};
   sensor_msgs::msg::CameraInfo spatial_left_info_{};
@@ -791,27 +726,9 @@ class StereoNode final : public rclcpp::Node {
   std::atomic<bool> running_{false};
   std::thread acquisition_thread_;
   std::thread compute_thread_;
-  std::thread mono_thread_;
-  std::thread preview_thread_;
   std::thread auto_control_thread_;
 };
 
 }  // namespace
 
-int main(int argc, char** argv) {
-  rclcpp::init(argc, argv);
-
-  try {
-    auto node = std::make_shared<StereoNode>();
-    rclcpp::spin(node);
-    node.reset();
-  } catch (const std::exception& e) {
-    RCLCPP_FATAL(
-        rclcpp::get_logger("stereo_camera"), "%s", e.what());
-    if (rclcpp::ok()) rclcpp::shutdown();
-    return 1;
-  }
-
-  if (rclcpp::ok()) rclcpp::shutdown();
-  return 0;
-}
+RCLCPP_COMPONENTS_REGISTER_NODE(parallax::ros::StereoNode)

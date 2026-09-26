@@ -327,9 +327,11 @@ namespace parallax::camera {
 
         int poll_result = 0;
 
+        const auto poll_start = std::chrono::steady_clock::now();
         do {
             poll_result = ::poll(&descriptor, 1, timeout_ms);
         } while (poll_result < 0 && errno == EINTR);
+        const auto poll_elapsed = std::chrono::steady_clock::now() - poll_start;
 
         if (poll_result == 0) {
             logMessage("poll: timeout waiting for frame");
@@ -353,6 +355,7 @@ namespace parallax::camera {
         buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         buffer.memory = V4L2_MEMORY_MMAP;
 
+        const auto dqbuf_start = std::chrono::steady_clock::now();
         while (true) {
             if (::ioctl(fd_, VIDIOC_DQBUF, &buffer) == 0) break;
             if (errno == EINTR) continue;
@@ -360,6 +363,39 @@ namespace parallax::camera {
 
             logError("VIDIOC_DQBUF");
             return false;
+        }
+        const auto dqbuf_elapsed = std::chrono::steady_clock::now() - dqbuf_start;
+
+        static auto diagnostic_window_start = std::chrono::steady_clock::now();
+        static std::chrono::steady_clock::duration diagnostic_poll_time{};
+        static std::chrono::steady_clock::duration diagnostic_dqbuf_time{};
+        static std::uint64_t diagnostic_dequeues = 0;
+
+        diagnostic_poll_time += poll_elapsed;
+        diagnostic_dqbuf_time += dqbuf_elapsed;
+        ++diagnostic_dequeues;
+
+        const auto diagnostic_now = std::chrono::steady_clock::now();
+        const auto diagnostic_window = diagnostic_now - diagnostic_window_start;
+        if (diagnostic_window >= std::chrono::seconds(5)) {
+            const auto count = static_cast<double>(diagnostic_dequeues);
+            const auto seconds =
+                std::chrono::duration<double>(diagnostic_window).count();
+            std::cout
+                << "v4l2_boundary poll="
+                << std::chrono::duration<double, std::milli>(
+                       diagnostic_poll_time).count() / count
+                << "ms/frame dqbuf="
+                << std::chrono::duration<double, std::milli>(
+                       diagnostic_dqbuf_time).count() / count
+                << "ms/frame dequeued="
+                << count / seconds
+                << "Hz frames=" << diagnostic_dequeues << '\n';
+
+            diagnostic_window_start = diagnostic_now;
+            diagnostic_poll_time = {};
+            diagnostic_dqbuf_time = {};
+            diagnostic_dequeues = 0;
         }
 
         if (buffer.index >= buffers_.size()) {
@@ -412,9 +448,33 @@ namespace parallax::camera {
         buffer.memory = V4L2_MEMORY_MMAP;
         buffer.index = frame.buffer_index;
 
+        const auto qbuf_start = std::chrono::steady_clock::now();
         if (::ioctl(fd_, VIDIOC_QBUF, &buffer) < 0) {
             logError("VIDIOC_QBUF");
             return false;
+        }
+        const auto qbuf_elapsed = std::chrono::steady_clock::now() - qbuf_start;
+
+        static auto diagnostic_window_start = std::chrono::steady_clock::now();
+        static std::chrono::steady_clock::duration diagnostic_qbuf_time{};
+        static std::uint64_t diagnostic_queues = 0;
+
+        diagnostic_qbuf_time += qbuf_elapsed;
+        ++diagnostic_queues;
+
+        const auto diagnostic_now = std::chrono::steady_clock::now();
+        const auto diagnostic_window = diagnostic_now - diagnostic_window_start;
+        if (diagnostic_window >= std::chrono::seconds(5)) {
+            const auto count = static_cast<double>(diagnostic_queues);
+            std::cout
+                << "v4l2_boundary qbuf="
+                << std::chrono::duration<double, std::milli>(
+                       diagnostic_qbuf_time).count() / count
+                << "ms/frame frames=" << diagnostic_queues << '\n';
+
+            diagnostic_window_start = diagnostic_now;
+            diagnostic_qbuf_time = {};
+            diagnostic_queues = 0;
         }
 
         return true;

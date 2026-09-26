@@ -16,6 +16,7 @@ target_link_libraries(parallax_camera
     PRIVATE
         yaml-cpp
         Threads::Threads
+        CUDA::cudart
 )
 
 target_compile_features(parallax_camera

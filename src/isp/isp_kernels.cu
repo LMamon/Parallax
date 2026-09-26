@@ -165,36 +165,48 @@ namespace parallax::isp {
 
     }
 
+    bool prepareStereoBayer(const std::uint16_t* input,
+                            std::size_t input_pitch,
+                            std::uint32_t width,
+                            std::uint32_t height,
+                            parallax::cuda::CudaBuffer& left,
+                            parallax::cuda::CudaBuffer& right,
+                            std::uint16_t black_level,
+                            cudaStream_t stream) {
+        if (input == nullptr || input_pitch < static_cast<std::size_t>(width) * sizeof(std::uint16_t) ||
+            width == 0 || height == 0 || (width % 2U) != 0U ||
+            black_level >= Bayer10Maximum) return false;
+
+        const std::uint32_t eye_width = width / 2U;
+        if (!left.isAllocated() || !right.isAllocated() ||
+            left.width() != eye_width || right.width() != eye_width ||
+            left.height() != height || right.height() != height ||
+            left.channels() != 1 || right.channels() != 1 ||
+            left.elementSize() != sizeof(std::uint16_t) ||
+            right.elementSize() != sizeof(std::uint16_t)) return false;
+
+        constexpr dim3 block(16, 16);
+        const dim3 grid((width + block.x - 1U) / block.x,
+                        (height + block.y - 1U) / block.y);
+
+        prepareStereoBayerKernel<<<grid, block, 0, stream>>>(
+            input, input_pitch,
+            left.dataAs<std::uint16_t>(), left.pitch(),
+            right.dataAs<std::uint16_t>(), right.pitch(),
+            static_cast<int>(width), static_cast<int>(height), black_level);
+
+        return cudaPeekAtLastError() == cudaSuccess;
+    }
+
     bool prepareStereoBayer(const GpuBayerFrame& input,
                             parallax::cuda::CudaBuffer& left,
                             parallax::cuda::CudaBuffer& right,
                             std::uint16_t black_level,
                             cudaStream_t stream) {
-
-        if (!input.buffer.isAllocated() || input.width == 0 || input.height == 0 ||
-            (input.width % 2U) != 0U || black_level >= Bayer10Maximum) return false;
-
-        const std::uint32_t eye_width = input.width / 2U;
-
-        if (!left.isAllocated() || !right.isAllocated() ||
-            left.width() != eye_width || right.width() != eye_width ||
-            left.height() != input.height || right.height() != input.height ||
-            left.channels() != 1 || right.channels() != 1 ||
-            left.elementSize() != sizeof(std::uint16_t) || right.elementSize() != sizeof(std::uint16_t)) return false;
-
-        constexpr dim3 block(16, 16);
-        const dim3 grid((input.width + block.x - 1U) / block.x,
-                        (input.height + block.y - 1U) / block.y);
-
-        prepareStereoBayerKernel<<<grid, block, 0, stream>>>(input.buffer.dataAs<std::uint16_t>(), 
-                                                                input.buffer.pitch(),
-                                                                left.dataAs<std::uint16_t>(), left.pitch(),
-                                                                right.dataAs<std::uint16_t>(), right.pitch(),
-                                                                static_cast<int>(input.width), 
-                                                                static_cast<int>(input.height), 
-                                                                black_level);
-
-        return cudaPeekAtLastError() == cudaSuccess;
+        if (!input.buffer.isAllocated()) return false;
+        return prepareStereoBayer(
+            input.buffer.dataAs<std::uint16_t>(), input.buffer.pitch(),
+            input.width, input.height, left, right, black_level, stream);
     }
 
     bool formCanonicalStereo(const parallax::cuda::CudaBuffer& left_linear_rgb16,

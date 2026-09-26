@@ -40,6 +40,15 @@ namespace parallax::isp {
                             std::uint16_t black_level,
                             cudaStream_t stream);
 
+    bool prepareStereoBayer(const std::uint16_t* input,
+                            std::size_t input_pitch,
+                            std::uint32_t width,
+                            std::uint32_t height,
+                            parallax::cuda::CudaBuffer& left,
+                            parallax::cuda::CudaBuffer& right,
+                            std::uint16_t black_level,
+                            cudaStream_t stream);
+
     bool formCanonicalStereo(const parallax::cuda::CudaBuffer& left_linear_rgb16,
                             const parallax::cuda::CudaBuffer& right_linear_rgb16,
                             StereoRgbFrame& rgb_output,

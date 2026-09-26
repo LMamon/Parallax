@@ -17,6 +17,7 @@ namespace parallax::camera {
         std::uint32_t fourcc = 0;
 
         const void* data = nullptr;
+        const void* device_data = nullptr;
         std::size_t bytes = 0;
 
         std::chrono::nanoseconds timestamp{0};

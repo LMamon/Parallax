@@ -165,6 +165,34 @@ namespace parallax::isp {
         return maybeEnqueueStatistics();
     }
 
+    bool ISP::processMapped(const parallax::camera::RawFrame& input,
+                            OutputSlot& output,
+                            cudaEvent_t raw_consumed) {
+        if (!initialized_ || input.device_data == nullptr || raw_consumed == nullptr ||
+            input.width != gpu_input_.width || input.height != gpu_input_.height) return false;
+
+        const auto* raw = static_cast<const std::uint16_t*>(input.device_data);
+        const std::size_t raw_pitch =
+            static_cast<std::size_t>(input.width) * sizeof(std::uint16_t);
+        if (!prepareStereoBayer(raw, raw_pitch, input.width, input.height,
+                                left_bayer16_, right_bayer16_,
+                                config_.black_level, stream_)) return false;
+
+        // Everything after this event consumes the split Bayer allocations,
+        // not the V4L2 capture allocation.
+        if (cudaEventRecord(raw_consumed, stream_) != cudaSuccess) return false;
+
+        if (!demosaic(left_bayer16_, left_linear_rgb16_) ||
+            !demosaic(right_bayer16_, right_linear_rgb16_)) return false;
+
+        const auto parameters = colorParametersSnapshot();
+        if (!formCanonicalStereo(left_linear_rgb16_, right_linear_rgb16_,
+                                 output.rgb, output.gray,
+                                 parameters, stream_)) return false;
+
+        return maybeEnqueueStatistics();
+    }
+
     bool ISP::tryGetStatistics(IspStatistics& statistics) {
         if (!initialized_) return false;
         

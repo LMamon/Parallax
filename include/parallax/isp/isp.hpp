@@ -35,6 +35,9 @@ namespace parallax::isp {
 
             bool initialize(const parallax::camera::CameraConfig& camera_config, const IspConfig& isp_config);
             bool process(const parallax::camera::RawFrame& input, OutputSlot& output);
+            bool processMapped(const parallax::camera::RawFrame& input,
+                               OutputSlot& output,
+                               cudaEvent_t raw_consumed);
             
             [[nodiscard]] std::shared_ptr<OutputSlot> acquireOutput() { return output_pool_.acquire(); }
             

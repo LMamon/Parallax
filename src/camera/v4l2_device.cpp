@@ -3,6 +3,7 @@
 #include <parallax/camera/logger.hpp>
 
 #include <algorithm>
+#include <cuda_runtime.h>
 #include <cerrno>
 #include <cstring>
 #include <iostream>
@@ -142,6 +143,7 @@ namespace parallax::camera {
         width_ = format.fmt.pix.width;
         height_ = format.fmt.pix.height;
         fourcc_ = format.fmt.pix.pixelformat;
+        size_image_ = format.fmt.pix.sizeimage;
 
         return true;
     }
@@ -232,22 +234,14 @@ namespace parallax::camera {
             logMessage("initializeStreaming: device is not open");
             return false;
         }
-
-        if (streaming_) {
-            logMessage("initializeStreaming: stream is already running");
+        if (streaming_ || !buffers_.empty()) {
+            logMessage("initializeStreaming: streaming resources already exist");
             return false;
         }
-
-        if (!buffers_.empty()) {
-            logMessage("initializeStreaming: buffers are already initialized");
-            return false;
-        }
-
-        if (width_ == 0 || height_ == 0 || fourcc_ == 0) {
+        if (width_ == 0 || height_ == 0 || fourcc_ == 0 || size_image_ == 0) {
             logMessage("initializeStreaming: format has not been configured");
             return false;
         }
-
         if (buffer_count == 0) {
             logMessage("initializeStreaming: buffer count must be greater than zero");
             return false;
@@ -256,62 +250,56 @@ namespace parallax::camera {
         v4l2_requestbuffers request{};
         request.count = buffer_count;
         request.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        request.memory = V4L2_MEMORY_MMAP;
+        request.memory = V4L2_MEMORY_USERPTR;
 
         if (::ioctl(fd_, VIDIOC_REQBUFS, &request) < 0) {
-            logError("VIDIOC_REQBUFS");
+            logError("VIDIOC_REQBUFS USERPTR");
+            return false;
+        }
+        if (request.count < buffer_count) {
+            logMessage("VIDIOC_REQBUFS USERPTR returned too few buffers");
+            shutdownStreaming();
             return false;
         }
 
-        if (request.count == 0) {
-            logMessage("VIDIOC_REQBUFS: driver allocated zero buffers");
-            return false;
-        }
+        buffers_.reserve(buffer_count);
+        for (std::uint32_t index = 0; index < buffer_count; ++index) {
+            Buffer capture{};
+            capture.length = size_image_;
+            capture.index = index;
 
-        buffers_.reserve(request.count);
-
-        for (std::uint32_t index = 0; index < request.count; ++index) {
-            v4l2_buffer buffer{};
-            buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-            buffer.memory = V4L2_MEMORY_MMAP;
-            buffer.index = index;
-
-            if (::ioctl(fd_, VIDIOC_QUERYBUF, &buffer) < 0) {
-                logError("VIDIOC_QUERYBUF");
+            const auto alloc = cudaHostAlloc(
+                &capture.start, capture.length, cudaHostAllocMapped);
+            if (alloc != cudaSuccess) {
+                std::cerr << "cudaHostAlloc capture buffer failed: "
+                          << cudaGetErrorString(alloc) << '\n';
                 shutdownStreaming();
                 return false;
             }
 
-            void* address = ::mmap(nullptr,
-                                    buffer.length,
-                                    PROT_READ | PROT_WRITE,
-                                    MAP_SHARED,
-                                    fd_,
-                                    buffer.m.offset);
-
-            if (address == MAP_FAILED) {
-                logError("mmap");
+            const auto mapped = cudaHostGetDevicePointer(
+                &capture.device_start, capture.start, 0);
+            if (mapped != cudaSuccess) {
+                std::cerr << "cudaHostGetDevicePointer capture buffer failed: "
+                          << cudaGetErrorString(mapped) << '\n';
+                cudaFreeHost(capture.start);
                 shutdownStreaming();
                 return false;
             }
 
-            Buffer mapped_buffer{};
-            mapped_buffer.start = address;
-            mapped_buffer.length = buffer.length;
-            mapped_buffer.index = index;
-
-            buffers_.push_back(mapped_buffer);
+            buffers_.push_back(capture);
         }
 
-        // Every mapped buffer must be queued before STREAMON.
-        for (const Buffer& mapped : buffers_) {
+        for (const Buffer& capture : buffers_) {
             v4l2_buffer buffer{};
             buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-            buffer.memory = V4L2_MEMORY_MMAP;
-            buffer.index = mapped.index;
+            buffer.memory = V4L2_MEMORY_USERPTR;
+            buffer.index = capture.index;
+            buffer.m.userptr = reinterpret_cast<unsigned long>(capture.start);
+            buffer.length = static_cast<__u32>(capture.length);
 
             if (::ioctl(fd_, VIDIOC_QBUF, &buffer) < 0) {
-                logError("VIDIOC_QBUF");
+                logError("VIDIOC_QBUF USERPTR");
                 shutdownStreaming();
                 return false;
             }
@@ -388,7 +376,7 @@ namespace parallax::camera {
 
         v4l2_buffer buffer{};
         buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        buffer.memory = V4L2_MEMORY_MMAP;
+        buffer.memory = V4L2_MEMORY_USERPTR;
 
         const auto dqbuf_start = std::chrono::steady_clock::now();
         while (true) {
@@ -481,12 +469,16 @@ namespace parallax::camera {
             diagnostic_timestamp_advance = {};
         }
 
-        if (buffer.index >= buffers_.size()) {
-            logMessage("VIDIOC_DQBUF: driver returned invalid buffer index");
+        auto mapped_it = std::find_if(
+            buffers_.begin(), buffers_.end(), [&](const Buffer& candidate) {
+                return reinterpret_cast<unsigned long>(candidate.start) == buffer.m.userptr;
+            });
+        if (mapped_it == buffers_.end()) {
+            logMessage("VIDIOC_DQBUF: driver returned unknown USERPTR");
             return false;
         }
 
-        Buffer& mapped = buffers_[buffer.index];
+        Buffer& mapped = *mapped_it;
 
         if (buffer.bytesused > mapped.length) {
             logMessage("VIDIOC_DQBUF: bytesused exceeds mapped buffer length");
@@ -508,9 +500,10 @@ namespace parallax::camera {
         frame.height = height_;
         frame.fourcc = fourcc_;
         frame.data = mapped.start;
+        frame.device_data = mapped.device_start;
         frame.bytes = buffer.bytesused;
         frame.timestamp = driver_timestamp;
-        frame.buffer_index = buffer.index;
+        frame.buffer_index = mapped.index;
 
         return true;   
     }
@@ -526,10 +519,14 @@ namespace parallax::camera {
             return false;
         }
 
+        const Buffer& capture = buffers_[frame.buffer_index];
+
         v4l2_buffer buffer{};
         buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        buffer.memory = V4L2_MEMORY_MMAP;
-        buffer.index = frame.buffer_index;
+        buffer.memory = V4L2_MEMORY_USERPTR;
+        buffer.index = capture.index;
+        buffer.m.userptr = reinterpret_cast<unsigned long>(capture.start);
+        buffer.length = static_cast<__u32>(capture.length);
 
         const auto qbuf_start = std::chrono::steady_clock::now();
         if (::ioctl(fd_, VIDIOC_QBUF, &buffer) < 0) {
@@ -578,29 +575,27 @@ namespace parallax::camera {
     void V4L2Device::shutdownStreaming() {
         if (streaming_) stopStreaming();
 
-        for (Buffer& buffer : buffers_) {
-            if (buffer.start != nullptr && buffer.start != MAP_FAILED) {
-                if (::munmap(buffer.start, buffer.length) < 0) {
-                    logError("munmap");
-                }
-
-                buffer.start = nullptr;
-                buffer.length = 0;
+        if (isOpen()) {
+            v4l2_requestbuffers request{};
+            request.count = 0;
+            request.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            request.memory = V4L2_MEMORY_USERPTR;
+            if (::ioctl(fd_, VIDIOC_REQBUFS, &request) < 0) {
+                logError("VIDIOC_REQBUFS USERPTR release");
             }
         }
 
-        buffers_.clear();
-        if (!isOpen()) return;
-
-        // count = 0 asks the driver to release its MMAP buffers.
-        v4l2_requestbuffers request{};
-        request.count = 0;
-        request.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        request.memory = V4L2_MEMORY_MMAP;
-
-        if (::ioctl(fd_, VIDIOC_REQBUFS, &request) < 0) {
-            logError("VIDIOC_REQBUFS release");
+        for (Buffer& buffer : buffers_) {
+            if (buffer.start != nullptr) {
+                const auto error = cudaFreeHost(buffer.start);
+                if (error != cudaSuccess) {
+                    std::cerr << "cudaFreeHost capture buffer failed: "
+                              << cudaGetErrorString(error) << '\n';
+                }
+            }
+            buffer = {};
         }
+        buffers_.clear();
     }
 
     bool V4L2Device::isStreaming() const noexcept {

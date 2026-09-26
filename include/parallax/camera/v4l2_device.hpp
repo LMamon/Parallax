@@ -15,6 +15,7 @@ namespace parallax::camera {
 
     struct Buffer {
         void* start = nullptr;
+        void* device_start = nullptr;
         std::size_t length = 0;
         std::uint32_t index = 0;
     };
@@ -84,6 +85,7 @@ namespace parallax::camera {
             std::uint32_t width_ = 0;
             std::uint32_t height_ = 0;
             std::uint32_t fourcc_ = 0;
+            std::size_t size_image_ = 0;
 
             bool streaming_ = false;
     };

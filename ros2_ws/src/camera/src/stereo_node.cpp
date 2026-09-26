@@ -115,10 +115,9 @@ rclcpp::Time wallStamp(
       RCL_SYSTEM_TIME);
 }
 
-struct RawSnapshot {
-  std::vector<std::uint16_t> pixels;
+struct RawLease {
+  parallax::camera::RawFrame frame{};
   std::uint64_t sequence = 0;
-  std::chrono::nanoseconds timestamp{0};
   std::chrono::system_clock::time_point wall_timestamp{};
   bool valid = false;
 };
@@ -291,11 +290,9 @@ class StereoNode final : public rclcpp::Node {
     spatial_left_info_ = scaledCameraInfo(left_info_, 960U, 600U);
     spatial_right_info_ = scaledCameraInfo(right_info_, 960U, 600U);
 
-    const auto raw_pixels =
-        static_cast<std::size_t>(camera_config_.width) *
-        static_cast<std::size_t>(camera_config_.height);
-    for (auto& slot : raw_slots_) {
-      slot.pixels.resize(raw_pixels);
+    if (cudaEventCreateWithFlags(
+            &raw_consumed_event_, cudaEventDisableTiming) != cudaSuccess) {
+      throw std::runtime_error("failed to create raw capture completion event");
     }
 
     running_.store(true);
@@ -319,6 +316,19 @@ class StereoNode final : public rclcpp::Node {
     if (acquisition_thread_.joinable()) acquisition_thread_.join();
     if (compute_thread_.joinable()) compute_thread_.join();
     if (auto_control_thread_.joinable()) auto_control_thread_.join();
+
+    {
+      std::lock_guard<std::mutex> lock(raw_mutex_);
+      if (raw_pending_.valid && camera_) {
+        (void)camera_->release(raw_pending_.frame);
+        raw_pending_.valid = false;
+      }
+    }
+
+    if (raw_consumed_event_ != nullptr) {
+      cudaEventDestroy(raw_consumed_event_);
+      raw_consumed_event_ = nullptr;
+    }
 
     (void)context_.drain();
 
@@ -450,16 +460,14 @@ class StereoNode final : public rclcpp::Node {
     std::uint64_t boundary_frames = 0;
     auto diag_start = std::chrono::steady_clock::now();
     std::uint64_t diag_frames = 0;
-    std::chrono::nanoseconds diag_copy{0};
+    std::uint64_t diag_superseded = 0;
 
     while (running_.load() && rclcpp::ok()) {
-      const auto compute_start = std::chrono::steady_clock::now();
       parallax::camera::RawFrame frame{};
       const auto boundary_capture_start = std::chrono::steady_clock::now();
       if (!camera_->capture(frame)) {
         if (++failures >= 10) {
-          RCLCPP_ERROR(
-              get_logger(), "camera repeatedly failed to capture");
+          RCLCPP_ERROR(get_logger(), "camera repeatedly failed to capture");
           running_.store(false);
           raw_cv_.notify_all();
           return;
@@ -474,103 +482,83 @@ class StereoNode final : public rclcpp::Node {
           static_cast<std::size_t>(camera_config_.width) *
           static_cast<std::size_t>(camera_config_.height) *
           sizeof(std::uint16_t);
-
-      if (frame.data == nullptr || frame.bytes < expected_bytes) {
-        camera_->release(frame);
-        RCLCPP_ERROR(
-            get_logger(), "camera returned a short BA10 frame");
+      if (frame.data == nullptr || frame.device_data == nullptr ||
+          frame.bytes < expected_bytes) {
+        (void)camera_->release(frame);
+        RCLCPP_ERROR(get_logger(), "camera returned an invalid mapped BA10 frame");
         continue;
       }
 
-      int next = 0;
-      {
-        std::lock_guard<std::mutex> lock(raw_mutex_);
-        next = 1 - raw_write_slot_;
-      }
-
-      auto& slot = raw_slots_[next];
-
-      // Copy the MMAP frame, then immediately return the V4L2 buffer.
-      // Acquisition never waits for ISP, VPI, ROS, JPEG, or Foxglove.
-      const auto copy_start = std::chrono::steady_clock::now();
-      std::memcpy(
-          slot.pixels.data(), frame.data, expected_bytes);
-      diag_copy += std::chrono::steady_clock::now() - copy_start;
-
-      slot.timestamp = frame.timestamp;
       const auto steady_now = std::chrono::steady_clock::now();
       const auto system_now = std::chrono::system_clock::now();
-      slot.wall_timestamp =
+      const auto wall_timestamp =
           system_now +
-          (std::chrono::steady_clock::time_point{frame.timestamp} -
-           steady_now);
-      slot.sequence = ++sequence;
-      slot.valid = true;
+          (std::chrono::steady_clock::time_point{frame.timestamp} - steady_now);
 
-      if (!camera_->release(frame)) {
-        RCLCPP_ERROR(get_logger(), "failed to requeue camera buffer");
+      RawLease superseded{};
+      {
+        std::lock_guard<std::mutex> lock(raw_mutex_);
+        if (raw_pending_.valid) {
+          superseded = raw_pending_;
+          ++diag_superseded;
+        }
+        raw_pending_.frame = frame;
+        raw_pending_.sequence = ++sequence;
+        raw_pending_.wall_timestamp = wall_timestamp;
+        raw_pending_.valid = true;
+      }
+
+      // A pending frame that compute never claimed has no GPU readers and can
+      // return to VI immediately. The newest frame remains the mailbox value.
+      if (superseded.valid && !camera_->release(superseded.frame)) {
+        RCLCPP_ERROR(get_logger(), "failed to requeue superseded camera buffer");
         running_.store(false);
         raw_cv_.notify_all();
         return;
       }
+      raw_cv_.notify_one();
 
       const auto boundary_iteration_end = std::chrono::steady_clock::now();
       boundary_capture_time += boundary_capture_end - boundary_capture_start;
       boundary_post_capture_time += boundary_iteration_end - boundary_capture_end;
       ++boundary_frames;
+      ++diag_frames;
 
       const auto boundary_window = boundary_iteration_end - boundary_window_start;
-      if (diagnostics_ &&
-          boundary_window >= std::chrono::seconds(5) &&
+      if (diagnostics_ && boundary_window >= std::chrono::seconds(5) &&
           boundary_frames != 0) {
         const double window_s =
             std::chrono::duration<double>(boundary_window).count();
         const double capture_ms =
-            std::chrono::duration<double, std::milli>(
-                boundary_capture_time).count() /
+            std::chrono::duration<double, std::milli>(boundary_capture_time).count() /
             static_cast<double>(boundary_frames);
         const double post_ms =
-            std::chrono::duration<double, std::milli>(
-                boundary_post_capture_time).count() /
+            std::chrono::duration<double, std::milli>(boundary_post_capture_time).count() /
             static_cast<double>(boundary_frames);
-
         RCLCPP_INFO(
             get_logger(),
             "camera_boundary dqbuf=%.3fms/frame post_capture=%.3fms/frame "
             "completed=%.2fHz frames=%llu",
-            capture_ms,
-            post_ms,
+            capture_ms, post_ms,
             static_cast<double>(boundary_frames) / window_s,
             static_cast<unsigned long long>(boundary_frames));
-
         boundary_window_start = boundary_iteration_end;
         boundary_capture_time = {};
         boundary_post_capture_time = {};
         boundary_frames = 0;
       }
 
-      {
-        std::lock_guard<std::mutex> lock(raw_mutex_);
-        raw_write_slot_ = next;
-        raw_sequence_ = slot.sequence;
-      }
-      raw_cv_.notify_one();
-      ++diag_frames;
-
       const auto diag_now = std::chrono::steady_clock::now();
-      if (diagnostics_ &&
-          diag_now - diag_start >= std::chrono::seconds(5)) {
+      if (diagnostics_ && diag_now - diag_start >= std::chrono::seconds(5)) {
         const double seconds =
             std::chrono::duration<double>(diag_now - diag_start).count();
-        const double copy_ms = diag_frames
-            ? std::chrono::duration<double, std::milli>(diag_copy).count() /
-                  static_cast<double>(diag_frames)
-            : 0.0;
         RCLCPP_INFO(
-            get_logger(), "camera_diag capture=%.2fHz raw_copy=%.3fms/frame",
-            static_cast<double>(diag_frames) / seconds, copy_ms);
+            get_logger(),
+            "camera_diag capture=%.2fHz raw_copy=0.000ms/frame superseded=%llu",
+            static_cast<double>(diag_frames) / seconds,
+            static_cast<unsigned long long>(diag_superseded));
         diag_frames = 0;
-        diag_copy = std::chrono::nanoseconds{0};
+        diag_superseded = 0;
         diag_start = diag_now;
       }
     }
@@ -585,34 +573,56 @@ class StereoNode final : public rclcpp::Node {
 
     while (running_.load() && rclcpp::ok()) {
       const auto compute_start = std::chrono::steady_clock::now();
-      RawSnapshot raw;
-
+      RawLease raw;
       {
         std::unique_lock<std::mutex> lock(raw_mutex_);
         raw_cv_.wait(lock, [&] {
-          return !running_.load() || raw_sequence_ > last_raw;
+          return !running_.load() || raw_pending_.valid;
         });
         if (!running_.load()) return;
 
-        const auto& latest = raw_slots_[raw_write_slot_];
-        raw = latest;
-        if (last_raw != 0 && latest.sequence > last_raw + 1) {
-          diag_skipped += latest.sequence - last_raw - 1;
+        raw = raw_pending_;
+        raw_pending_.valid = false;
+        if (last_raw != 0 && raw.sequence > last_raw + 1) {
+          diag_skipped += raw.sequence - last_raw - 1;
         }
-        last_raw = latest.sequence;
+        last_raw = raw.sequence;
       }
 
-      parallax::camera::RawFrame frame{};
-      frame.width = static_cast<std::uint32_t>(camera_config_.width);
-      frame.height = static_cast<std::uint32_t>(camera_config_.height);
-      frame.data = raw.pixels.data();
-      frame.bytes = raw.pixels.size() * sizeof(std::uint16_t);
-      frame.timestamp = raw.timestamp;
+      auto release_raw = [&] {
+        if (!raw.valid) return true;
+        const bool released = camera_->release(raw.frame);
+        raw.valid = false;
+        return released;
+      };
 
       auto isp_output = isp_.acquireOutput();
-      if (!isp_output) continue;
+      if (!isp_output) {
+        (void)release_raw();
+        continue;
+      }
 
-      if (!isp_.process(frame, *isp_output) || !isp_.synchronize()) {
+      if (!isp_.processMapped(raw.frame, *isp_output, raw_consumed_event_)) {
+        // Submission can fail after the raw-read kernel was queued.
+        (void)isp_.synchronize();
+        (void)release_raw();
+        RCLCPP_ERROR_THROTTLE(
+            get_logger(), *get_clock(), 2000, "mapped ISP processing failed");
+        continue;
+      }
+
+      // This event is recorded immediately after prepareStereoBayer. Once it
+      // completes, downstream ISP work reads split Bayer storage, so VI may
+      // safely reuse the original USERPTR capture allocation.
+      if (cudaEventSynchronize(raw_consumed_event_) != cudaSuccess ||
+          !release_raw()) {
+        RCLCPP_ERROR(get_logger(), "failed to recycle mapped camera buffer");
+        running_.store(false);
+        raw_cv_.notify_all();
+        return;
+      }
+
+      if (!isp_.synchronize()) {
         RCLCPP_ERROR_THROTTLE(
             get_logger(), *get_clock(), 2000, "ISP processing failed");
         continue;
@@ -699,11 +709,10 @@ class StereoNode final : public rclcpp::Node {
   parallax::stereo::StereoRectifier rectifier_{};
   std::unique_ptr<parallax::isp::AutoController> auto_controller_;
 
-  std::array<RawSnapshot, 2> raw_slots_{};
+  RawLease raw_pending_{};
   std::mutex raw_mutex_;
   std::condition_variable raw_cv_;
-  int raw_write_slot_ = 0;
-  std::uint64_t raw_sequence_ = 0;
+  cudaEvent_t raw_consumed_event_ = nullptr;
 
   std::shared_ptr<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
       nvidia::isaac_ros::nitros::NitrosImage>> left_nitros_pub_;

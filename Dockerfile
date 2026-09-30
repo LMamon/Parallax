@@ -6,8 +6,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG NVBLOX_VERSION=v0.0.10
 ARG RPLIDAR_SDK_REF=master
 
-SHELL ["/bin/bash", "-c"]
-
 # Keep the known-good Parallax toolchain while the ROS workspace replaces
 # infrastructure incrementally instead of forcing a flag-day migration.
 RUN apt-get update && apt-get install -y \
@@ -46,6 +44,8 @@ RUN apt-get update && apt-get install -y \
     zsh \
     && rm -rf /var/lib/apt/lists/*
 
+SHELL ["/bin/zsh", "-c"]
+
 RUN chsh -s /usr/bin/zsh root
 
 RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
@@ -62,6 +62,7 @@ RUN wget -qO - https://isaac.download.nvidia.com/isaac-ros/repos.key | apt-key a
        > /etc/apt/sources.list.d/isaac-ros.list \
     && apt-get update \
     && apt-get install -y \
+        python3-ament-package \
         python3-colcon-common-extensions \
         python3-rosdep \
         ros-humble-ament-cmake \
@@ -76,6 +77,8 @@ RUN wget -qO - https://isaac.download.nvidia.com/isaac-ros/repos.key | apt-key a
         ros-humble-nav-msgs \
         ros-humble-ompl \
         ros-humble-ros-base \
+        ros-humble-rosidl-typesupport-fastrtps-c \
+        ros-humble-rosidl-typesupport-fastrtps-cpp \
         ros-humble-sensor-msgs \
         ros-humble-tf2-ros \
         ros-humble-tf2-tools \
@@ -115,17 +118,18 @@ RUN git clone --branch "${NVBLOX_VERSION}" \
 RUN rosdep init 2>/dev/null || true \
     && rosdep update
 
-COPY docker/ros_entrypoint.sh /ros_entrypoint.sh
-RUN chmod +x /ros_entrypoint.sh
+COPY docker/ros_entrypoint.zsh /ros_entrypoint.zsh
+RUN chmod +x /ros_entrypoint.zsh
 
 ENV TENSORRT_ROOT=/opt/tensorrt-10.4 \
     CUDA_HOME=/usr/local/cuda \
     LD_LIBRARY_PATH=/opt/tensorrt-10.4/targets/aarch64-linux-gnu/lib:/usr/local/cuda/lib64:${LD_LIBRARY_PATH} \
     PYTHONPATH=/workspace/Parallax/python:/opt/nanoowl:/opt/torch2trt \
     ROS_DISTRO=humble \
-    ROS_DOMAIN_ID=31
+    ROS_DOMAIN_ID=2 \
+    RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
 RUN ldconfig
 
-ENTRYPOINT ["/ros_entrypoint.sh"]
-CMD ["bash"]
+ENTRYPOINT ["/ros_entrypoint.zsh"]
+CMD ["zsh"]

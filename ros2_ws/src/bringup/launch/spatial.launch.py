@@ -83,53 +83,22 @@ def generate_launch_description():
         ],
     )
 
-    disparity = ComposableNode(
-        package='isaac_ros_stereo_image_proc',
-        plugin='nvidia::isaac_ros::stereo_image_proc::DisparityNode',
-        name='disparity_node',
-        parameters=[{
-            'backend': 'CUDA',
-            'max_disparity': 128.0,
-            'input_qos': 'SENSOR_DATA',
-            'output_qos': 'SENSOR_DATA',
-        }],
-        remappings=[
-            ('left/image_rect', '/spatial/left/image_rect'),
-            ('right/image_rect', '/spatial/right/image_rect'),
-            ('left/camera_info', '/spatial/left/camera_info'),
-            ('right/camera_info', '/spatial/right/camera_info'),
-            ('disparity', '/stereo/disparity'),
-        ],
-    )
-
-    depth = ComposableNode(
-        package='isaac_ros_stereo_image_proc',
-        plugin='nvidia::isaac_ros::stereo_image_proc::DisparityToDepthNode',
-        name='disparity_to_depth_node',
-        parameters=[{
-            'input_qos': 'SENSOR_DATA',
-            'output_qos': 'SENSOR_DATA',
-        }],
-        remappings=[
-            ('disparity', '/stereo/disparity'),
-            ('depth', '/stereo/depth'),
-        ],
-    )
-
     visual_slam = ComposableNode(
         package='isaac_ros_visual_slam',
         plugin='nvidia::isaac_ros::visual_slam::VisualSlamNode',
         name='visual_slam',
         parameters=[{
             'num_cameras': 2,
+            'min_num_images': 2,
             'rectified_images': True,
             'enable_image_denoising': False,
             'enable_imu_fusion': False,
             'enable_slam_visualization': False,
             'enable_observations_view': False,
             'enable_landmarks_view': False,
-            'sync_matching_threshold_ms': 20.0,
-            'image_buffer_size': 8,
+            'sync_matching_threshold_ms': 5.0,
+            'image_qos': 'SENSOR_DATA',
+            'image_buffer_size': 100,
             'publish_map_to_odom_tf': True,
             'publish_odom_to_base_tf': True,
             'map_frame': 'map',
@@ -164,8 +133,6 @@ def generate_launch_description():
             camera,
             left_resize,
             right_resize,
-            disparity,
-            depth,
             visual_slam,
             nvblox,
         ],

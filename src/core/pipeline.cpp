@@ -54,8 +54,8 @@ namespace parallax::core {
             return false;
         }
 
-        depth_.width = matcher_.output().width;
-        depth_.height = matcher_.output().height;
+        depth_.width = rectifier_.gray().width;
+        depth_.height = rectifier_.gray().height;
 
         if (!depth_.depth.allocate(depth_.width, depth_.height, 1, sizeof(float))) {
             std::cerr << "Pipeline: failed to allocate depth buffer\n";
@@ -122,7 +122,7 @@ namespace parallax::core {
             return false;
         }
 
-        auto matcher_output = matcher_.acquireOutput();
+        auto matcher_output = matcher_.acquireOutputSynchronous();
         if (!matcher_output) {
             std::cerr << "Pipeline: no free matcher output slot\n";
             return false;

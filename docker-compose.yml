@@ -20,11 +20,10 @@ services:
     privileged: true
 
     environment:
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-31}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-2}
 
     volumes:
       - .:/workspace/Parallax
       - /tmp/argus_socket:/tmp/argus_socket
 
     working_dir: /workspace/Parallax
-    restart: unless-stopped

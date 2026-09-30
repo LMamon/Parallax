@@ -145,8 +145,14 @@ class StereoNode final : public rclcpp::Node {
  private:
   using IspOutput = parallax::isp::ISP::OutputSlot;
   using RectifiedOutput = parallax::stereo::StereoRectifier::OutputSlot;
+  using MatchOutput = parallax::stereo::StereoMatcher::OutputSlot;
+  using DepthOutput = parallax::isp::DepthFrame;
   using Completion = parallax::core::CompletionHandle;
 
+  struct SpatialGraySlot {
+    parallax::isp::RectifiedStereoGrayFrame frame{};
+  };
+ 
   struct RgbPublication {
     std::shared_ptr<IspOutput> isp;
     std::shared_ptr<RectifiedOutput> frame;
@@ -156,6 +162,7 @@ class StereoNode final : public rclcpp::Node {
   };
 
   static constexpr std::size_t RgbQueueCapacity = 4;
+
   std::array<RgbPublication, RgbQueueCapacity> rgb_queue_{};
   std::size_t rgb_head_ = 0;
   std::size_t rgb_tail_ = 0;
@@ -164,7 +171,26 @@ class StereoNode final : public rclcpp::Node {
   std::condition_variable rgb_cv_;
   std::thread rgb_thread_;
 
+  struct DepthPublication {
+    std::shared_ptr<SpatialGraySlot> spatial;
+    std::shared_ptr<MatchOutput> match;
+    std::shared_ptr<DepthOutput> depth;
+    Completion ready{};
+    std_msgs::msg::Header header{};
+  };
+
+  static constexpr std::size_t DepthSlotCount = 3;
+  std::array<DepthPublication, DepthSlotCount> depth_queue_{};
+
+  std::size_t depth_head_ = 0;
+  std::size_t depth_tail_ = 0;
+  std::size_t depth_size_ = 0;
+  std::mutex depth_mutex_;
+  std::condition_variable depth_cv_;
+  std::thread depth_thread_;
+
   void rgbPublishLoop(); 
+  void depthPublishLoop();
   void initializeAutoControl();
   void autoControlLoop();
   void acquisitionLoop();
@@ -180,8 +206,8 @@ class StereoNode final : public rclcpp::Node {
   parallax::isp::ISP isp_{};
   parallax::stereo::StereoRectifier rectifier_{};
   parallax::stereo::StereoMatcher matcher_{};
-  parallax::isp::RectifiedStereoGrayFrame spatial_gray_{};
-  parallax::core::FixedPayloadPool<parallax::isp::DepthFrame, 5> depth_pool_{};
+  parallax::core::FixedPayloadPool<SpatialGraySlot, DepthSlotCount> spatial_gray_pool_{};
+  parallax::core::FixedPayloadPool<DepthOutput, DepthSlotCount> depth_pool_{};
   std::unique_ptr<parallax::isp::AutoController> auto_controller_;
 
   RawLease raw_pending_{};

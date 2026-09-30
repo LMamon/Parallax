@@ -153,14 +153,21 @@ StereoNode::StereoNode(const rclcpp::NodeOptions& options)
   }
   isp_seed.reset();
 
-  spatial_gray_.width = 960U;
-  spatial_gray_.height = 600U;
-  if (!spatial_gray_.left.allocate(960U, 600U, 1U, sizeof(std::uint8_t)) ||
-      !spatial_gray_.right.allocate(960U, 600U, 1U, sizeof(std::uint8_t))) {
-    throw std::runtime_error("failed to allocate spatial gray buffers");
+  if (!spatial_gray_pool_.initialize([](SpatialGraySlot& slot, std::size_t) {
+            slot.frame.width = 960U;
+            slot.frame.height = 600U;
+
+            return slot.frame.left.allocate(960U, 600U, 1U, sizeof(std::uint8_t)) &&
+                slot.frame.right.allocate(960U, 600U, 1U, sizeof(std::uint8_t));
+          })) {
+    throw std::runtime_error("failed to initialize spatial gray pool");
   }
 
-  if (!matcher_.initialize(spatial_gray_, context_.stereoLane().handle())) {
+  const auto* spatial_prototype = spatial_gray_pool_.prototype();
+
+  if (spatial_prototype == nullptr || !matcher_.initialize(spatial_prototype->frame,
+          context_.stereoLane().handle())) {
+
     throw std::runtime_error("failed to initialize CUDA stereo matcher");
   }
 
@@ -232,6 +239,8 @@ StereoNode::StereoNode(const rclcpp::NodeOptions& options)
       std::thread(&StereoNode::stereoLoop, this);
   rgb_thread_ =
     std::thread(&StereoNode::rgbPublishLoop, this);
+  depth_thread_ =
+    std::thread(&StereoNode::depthPublishLoop, this);
   auto_control_thread_ =
       std::thread(&StereoNode::autoControlLoop, this);
 
@@ -246,12 +255,14 @@ StereoNode::~StereoNode() {
   raw_cv_.notify_all();
   stereo_cv_.notify_all();
   rgb_cv_.notify_all();
+  depth_cv_.notify_all();
 
   if (acquisition_thread_.joinable()) acquisition_thread_.join();
   if (compute_thread_.joinable()) compute_thread_.join();
   if (stereo_thread_.joinable()) stereo_thread_.join();
   if (auto_control_thread_.joinable()) auto_control_thread_.join();
   if (rgb_thread_.joinable()) rgb_thread_.join();
+  if (depth_thread_.joinable()) depth_thread_.join();
 
   {
     std::lock_guard<std::mutex> lock(raw_mutex_);
@@ -276,8 +287,7 @@ StereoNode::~StereoNode() {
   auto_controller_.reset();
   matcher_.shutdown();
   depth_pool_.reset();
-  spatial_gray_.left.release();
-  spatial_gray_.right.release();
+  spatial_gray_pool_.reset();
   rectifier_.shutdown();
   isp_.shutdown();
 

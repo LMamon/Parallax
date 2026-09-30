@@ -23,7 +23,7 @@ public:
     StereoMatcher(const StereoMatcher&) = delete;
     StereoMatcher& operator=(const StereoMatcher&) = delete;
 
-    static constexpr std::size_t OutputSlotCount = 5;
+    static constexpr std::size_t OutputSlotCount = 3;
 
     struct OutputSlot {
         parallax::isp::StereoMatchFrame output{};
@@ -43,18 +43,20 @@ public:
     bool process(const parallax::isp::RectifiedStereoGrayFrame& input,
                  OutputSlot& output,
                  VPIStream stream);
-    
+
     [[nodiscard]] std::shared_ptr<OutputSlot> acquireOutputSynchronous();
-    
+
     void shutdown();
     [[nodiscard]] bool initialized() const noexcept { return initialized_; }
 
 private:
-    parallax::core::FixedPayloadPool<OutputSlot, OutputSlotCount> output_pool_;
+    parallax::core::FixedPayloadPool<
+        OutputSlot,
+        OutputSlotCount> output_pool_;
+
     VPIPayload stereo_ = nullptr;
     VPIStereoDisparityEstimatorParams submit_params_{};
     VPIStream stream_ = nullptr;
     bool initialized_ = false;
 };
-
-}  // namespace parallax::stereo
+}

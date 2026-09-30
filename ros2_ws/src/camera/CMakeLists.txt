@@ -80,11 +80,12 @@ target_link_libraries(camera
 
 add_library(stereo_component SHARED
   src/node/stereo_node.cpp
-  src/node/stereo_node_capture.cpp
-  src/node/stereo_node_compute.cpp
-  src/node/stereo_node_stereo.cpp
-  src/node/stereo_node_control.cpp
-  src/node/stereo_node_rgb.cpp
+  src/node/capture.cpp
+  src/node/compute.cpp
+  src/node/stereo.cpp
+  src/node/control.cpp
+  src/node/rgb.cpp
+  src/node/depth.cpp
 )
 
 target_compile_features(stereo_component PRIVATE cxx_std_17)

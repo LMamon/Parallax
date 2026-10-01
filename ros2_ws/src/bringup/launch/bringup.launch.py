@@ -11,6 +11,7 @@ def generate_launch_description():
 
     camera_config = PathJoinSubstitution([share, 'config', 'camera.yaml'])
     isp_config = PathJoinSubstitution([share, 'config', 'isp.yaml'])
+    topics = PathJoinSubstitution([share, 'config', 'whitelist.yaml'])
     spatial_launch = PathJoinSubstitution([share, 'launch', 'spatial.launch.py'])
 
     calibration_dir = (
@@ -30,17 +31,8 @@ def generate_launch_description():
             # Foxglove is an observability boundary, not a wildcard subscriber
             # into the compute graph.
             'send_buffer_limit': 10000000,
-            'topic_whitelist': [
-                '^/viz/.*',
-                '^/tf$',
-                '^/tf_static$',
-                '^/visual_slam/.*',
-                '^/nvblox_node/.*',
-                '^/scan$',
-                '^/planned_path_3d$',
-                '^/goal_pose_3d$',
-                '^/diagnostics$',
-            ],
+            'topic_whitelist': topics,
+            'max_qos_depth': 2
         }],
     )
 

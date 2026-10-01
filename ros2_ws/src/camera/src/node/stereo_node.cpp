@@ -184,7 +184,11 @@ StereoNode::StereoNode(const rclcpp::NodeOptions& options)
       "/spatial/right/camera_info", qos);
   preview_left_pub_ =
       create_publisher<sensor_msgs::msg::CompressedImage>(
-          "/viz/stereo/left/image/compressed",
+          "left/image/compressed",
+          rclcpp::SensorDataQoS().keep_last(1));
+  preview_right_pub_ =
+      create_publisher<sensor_msgs::msg::CompressedImage>(
+          "right/image/compressed",
           rclcpp::SensorDataQoS().keep_last(1));
 
   left_info_ =

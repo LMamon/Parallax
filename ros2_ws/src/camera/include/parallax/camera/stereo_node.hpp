@@ -11,7 +11,6 @@
 #include <parallax/isp/isp_config.hpp>
 #include <parallax/stereo/calibration.hpp>
 #include <parallax/stereo/rectification.hpp>
-#include <parallax/stereo/matcher.hpp>
 
 #include <cuda_runtime.h>
 
@@ -145,14 +144,8 @@ class StereoNode final : public rclcpp::Node {
  private:
   using IspOutput = parallax::isp::ISP::OutputSlot;
   using RectifiedOutput = parallax::stereo::StereoRectifier::OutputSlot;
-  using MatchOutput = parallax::stereo::StereoMatcher::OutputSlot;
-  using DepthOutput = parallax::isp::DepthFrame;
   using Completion = parallax::core::CompletionHandle;
 
-  struct SpatialGraySlot {
-    parallax::isp::RectifiedStereoGrayFrame frame{};
-  };
- 
   struct RgbPublication {
     std::shared_ptr<IspOutput> isp;
     std::shared_ptr<RectifiedOutput> frame;
@@ -171,31 +164,11 @@ class StereoNode final : public rclcpp::Node {
   std::condition_variable rgb_cv_;
   std::thread rgb_thread_;
 
-  struct DepthPublication {
-    std::shared_ptr<SpatialGraySlot> spatial;
-    std::shared_ptr<MatchOutput> match;
-    std::shared_ptr<DepthOutput> depth;
-    Completion ready{};
-    std_msgs::msg::Header header{};
-  };
-
-  static constexpr std::size_t DepthSlotCount = 3;
-  std::array<DepthPublication, DepthSlotCount> depth_queue_{};
-
-  std::size_t depth_head_ = 0;
-  std::size_t depth_tail_ = 0;
-  std::size_t depth_size_ = 0;
-  std::mutex depth_mutex_;
-  std::condition_variable depth_cv_;
-  std::thread depth_thread_;
-
   void rgbPublishLoop(); 
-  void depthPublishLoop();
   void initializeAutoControl();
   void autoControlLoop();
   void acquisitionLoop();
   void computeLoop();
-  void stereoLoop();
 
   parallax::camera::CameraConfig camera_config_{};
   parallax::isp::IspConfig isp_config_{};
@@ -205,9 +178,6 @@ class StereoNode final : public rclcpp::Node {
   std::unique_ptr<parallax::camera::StereoCamera> camera_;
   parallax::isp::ISP isp_{};
   parallax::stereo::StereoRectifier rectifier_{};
-  parallax::stereo::StereoMatcher matcher_{};
-  parallax::core::FixedPayloadPool<SpatialGraySlot, DepthSlotCount> spatial_gray_pool_{};
-  parallax::core::FixedPayloadPool<DepthOutput, DepthSlotCount> depth_pool_{};
   std::unique_ptr<parallax::isp::AutoController> auto_controller_;
 
   RawLease raw_pending_{};
@@ -219,8 +189,6 @@ class StereoNode final : public rclcpp::Node {
       nvidia::isaac_ros::nitros::NitrosImage>> left_nitros_pub_;
   std::shared_ptr<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
       nvidia::isaac_ros::nitros::NitrosImage>> right_nitros_pub_;
-  std::shared_ptr<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
-      nvidia::isaac_ros::nitros::NitrosImage>> depth_nitros_pub_;
 
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr left_info_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr right_info_pub_;
@@ -236,15 +204,8 @@ class StereoNode final : public rclcpp::Node {
   bool diagnostics_ = false;
 
   std::atomic<bool> running_{false};
-  std::mutex stereo_mutex_;
-  std::condition_variable stereo_cv_;
-  std::shared_ptr<parallax::stereo::StereoRectifier::OutputSlot> stereo_pending_;
-  rclcpp::Time stereo_pending_stamp_;
-  parallax::core::CompletionHandle stereo_pending_ready_{};
-
   std::thread acquisition_thread_;
   std::thread compute_thread_;
-  std::thread stereo_thread_;
   std::thread auto_control_thread_;
 };
 

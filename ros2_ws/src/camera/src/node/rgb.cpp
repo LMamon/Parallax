@@ -10,7 +10,8 @@ void StereoNode::rgbPublishLoop() {
 
   Clock::duration diag_ready_wait{};
   Clock::duration diag_nitros_wrap{};
-  Clock::duration diag_nitros_publish{};
+  Clock::duration diag_left_publish{};
+  Clock::duration diag_right_publish{};
   Clock::duration diag_info_publish{};
 
   while (rclcpp::ok()) {
@@ -118,8 +119,12 @@ void StereoNode::rgbPublishLoop() {
 
       const auto nitros_wrap_end = Clock::now();
 
+      const auto left_publish_start = Clock::now();
       left_nitros_pub_->publish(left_image);
+      const auto left_publish_end = Clock::now();
+
       right_nitros_pub_->publish(right_image);
+      const auto right_publish_end = Clock::now();
 
       const auto nitros_publish_end = Clock::now();
 
@@ -127,9 +132,13 @@ void StereoNode::rgbPublishLoop() {
           nitros_wrap_end -
           nitros_wrap_start;
 
-      diag_nitros_publish +=
-          nitros_publish_end -
-          nitros_wrap_end;
+      diag_left_publish +=
+        left_publish_end -
+        left_publish_start;
+
+      diag_right_publish +=
+        right_publish_end -
+        left_publish_end;
 
     } catch (const std::exception& e) {
       RCLCPP_ERROR_THROTTLE(
@@ -214,7 +223,8 @@ void StereoNode::rgbPublishLoop() {
           "queue=%zu/%zu "
           "ready=%.3f "
           "nitros_wrap=%.3f "
-          "nitros_publish=%.3f "
+					"left_pub=%.3f "
+					"right_pub=%.3f "
           "info_pub=%.3fms/frame",
           static_cast<double>(
               diag_frames) / seconds,
@@ -222,14 +232,16 @@ void StereoNode::rgbPublishLoop() {
           RgbQueueCapacity,
           ms_per_frame(diag_ready_wait),
           ms_per_frame(diag_nitros_wrap),
-          ms_per_frame(diag_nitros_publish),
+					ms_per_frame(diag_left_publish),
+					ms_per_frame(diag_right_publish),
           ms_per_frame(diag_info_publish));
 
       diag_frames = 0;
 
       diag_ready_wait = {};
       diag_nitros_wrap = {};
-      diag_nitros_publish = {};
+			diag_left_publish = {};
+			diag_right_publish = {};
       diag_info_publish = {};
 
       diag_start = diag_now;

@@ -22,7 +22,6 @@ void StereoNode::computeLoop() {
   Clock::duration diag_rect_acquire{};
   Clock::duration diag_rect_submit{};
   Clock::duration diag_rect_complete{};
-  Clock::duration diag_stereo_handoff{};
   Clock::duration diag_rgb_handoff{};
 
   while (running_.load() && rclcpp::ok()) {
@@ -126,7 +125,6 @@ void StereoNode::computeLoop() {
 
       running_.store(false);
       raw_cv_.notify_all();
-      stereo_cv_.notify_all();
       rgb_cv_.notify_all();
       return;
     }
@@ -233,27 +231,6 @@ void StereoNode::computeLoop() {
     std_msgs::msg::Header right_header;
     right_header.stamp = left_header.stamp;
     right_header.frame_id = kRightFrame;
-
-    //
-    // Stereo branch.
-    //
-    // Keep this dependency exactly as before. The stereo worker receives
-    // the same rectified output and the same rectification completion.
-    //
-    const auto stereo_handoff_start = Clock::now();
-
-    {
-      std::lock_guard<std::mutex> lock(stereo_mutex_);
-
-      stereo_pending_ = rectified;
-      stereo_pending_stamp_ = left_header.stamp;
-      stereo_pending_ready_ = rect_ready;
-    }
-
-    stereo_cv_.notify_one();
-
-    diag_stereo_handoff +=
-        Clock::now() - stereo_handoff_start;
 
     //
     // RGB branch.
@@ -365,7 +342,7 @@ void StereoNode::computeLoop() {
           "isp_complete=%.3f isp_dep=%.3f "
           "rect_acq=%.3f rect_submit=%.3f "
           "rect_complete=%.3f "
-          "stereo_handoff=%.3f rgb_handoff=%.3f "
+          "rgb_handoff=%.3f "
           "compute=%.3fms/frame",
           static_cast<double>(
               diag_frames) / seconds,
@@ -383,7 +360,6 @@ void StereoNode::computeLoop() {
           ms_per_frame(diag_rect_acquire),
           ms_per_frame(diag_rect_submit),
           ms_per_frame(diag_rect_complete),
-          ms_per_frame(diag_stereo_handoff),
           ms_per_frame(diag_rgb_handoff),
           ms_per_frame(diag_compute));
 
@@ -402,7 +378,6 @@ void StereoNode::computeLoop() {
       diag_rect_acquire = {};
       diag_rect_submit = {};
       diag_rect_complete = {};
-      diag_stereo_handoff = {};
       diag_rgb_handoff = {};
 
       diag_start = diag_now;

@@ -153,33 +153,6 @@ StereoNode::StereoNode(const rclcpp::NodeOptions& options)
   }
   isp_seed.reset();
 
-  if (!spatial_gray_pool_.initialize([](SpatialGraySlot& slot, std::size_t) {
-            slot.frame.width = 960U;
-            slot.frame.height = 600U;
-
-            return slot.frame.left.allocate(960U, 600U, 1U, sizeof(std::uint8_t)) &&
-                slot.frame.right.allocate(960U, 600U, 1U, sizeof(std::uint8_t));
-          })) {
-    throw std::runtime_error("failed to initialize spatial gray pool");
-  }
-
-  const auto* spatial_prototype = spatial_gray_pool_.prototype();
-
-  if (spatial_prototype == nullptr || !matcher_.initialize(spatial_prototype->frame,
-          context_.stereoLane().handle())) {
-
-    throw std::runtime_error("failed to initialize CUDA stereo matcher");
-  }
-
-  if (!depth_pool_.initialize([](parallax::isp::DepthFrame& depth, std::size_t index) {
-        depth.width = 960U;
-        depth.height = 600U;
-        depth.storage_slot = static_cast<std::uint32_t>(index);
-        return depth.depth.allocate(960U, 600U, 1U, sizeof(float));
-      })) {
-    throw std::runtime_error("failed to allocate spatial depth pool");
-  }
-
   initializeAutoControl();
 
   const auto qos = rclcpp::SensorDataQoS().keep_last(1);
@@ -198,14 +171,6 @@ StereoNode::StereoNode(const rclcpp::NodeOptions& options)
       this,
       "/compute/stereo/right/image_rect",
       nvidia::isaac_ros::nitros::nitros_image_rgb8_t::supported_type_name,
-      nvidia::isaac_ros::nitros::NitrosDiagnosticsConfig{},
-      qos);
-  depth_nitros_pub_ = std::make_shared<
-      nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
-          nvidia::isaac_ros::nitros::NitrosImage>>(
-      this,
-      "/stereo/depth",
-      nvidia::isaac_ros::nitros::nitros_image_32FC1_t::supported_type_name,
       nvidia::isaac_ros::nitros::NitrosDiagnosticsConfig{},
       qos);
 
@@ -235,34 +200,26 @@ StereoNode::StereoNode(const rclcpp::NodeOptions& options)
       std::thread(&StereoNode::acquisitionLoop, this);
   compute_thread_ =
       std::thread(&StereoNode::computeLoop, this);
-  stereo_thread_ =
-      std::thread(&StereoNode::stereoLoop, this);
   rgb_thread_ =
     std::thread(&StereoNode::rgbPublishLoop, this);
-  depth_thread_ =
-    std::thread(&StereoNode::depthPublishLoop, this);
   auto_control_thread_ =
       std::thread(&StereoNode::autoControlLoop, this);
 
   RCLCPP_INFO(
       get_logger(),
-      "AR0234 stereo ready: acquisition independent; ISP/rectification "
-      "latest-value compute; direct pooled NITROS spatial ingress");
+      "AR0234 stereo ready: mapped capture -> GPU ISP/rectification -> "
+      "pooled NITROS RGB; Isaac ROS owns spatial stereo/depth");
 }
 
 StereoNode::~StereoNode() {
   running_.store(false);
   raw_cv_.notify_all();
-  stereo_cv_.notify_all();
   rgb_cv_.notify_all();
-  depth_cv_.notify_all();
 
   if (acquisition_thread_.joinable()) acquisition_thread_.join();
   if (compute_thread_.joinable()) compute_thread_.join();
-  if (stereo_thread_.joinable()) stereo_thread_.join();
   if (auto_control_thread_.joinable()) auto_control_thread_.join();
   if (rgb_thread_.joinable()) rgb_thread_.join();
-  if (depth_thread_.joinable()) depth_thread_.join();
 
   {
     std::lock_guard<std::mutex> lock(raw_mutex_);
@@ -279,15 +236,7 @@ StereoNode::~StereoNode() {
 
   (void)context_.drain();
 
-  {
-    std::lock_guard<std::mutex> lock(stereo_mutex_);
-    stereo_pending_.reset();
-  }
-
   auto_controller_.reset();
-  matcher_.shutdown();
-  depth_pool_.reset();
-  spatial_gray_pool_.reset();
   rectifier_.shutdown();
   isp_.shutdown();
 

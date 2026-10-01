@@ -83,6 +83,39 @@ def generate_launch_description():
         ],
     )
 
+    disparity = ComposableNode(
+        package='isaac_ros_stereo_image_proc',
+        plugin='nvidia::isaac_ros::stereo_image_proc::DisparityNode',
+        name='disparity',
+        parameters=[{
+            'backend': 'CUDA',
+            'max_disparity': 128.0,
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
+        }],
+        remappings=[
+            ('left/image_rect', '/spatial/left/image_rect'),
+            ('left/camera_info', '/spatial/left/camera_info'),
+            ('right/image_rect', '/spatial/right/image_rect'),
+            ('right/camera_info', '/spatial/right/camera_info'),
+            ('disparity', '/stereo/disparity'),
+        ],
+    )
+
+    disparity_to_depth = ComposableNode(
+        package='isaac_ros_stereo_image_proc',
+        plugin='nvidia::isaac_ros::stereo_image_proc::DisparityToDepthNode',
+        name='disparity_to_depth',
+        parameters=[{
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
+        }],
+        remappings=[
+            ('disparity', '/stereo/disparity'),
+            ('depth', '/stereo/depth'),
+        ],
+    )
+
     visual_slam = ComposableNode(
         package='isaac_ros_visual_slam',
         plugin='nvidia::isaac_ros::visual_slam::VisualSlamNode',
@@ -133,8 +166,10 @@ def generate_launch_description():
             camera,
             left_resize,
             right_resize,
+            # disparity,
+            # disparity_to_depth,
             visual_slam,
-            nvblox,
+            # nvblox,
         ],
         output='screen',
     )

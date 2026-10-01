@@ -83,6 +83,34 @@ def generate_launch_description():
         ],
     )
 
+    # cuVSLAM remains full-rate. Depth/mapping deliberately admits one
+    # synchronized stereo pair out of every two (~19 Hz from a 38 Hz camera).
+    stereo_rate_gate = ComposableNode(
+        package='isaac_ros_nitros_topic_tools',
+        plugin='nvidia::isaac_ros::nitros::NitrosCameraDropNode',
+        name='stereo_rate_gate',
+        parameters=[{
+            'mode': 'stereo',
+            'X': 1,
+            'Y': 2,
+            'sync_queue_size': 2,
+            'input_queue_size': 2,
+            'output_queue_size': 1,
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
+        }],
+        remappings=[
+            ('image_1', '/spatial/left/image_rect'),
+            ('camera_info_1', '/spatial/left/camera_info'),
+            ('image_2', '/spatial/right/image_rect'),
+            ('camera_info_2', '/spatial/right/camera_info'),
+            ('image_1_drop', '/depth_input/left/image_rect'),
+            ('camera_info_1_drop', '/depth_input/left/camera_info'),
+            ('image_2_drop', '/depth_input/right/image_rect'),
+            ('camera_info_2_drop', '/depth_input/right/camera_info'),
+        ],
+    )
+
     disparity = ComposableNode(
         package='isaac_ros_stereo_image_proc',
         plugin='nvidia::isaac_ros::stereo_image_proc::DisparityNode',
@@ -94,10 +122,10 @@ def generate_launch_description():
             'output_qos': 'SENSOR_DATA',
         }],
         remappings=[
-            ('left/image_rect', '/spatial/left/image_rect'),
-            ('left/camera_info', '/spatial/left/camera_info'),
-            ('right/image_rect', '/spatial/right/image_rect'),
-            ('right/camera_info', '/spatial/right/camera_info'),
+            ('left/image_rect', '/depth_input/left/image_rect'),
+            ('left/camera_info', '/depth_input/left/camera_info'),
+            ('right/image_rect', '/depth_input/right/image_rect'),
+            ('right/camera_info', '/depth_input/right/camera_info'),
             ('disparity', '/stereo/disparity'),
         ],
     )
@@ -166,10 +194,11 @@ def generate_launch_description():
             camera,
             left_resize,
             right_resize,
-            # disparity,
-            # disparity_to_depth,
+            stereo_rate_gate,
+            disparity,
+            disparity_to_depth,
             visual_slam,
-            # nvblox,
+            nvblox,
         ],
         output='screen',
     )

@@ -182,6 +182,10 @@ StereoNode::StereoNode(const rclcpp::NodeOptions& options)
       "/spatial/left/camera_info", qos);
   spatial_right_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>(
       "/spatial/right/camera_info", qos);
+  preview_left_pub_ =
+      create_publisher<sensor_msgs::msg::CompressedImage>(
+          "/viz/stereo/left/image/compressed",
+          rclcpp::SensorDataQoS().keep_last(1));
 
   left_info_ =
       makeRectifiedInfo(calibration_, calibration_.P1(), kLeftFrame);
@@ -194,6 +198,11 @@ StereoNode::StereoNode(const rclcpp::NodeOptions& options)
           &raw_consumed_event_, cudaEventDisableTiming) != cudaSuccess) {
     throw std::runtime_error("failed to create raw capture completion event");
   }
+  if (cudaStreamCreateWithFlags(
+          &preview_stream_, cudaStreamNonBlocking) != cudaSuccess) {
+    throw std::runtime_error("failed to create preview CUDA stream");
+  }
+  preview_next_ = std::chrono::steady_clock::now();
 
   running_.store(true);
   acquisition_thread_ =
@@ -201,7 +210,9 @@ StereoNode::StereoNode(const rclcpp::NodeOptions& options)
   compute_thread_ =
       std::thread(&StereoNode::computeLoop, this);
   rgb_thread_ =
-    std::thread(&StereoNode::rgbPublishLoop, this);
+      std::thread(&StereoNode::rgbPublishLoop, this);
+  preview_thread_ =
+      std::thread(&StereoNode::previewLoop, this);
   auto_control_thread_ =
       std::thread(&StereoNode::autoControlLoop, this);
 
@@ -215,11 +226,13 @@ StereoNode::~StereoNode() {
   running_.store(false);
   raw_cv_.notify_all();
   rgb_cv_.notify_all();
+  preview_cv_.notify_all();
 
   if (acquisition_thread_.joinable()) acquisition_thread_.join();
   if (compute_thread_.joinable()) compute_thread_.join();
   if (auto_control_thread_.joinable()) auto_control_thread_.join();
   if (rgb_thread_.joinable()) rgb_thread_.join();
+  if (preview_thread_.joinable()) preview_thread_.join();
 
   {
     std::lock_guard<std::mutex> lock(raw_mutex_);
@@ -232,6 +245,10 @@ StereoNode::~StereoNode() {
   if (raw_consumed_event_ != nullptr) {
     cudaEventDestroy(raw_consumed_event_);
     raw_consumed_event_ = nullptr;
+  }
+  if (preview_stream_ != nullptr) {
+    cudaStreamDestroy(preview_stream_);
+    preview_stream_ = nullptr;
   }
 
   (void)context_.drain();

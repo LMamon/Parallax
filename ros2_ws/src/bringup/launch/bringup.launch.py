@@ -27,8 +27,20 @@ def generate_launch_description():
         name='foxglove_bridge',
         output='screen',
         parameters=[{
-            # Foxglove observes ROS products; it does not own the spatial path.
+            # Foxglove is an observability boundary, not a wildcard subscriber
+            # into the compute graph.
             'send_buffer_limit': 10000000,
+            'topic_whitelist': [
+                '^/viz/.*',
+                '^/tf$',
+                '^/tf_static$',
+                '^/visual_slam/.*',
+                '^/nvblox_node/.*',
+                '^/scan$',
+                '^/planned_path_3d$',
+                '^/goal_pose_3d$',
+                '^/diagnostics$',
+            ],
         }],
     )
 

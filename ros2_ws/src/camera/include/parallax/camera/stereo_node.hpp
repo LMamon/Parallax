@@ -30,6 +30,7 @@
 #pragma GCC diagnostic pop
 
 #include <sensor_msgs/msg/camera_info.hpp>
+#include <sensor_msgs/msg/compressed_image.hpp>
 
 #include <array>
 #include <atomic>
@@ -154,6 +155,12 @@ class StereoNode final : public rclcpp::Node {
     std_msgs::msg::Header right{};
   };
 
+  struct PreviewPublication {
+    std::shared_ptr<RectifiedOutput> frame;
+    std_msgs::msg::Header header{};
+    bool valid = false;
+  };
+
   static constexpr std::size_t RgbQueueCapacity = 4;
 
   std::array<RgbPublication, RgbQueueCapacity> rgb_queue_{};
@@ -164,7 +171,15 @@ class StereoNode final : public rclcpp::Node {
   std::condition_variable rgb_cv_;
   std::thread rgb_thread_;
 
-  void rgbPublishLoop(); 
+  PreviewPublication preview_pending_{};
+  std::mutex preview_mutex_;
+  std::condition_variable preview_cv_;
+  std::thread preview_thread_;
+  cudaStream_t preview_stream_ = nullptr;
+  std::chrono::steady_clock::time_point preview_next_{};
+
+  void rgbPublishLoop();
+  void previewLoop();
   void initializeAutoControl();
   void autoControlLoop();
   void acquisitionLoop();
@@ -190,6 +205,8 @@ class StereoNode final : public rclcpp::Node {
   std::shared_ptr<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
       nvidia::isaac_ros::nitros::NitrosImage>> right_nitros_pub_;
 
+  rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr
+      preview_left_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr left_info_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr right_info_pub_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr spatial_left_info_pub_;

@@ -84,6 +84,7 @@ add_library(stereo_component SHARED
   src/node/compute.cpp
   src/node/control.cpp
   src/node/rgb.cpp
+  src/node/preview.cpp
 )
 
 target_compile_features(stereo_component PRIVATE cxx_std_17)

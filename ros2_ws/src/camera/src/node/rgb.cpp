@@ -181,6 +181,20 @@ void StereoNode::rgbPublishLoop() {
     diag_info_publish +=
         Clock::now() - info_start;
 
+    const auto preview_now = Clock::now();
+    if (preview_now >= preview_next_) {
+      preview_next_ =
+          preview_now +
+          std::chrono::microseconds(1000000 / preview_fps_);
+      {
+        std::lock_guard<std::mutex> lock(preview_mutex_);
+        preview_pending_.frame = publication.frame;
+        preview_pending_.header = publication.left;
+        preview_pending_.valid = true;
+      }
+      preview_cv_.notify_one();
+    }
+
     ++diag_frames;
 
     const auto diag_now = Clock::now();

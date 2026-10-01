@@ -19,6 +19,8 @@
   <exec_depend>isaac_ros_visual_slam</exec_depend>
   <exec_depend>isaac_ros_nvblox</exec_depend>
 
+  <exec_depend>isaac_ros_nitros_topic_tools</exec_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

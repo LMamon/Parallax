@@ -74,6 +74,7 @@ RUN wget -qO - https://isaac.download.nvidia.com/isaac-ros/repos.key | apt-key a
         ros-humble-isaac-ros-nitros \
         ros-humble-isaac-ros-managed-nitros \
         ros-humble-isaac-ros-nitros-image-type \
+        ros-humble-isaac-ros-nitros-topic-tools \
         ros-humble-isaac-ros-nvblox \
         ros-humble-isaac-ros-stereo-image-proc \
         ros-humble-isaac-ros-visual-slam \

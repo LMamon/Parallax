@@ -39,27 +39,22 @@ namespace parallax::ros {
             left_host_rgb.resize(left_row_bytes * static_cast<std::size_t>(left_gpu.height()));
             right_host_rgb.resize(right_row_bytes * static_cast<std::size_t>(right_gpu.height()));
 
-            const bool copies_submitted = cudaMemcpy2DAsync(left_host_rgb.data(),
-                                                            left_row_bytes,
-                                                            left_gpu.data(),
-                                                            left_gpu.pitch(),
-                                                            left_row_bytes,
-                                                            left_gpu.height(),
-                                                            cudaMemcpyDeviceToHost,
-                                                            preview_stream_) == cudaSuccess &&
+            const auto left_copy = cudaMemcpy2DAsync(
+                left_host_rgb.data(), left_row_bytes,
+                left_gpu.data(), left_gpu.pitch(),
+                left_row_bytes, left_gpu.height(),
+                cudaMemcpyDeviceToHost, preview_stream_);
 
-                                          cudaMemcpy2DAsync(right_host_rgb.data(),
-                                                            right_row_bytes,
-                                                            right_gpu.data(),
-                                                            right_gpu.pitch(),
-                                                            right_row_bytes,
-                                                            right_gpu.height(),
-                                                            cudaMemcpyDeviceToHost,
-                                                            preview_stream_) == cudaSuccess;
+            const auto right_copy = cudaMemcpy2DAsync(
+                right_host_rgb.data(), right_row_bytes,
+                right_gpu.data(), right_gpu.pitch(),
+                right_row_bytes, right_gpu.height(),
+                cudaMemcpyDeviceToHost, preview_stream_);
 
-            if (!copies_submitted || cudaStreamSynchronize(preview_stream_) != cudaSuccess) {
-                
-                RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "stereo preview GPU-to-host copy failed");
+            const auto copy_sync = cudaStreamSynchronize(preview_stream_);
+            if (left_copy != cudaSuccess || right_copy != cudaSuccess || copy_sync != cudaSuccess) {
+                RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                     "stereo preview GPU-to-host copy failed");
                 continue;
             }
 
@@ -89,13 +84,18 @@ namespace parallax::ros {
                        0.0,
                        cv::INTER_AREA);
 
+            cv::Mat left_bgr;
+            cv::Mat right_bgr;
+            cv::cvtColor(left_preview, left_bgr, cv::COLOR_RGB2BGR);
+            cv::cvtColor(right_preview, right_bgr, cv::COLOR_RGB2BGR);
+
             std::vector<std::uint8_t> left_jpeg;
             std::vector<std::uint8_t> right_jpeg;
 
             const std::vector<int> jpeg_params{cv::IMWRITE_JPEG_QUALITY, jpeg_quality_};
 
-            const bool left_encoded = cv::imencode(".jpg", left_preview, left_jpeg, jpeg_params);
-            const bool right_encoded = cv::imencode(".jpg", right_preview, right_jpeg, jpeg_params);
+            const bool left_encoded = cv::imencode(".jpg", left_bgr, left_jpeg, jpeg_params);
+            const bool right_encoded = cv::imencode(".jpg", right_bgr, right_jpeg, jpeg_params);
 
             if (!left_encoded || !right_encoded) {
                 continue;

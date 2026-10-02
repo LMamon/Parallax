@@ -53,7 +53,7 @@ def generate_launch_description():
             'output_qos': 'SENSOR_DATA',
         }],
         remappings=[
-            ('image', '/compute/stereo/left/image_rect'),
+            ('image', '/internal/stereo/left/image_rect'),
             ('camera_info', '/stereo/left/camera_info'),
             ('resize/image', '/spatial/left/image_rect'),
             ('resize/camera_info', '/spatial/left/camera_info_unused'),
@@ -76,7 +76,7 @@ def generate_launch_description():
             'output_qos': 'SENSOR_DATA',
         }],
         remappings=[
-            ('image', '/compute/stereo/right/image_rect'),
+            ('image', '/internal/stereo/right/image_rect'),
             ('camera_info', '/stereo/right/camera_info'),
             ('resize/image', '/spatial/right/image_rect'),
             ('resize/camera_info', '/spatial/right/camera_info_unused'),

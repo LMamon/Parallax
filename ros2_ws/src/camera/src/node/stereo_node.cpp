@@ -145,7 +145,7 @@ namespace parallax::ros {
         left_nitros_pub_ = std::make_shared<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
                                             nvidia::isaac_ros::nitros::NitrosImage>>(
                                             this,
-                                            "/compute/stereo/left/image_rect",
+                                            "/internal/stereo/left/image_rect",
                                             nvidia::isaac_ros::nitros::nitros_image_rgb8_t::supported_type_name,
                                             nvidia::isaac_ros::nitros::NitrosDiagnosticsConfig{},
                                             qos);
@@ -153,7 +153,7 @@ namespace parallax::ros {
                                             right_nitros_pub_ = std::make_shared<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
                                             nvidia::isaac_ros::nitros::NitrosImage>>(
                                             this,
-                                            "/compute/stereo/right/image_rect",
+                                            "/internal/stereo/right/image_rect",
                                             nvidia::isaac_ros::nitros::nitros_image_rgb8_t::supported_type_name,
                                             nvidia::isaac_ros::nitros::NitrosDiagnosticsConfig{},
                                             qos);
@@ -163,9 +163,9 @@ namespace parallax::ros {
         spatial_left_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>("/spatial/left/camera_info", qos);
         spatial_right_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>("/spatial/right/camera_info", qos);
         
-        preview_left_pub_ = create_publisher<sensor_msgs::msg::CompressedImage>("left/image/compressed",
+        preview_left_pub_ = create_publisher<sensor_msgs::msg::CompressedImage>("/left/image/compressed",
                                             rclcpp::SensorDataQoS().keep_last(1));
-        preview_right_pub_ = create_publisher<sensor_msgs::msg::CompressedImage>("right/image/compressed",
+        preview_right_pub_ = create_publisher<sensor_msgs::msg::CompressedImage>("/right/image/compressed",
                                             rclcpp::SensorDataQoS().keep_last(1));
 
         left_info_ = makeRectifiedInfo(calibration_, calibration_.P1(), kLeftFrame);

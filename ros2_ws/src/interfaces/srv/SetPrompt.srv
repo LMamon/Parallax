@@ -1,0 +1,6 @@
+string prompt
+bool segment
+---
+bool accepted
+uint64 revision
+string message

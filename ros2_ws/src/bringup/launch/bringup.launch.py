@@ -40,8 +40,8 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='lidar_tf',
         arguments=[
-            '-0.034925', '0', '0.028575',
-            '0', '0', '0', '1',
+            '-0.034925', '0.0', '0.028575',
+            '0.0', '0.0', '1.0', '0.0',
             'base_link', 'lidar',
         ],
     )

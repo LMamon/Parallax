@@ -140,6 +140,9 @@ namespace parallax::ros {
 
         initializeAutoControl();
 
+        perception_ = std::make_unique<parallax::perception::PerceptionRuntime>(*this, context_);
+        perception_->start();
+
         const auto qos = rclcpp::SensorDataQoS().keep_last(1);
 
         left_nitros_pub_ = std::make_shared<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
@@ -221,6 +224,8 @@ namespace parallax::ros {
             cudaStreamDestroy(preview_stream_);
             preview_stream_ = nullptr;
         }
+
+        if (perception_) { perception_->stop(); perception_.reset(); }
 
         (void)context_.drain();
 

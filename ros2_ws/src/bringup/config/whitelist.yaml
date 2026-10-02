@@ -1,15 +1,60 @@
 foxglove_bridge:
   ros__parameters:
-    topics_whitelist:
-      - /left/image/compressed
-      - /right/image/compressed
-
-      - /tf
-      - /tf_static
+    topic_whitelist:
+      - /clicked_point
 
       - /diagnostics
 
+      - /depth_input/left/camera_info
+      - /depth_input/left/image_rect
+      - /depth_input/right/camera_info
+      - /depth_input/right/image_rect
+
+      - /left/image/compressed
+      
+      - /parameter_events
+
+      - /pose
+
+      - /right/image/compressed
+
+      - /spatial/left/camera_info
+      - /spatial/left/image_rect
+      - /spatial/right/camera_info
+      - /spatial/right/image_rect
+      
+      - /stereo/depth
+      - /stereo/disparity
+      - /stereo/left/camera_info
+      - /stereo/right/camera_info
+      
       - /scan
+
+      - /move_base_simple/goal
+
+      - /nvblox_node/back_projected_depth/left_camera_optical_frame
+      - /nvblox_node/color_layer
+      - /nvblox_node/color_layer_marker
+      - /nvblox_node/combined_occupancy_grid
+      - /nvblox_node/dynamic_occupancy_grid
+      - /nvblox_node/esdf_slice_bounds
+      - /nvblox_node/mesh
+      - /nvblox_node/pessimistic_static_esdf_pointcloud
+      - /nvblox_node/pessimistic_static_map_slice
+      - /nvblox_node/shapes_to_clear
+      - /nvblox_node/static_esdf_pointcloud
+      - /nvblox_node/static_map_slice
+      - /nvblox_node/static_occupancy_grid
+      - /nvblox_node/tsdf_layer
+      - /nvblox_node/tsdf_layer_marker
+      - /nvblox_node/workspace_bounds
+
+      - /initialpose
+      
+      - /tf
+      - /tf_static
+      
+      - /transform
 
       - /visual_slam/status
       - /visual_slam/tracking/odometry
@@ -31,23 +76,12 @@ foxglove_bridge:
       - /visual_slam/vis/slam_odometry
       - /visual_slam/vis/velocity
 
-      - /nvblox_node/back_projected_depth/left_camera_optical_frame
-      - /nvblox_node/color_layer
-      - /nvblox_node/color_layer_marker
-      - /nvblox_node/combined_occupancy_grid
-      - /nvblox_node/dynamic_occupancy_grid
-      - /nvblox_node/esdf_slice_bounds
-      - /nvblox_node/mesh
-      - /nvblox_node/pessimistic_static_esdf_pointcloud
-      - /nvblox_node/pessimistic_static_map_slice
-      - /nvblox_node/shapes_to_clear
-      - /nvblox_node/static_esdf_pointcloud
-      - /nvblox_node/static_map_slice
-      - /nvblox_node/static_occupancy_grid
-      - /nvblox_node/tsdf_layer
-      - /nvblox_node/tsdf_layer_marker
-      - /nvblox_node/workspace_bounds
+    service_whitelist:
+      - /perception/detections
+      - /perception/state
+      - /perception/track
+      - /perception/set_prompt
+      - /perception/clear_prompt
 
-      - /clicked_point
-      - /initialpose
-      - /move_base_simple/goal
+      - /tracking/start
+      - /tracking/stop

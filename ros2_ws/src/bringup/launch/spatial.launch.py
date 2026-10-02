@@ -9,6 +9,7 @@ def generate_launch_description():
     share = FindPackageShare('bringup')
     camera_config = PathJoinSubstitution([share, 'config', 'camera.yaml'])
     isp_config = PathJoinSubstitution([share, 'config', 'isp.yaml'])
+    perception_config = PathJoinSubstitution([share, 'config', 'perception.yaml'])
     calibration_dir = (
         '/workspace/Parallax/config/camera/calibration/results/rectification'
     )
@@ -17,7 +18,7 @@ def generate_launch_description():
         package='camera',
         plugin='parallax::ros::StereoNode',
         name='stereo_camera',
-        parameters=[{
+        parameters=[perception_config, {
             'camera_config': camera_config,
             'isp_config': isp_config,
             'calibration_dir': calibration_dir,

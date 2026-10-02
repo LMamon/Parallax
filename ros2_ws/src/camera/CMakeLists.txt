@@ -5,6 +5,14 @@ set(CMAKE_CUDA_ARCHITECTURES 87)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(pybind11 REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Development)
+find_package(
+    Torch REQUIRED
+    PATHS /usr/local/lib/python3.10/dist-packages/torch/share/cmake
+    NO_DEFAULT_PATH
+)
+find_package(interfaces REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(isaac_ros_managed_nitros REQUIRED)
@@ -52,6 +60,11 @@ add_library(camera STATIC
   ${VPI_SOURCES}
   ${CORE_SOURCES}
   ${CUDA_SOURCES}
+    src/perception/nanoowl_bridge.cpp
+    src/perception/efficientvit_sam.cpp
+    src/perception/perception_runtime.cpp
+    src/tracking/dcf_tracker.cpp
+    src/perception/efficientvit_sam_cuda.cu
 )
 
 target_compile_features(camera PUBLIC cxx_std_17)
@@ -68,7 +81,6 @@ target_include_directories(camera
 )
 
 target_link_libraries(camera
-  PUBLIC
     CUDA::cudart
     CUDA::nppicc
     yaml-cpp
@@ -76,6 +88,16 @@ target_link_libraries(camera
     vpi
     dl
     ${OpenCV_LIBS}
+    ${TORCH_LIBRARIES}
+    Python3::Python
+    pybind11::embed
+)
+
+ament_target_dependencies(
+  camera
+  rclcpp
+  sensor_msgs
+  interfaces
 )
 
 add_library(stereo_component SHARED

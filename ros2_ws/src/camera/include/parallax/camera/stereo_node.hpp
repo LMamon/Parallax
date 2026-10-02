@@ -11,6 +11,7 @@
 #include <parallax/isp/isp_config.hpp>
 #include <parallax/stereo/calibration.hpp>
 #include <parallax/stereo/rectification.hpp>
+#include <parallax/perception/perception_runtime.hpp>
 
 #include <cuda_runtime.h>
 
@@ -127,96 +128,97 @@ nvidia::isaac_ros::nitros::NitrosImage makePooledNitrosImage(const std::shared_p
     return image;
 }
 
-    class StereoNode final : public rclcpp::Node {
-        public:
-            explicit StereoNode(const rclcpp::NodeOptions& options);
-            ~StereoNode() override;
+class StereoNode final : public rclcpp::Node {
+    public:
+        explicit StereoNode(const rclcpp::NodeOptions& options);
+        ~StereoNode() override;
 
-        private:
-            using IspOutput = parallax::isp::ISP::OutputSlot;
-            using RectifiedOutput = parallax::stereo::StereoRectifier::OutputSlot;
-            using Completion = parallax::core::CompletionHandle;
+    private:
+        using IspOutput = parallax::isp::ISP::OutputSlot;
+        using RectifiedOutput = parallax::stereo::StereoRectifier::OutputSlot;
+        using Completion = parallax::core::CompletionHandle;
 
-            struct RgbPublication {
-                std::shared_ptr<IspOutput> isp;
-                std::shared_ptr<RectifiedOutput> frame;
-                Completion ready{};
-                std_msgs::msg::Header left{};
-                std_msgs::msg::Header right{};
-            };
+        struct RgbPublication {
+            std::shared_ptr<IspOutput> isp;
+            std::shared_ptr<RectifiedOutput> frame;
+            Completion ready{};
+            std_msgs::msg::Header left{};
+            std_msgs::msg::Header right{};
+        };
 
-            struct PreviewPublication {
-                std::shared_ptr<RectifiedOutput> frame;
-                std_msgs::msg::Header left{};
-                std_msgs::msg::Header right{};
-                bool valid = false;
-            };
+        struct PreviewPublication {
+            std::shared_ptr<RectifiedOutput> frame;
+            std_msgs::msg::Header left{};
+            std_msgs::msg::Header right{};
+            bool valid = false;
+        };
 
-            static constexpr std::size_t RgbQueueCapacity = 4;
+        static constexpr std::size_t RgbQueueCapacity = 4;
 
-            std::array<RgbPublication, RgbQueueCapacity> rgb_queue_{};
-            std::size_t rgb_head_ = 0;
-            std::size_t rgb_tail_ = 0;
-            std::size_t rgb_size_ = 0;
-            std::mutex rgb_mutex_;
-            std::condition_variable rgb_cv_;
-            std::thread rgb_thread_;
+        std::array<RgbPublication, RgbQueueCapacity> rgb_queue_{};
+        std::size_t rgb_head_ = 0;
+        std::size_t rgb_tail_ = 0;
+        std::size_t rgb_size_ = 0;
+        std::mutex rgb_mutex_;
+        std::condition_variable rgb_cv_;
+        std::thread rgb_thread_;
 
-            PreviewPublication preview_pending_{};
-            std::mutex preview_mutex_;
-            std::condition_variable preview_cv_;
-            std::thread preview_thread_;
-            cudaStream_t preview_stream_ = nullptr;
-            std::chrono::steady_clock::time_point preview_next_{};
+        PreviewPublication preview_pending_{};
+        std::mutex preview_mutex_;
+        std::condition_variable preview_cv_;
+        std::thread preview_thread_;
+        cudaStream_t preview_stream_ = nullptr;
+        std::chrono::steady_clock::time_point preview_next_{};
 
-            void rgbPublishLoop();
-            void previewLoop();
-            void initializeAutoControl();
-            void autoControlLoop();
-            void acquisitionLoop();
-            void computeLoop();
+        void rgbPublishLoop();
+        void previewLoop();
+        void initializeAutoControl();
+        void autoControlLoop();
+        void acquisitionLoop();
+        void computeLoop();
 
-            parallax::camera::CameraConfig camera_config_{};
-            parallax::isp::IspConfig isp_config_{};
-            parallax::stereo::StereoCalibration calibration_{};
+        parallax::camera::CameraConfig camera_config_{};
+        parallax::isp::IspConfig isp_config_{};
+        parallax::stereo::StereoCalibration calibration_{};
 
-            parallax::core::ExecutionContext context_{};
-            std::unique_ptr<parallax::camera::StereoCamera> camera_;
-            parallax::isp::ISP isp_{};
-            parallax::stereo::StereoRectifier rectifier_{};
-            std::unique_ptr<parallax::isp::AutoController> auto_controller_;
+        parallax::core::ExecutionContext context_{};
+        std::unique_ptr<parallax::camera::StereoCamera> camera_;
+        parallax::isp::ISP isp_{};
+        parallax::stereo::StereoRectifier rectifier_{};
+        std::unique_ptr<parallax::isp::AutoController> auto_controller_;
+        std::unique_ptr<parallax::perception::PerceptionRuntime> perception_;
 
-            RawLease raw_pending_{};
-            std::mutex raw_mutex_;
-            std::condition_variable raw_cv_;
-            cudaEvent_t raw_consumed_event_ = nullptr;
+        RawLease raw_pending_{};
+        std::mutex raw_mutex_;
+        std::condition_variable raw_cv_;
+        cudaEvent_t raw_consumed_event_ = nullptr;
 
-            std::shared_ptr<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
-                nvidia::isaac_ros::nitros::NitrosImage>> left_nitros_pub_;
-                
-            std::shared_ptr<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
-                nvidia::isaac_ros::nitros::NitrosImage>> right_nitros_pub_;
+        std::shared_ptr<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
+            nvidia::isaac_ros::nitros::NitrosImage>> left_nitros_pub_;
+            
+        std::shared_ptr<nvidia::isaac_ros::nitros::ManagedNitrosPublisher<
+            nvidia::isaac_ros::nitros::NitrosImage>> right_nitros_pub_;
 
-            rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr preview_left_pub_;
-            rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr preview_right_pub_;
-            rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr left_info_pub_;
-            rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr right_info_pub_;
-            rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr spatial_left_info_pub_;
-            rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr spatial_right_info_pub_;
+        rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr preview_left_pub_;
+        rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr preview_right_pub_;
+        rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr left_info_pub_;
+        rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr right_info_pub_;
+        rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr spatial_left_info_pub_;
+        rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr spatial_right_info_pub_;
 
-            sensor_msgs::msg::CameraInfo left_info_{};
-            sensor_msgs::msg::CameraInfo right_info_{};
-            sensor_msgs::msg::CameraInfo spatial_left_info_{};
-            sensor_msgs::msg::CameraInfo spatial_right_info_{};
+        sensor_msgs::msg::CameraInfo left_info_{};
+        sensor_msgs::msg::CameraInfo right_info_{};
+        sensor_msgs::msg::CameraInfo spatial_left_info_{};
+        sensor_msgs::msg::CameraInfo spatial_right_info_{};
 
-            int preview_fps_ = 20;
-            int jpeg_quality_ = 85;
-            bool diagnostics_ = false;
+        int preview_fps_ = 20;
+        int jpeg_quality_ = 85;
+        bool diagnostics_ = false;
 
-            std::atomic<bool> running_{false};
-            std::thread acquisition_thread_;
-            std::thread compute_thread_;
-            std::thread auto_control_thread_;
+        std::atomic<bool> running_{false};
+        std::thread acquisition_thread_;
+        std::thread compute_thread_;
+        std::thread auto_control_thread_;
     };
 
 }

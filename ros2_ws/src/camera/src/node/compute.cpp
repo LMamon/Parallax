@@ -110,6 +110,18 @@ namespace parallax::ros {
             right_header.frame_id = kRightFrame;
 
 
+            // Neural branch is direct in-process GPU ownership; no ROS compute topic.
+            if (perception_) {
+                auto rgb = std::shared_ptr<const parallax::isp::RectifiedStereoFrame>(rectified, &rectified->rgb);
+                parallax::perception::PerceptionRuntime::Frame nf; 
+                nf.rgb = std::move(rgb); 
+                nf.owner = rectified; 
+                nf.ready = rect_ready; 
+                nf.header = left_header; 
+                nf.sequence = raw.sequence; 
+                perception_->submit(std::move(nf));
+            }
+
             // RGB branch.
             // The RGB publication owns isp_output until rect_ready completes.
             // That is required because rectification may still be reading from

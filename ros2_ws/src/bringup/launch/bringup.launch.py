@@ -27,11 +27,11 @@ def generate_launch_description():
         executable='foxglove_bridge',
         name='foxglove_bridge',
         output='screen',
-        parameters=[{
+        parameters=[
+            topics, {
             # Foxglove is an observability boundary, not a wildcard subscriber
             # into the compute graph.
             'send_buffer_limit': 10000000,
-            'topic_whitelist': topics,
             'max_qos_depth': 2
         }],
     )

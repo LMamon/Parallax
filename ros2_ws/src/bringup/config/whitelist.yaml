@@ -1,49 +1,51 @@
-topics:
-  - /left/image/compressed
-  - /right/image/compressed
+foxglove_bridge:
+  ros__parameters:
+    topics_whitelist:
+      - /left/image/compressed
+      - /right/image/compressed
 
-  - /tf
-  - /tf_static
+      - /tf
+      - /tf_static
 
-  - /diagnostics
+      - /diagnostics
 
-  - /visual_slam/status
-  - /visual_slam/tracking/odometry
-  - /visual_slam/tracking/slam_path
-  - /visual_slam/tracking/vo_path
-  - /visual_slam/tracking/vo_pose
-  - /visual_slam/tracking/vo_pose_covariance
-  - /visual_slam/vis/gravity
-  - /visual_slam/vis/landmarks_cloud
-  - /visual_slam/vis/localizer
-  - /visual_slam/vis/localizer_loop_closure_cloud
-  - /visual_slam/vis/localizer_map_cloud
-  - /visual_slam/vis/localizer_observations_cloud
-  - /visual_slam/vis/loop_closure_cloud
-  - /visual_slam/vis/observations_cloud
-  - /visual_slam/vis/pose_graph_edges
-  - /visual_slam/vis/pose_graph_edges2
-  - /visual_slam/vis/pose_graph_nodes
-  - /visual_slam/vis/slam_odometry
-  - /visual_slam/vis/velocity
+      - /visual_slam/status
+      - /visual_slam/tracking/odometry
+      - /visual_slam/tracking/slam_path
+      - /visual_slam/tracking/vo_path
+      - /visual_slam/tracking/vo_pose
+      - /visual_slam/tracking/vo_pose_covariance
+      - /visual_slam/vis/gravity
+      - /visual_slam/vis/landmarks_cloud
+      - /visual_slam/vis/localizer
+      - /visual_slam/vis/localizer_loop_closure_cloud
+      - /visual_slam/vis/localizer_map_cloud
+      - /visual_slam/vis/localizer_observations_cloud
+      - /visual_slam/vis/loop_closure_cloud
+      - /visual_slam/vis/observations_cloud
+      - /visual_slam/vis/pose_graph_edges
+      - /visual_slam/vis/pose_graph_edges2
+      - /visual_slam/vis/pose_graph_nodes
+      - /visual_slam/vis/slam_odometry
+      - /visual_slam/vis/velocity
 
-  - /nvblox_node/back_projected_depth/left_camera_optical_frame
-  - /nvblox_node/color_layer
-  - /nvblox_node/color_layer_marker
-  - /nvblox_node/combined_occupancy_grid
-  - /nvblox_node/dynamic_occupancy_grid
-  - /nvblox_node/esdf_slice_bounds
-  - /nvblox_node/mesh
-  - /nvblox_node/pessimistic_static_esdf_pointcloud
-  - /nvblox_node/pessimistic_static_map_slice
-  - /nvblox_node/shapes_to_clear
-  - /nvblox_node/static_esdf_pointcloud
-  - /nvblox_node/static_map_slice
-  - /nvblox_node/static_occupancy_grid
-  - /nvblox_node/tsdf_layer
-  - /nvblox_node/tsdf_layer_marker
-  - /nvblox_node/workspace_bounds
+      - /nvblox_node/back_projected_depth/left_camera_optical_frame
+      - /nvblox_node/color_layer
+      - /nvblox_node/color_layer_marker
+      - /nvblox_node/combined_occupancy_grid
+      - /nvblox_node/dynamic_occupancy_grid
+      - /nvblox_node/esdf_slice_bounds
+      - /nvblox_node/mesh
+      - /nvblox_node/pessimistic_static_esdf_pointcloud
+      - /nvblox_node/pessimistic_static_map_slice
+      - /nvblox_node/shapes_to_clear
+      - /nvblox_node/static_esdf_pointcloud
+      - /nvblox_node/static_map_slice
+      - /nvblox_node/static_occupancy_grid
+      - /nvblox_node/tsdf_layer
+      - /nvblox_node/tsdf_layer_marker
+      - /nvblox_node/workspace_bounds
 
-  - /clicked_point
-  - /initialpose
-  - /move_base_simple/goal
+      - /clicked_point
+      - /initialpose
+      - /move_base_simple/goal

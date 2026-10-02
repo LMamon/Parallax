@@ -4,7 +4,7 @@ FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NVBLOX_VERSION=v0.0.10
-ARG RPLIDAR_SDK_REF=master
+ARG RPLIDAR_ROS_REF=ros2
 
 # Keep the known-good Parallax toolchain while the ROS workspace replaces
 # infrastructure incrementally instead of forcing a flag-day migration.
@@ -84,6 +84,7 @@ RUN wget -qO - https://isaac.download.nvidia.com/isaac-ros/repos.key | apt-key a
         ros-humble-rosidl-typesupport-fastrtps-c \
         ros-humble-rosidl-typesupport-fastrtps-cpp \
         ros-humble-sensor-msgs \
+        ros-humble-std-srvs \
         ros-humble-tf2-ros \
         ros-humble-tf2-tools \
         ros-humble-v4l2-camera \
@@ -99,13 +100,18 @@ COPY --from=nanoowl \
     /usr/local/lib/python3.10/dist-packages
 COPY --from=nanoowl /usr/src/tensorrt /opt/tensorrt-10.4
 
-# These two source builds are transitional compatibility for the inherited
-# C++ test target. ROS-facing LiDAR and mapping will replace them in later gates.
-RUN git clone --depth 1 \
-        --branch "${RPLIDAR_SDK_REF}" \
-        https://github.com/Slamtec/rplidar_sdk.git \
-        /root/rplidar_sdk \
-    && make -C /root/rplidar_sdk -j"$(nproc)"
+# Official SLAMTEC ROS 2 driver. master is the ROS 1/catkin package.
+RUN mkdir -p /opt/rplidar_ws/src \
+    && git clone --depth 1 \
+        --branch "${RPLIDAR_ROS_REF}" \
+        https://github.com/Slamtec/rplidar_ros.git \
+        /opt/rplidar_ws/src/rplidar_ros \
+    && source /opt/ros/humble/setup.zsh \
+    && cd /opt/rplidar_ws \
+    && colcon build --merge-install \
+        --packages-select rplidar_ros \
+        --cmake-args -DCMAKE_BUILD_TYPE=Release \
+    && rm -rf /opt/rplidar_ws/build /opt/rplidar_ws/log
 
 RUN git clone --branch "${NVBLOX_VERSION}" \
         --depth 1 \

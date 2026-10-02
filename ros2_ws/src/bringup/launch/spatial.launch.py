@@ -210,7 +210,7 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='left_camera_tf',
         arguments=[
-            '0', '0', '0',
+            '0', '0.0482994032149552', '0',
             '-0.5', '0.5', '-0.5', '0.5',
             'base_link', 'left_camera_optical_frame',
         ],
@@ -221,7 +221,7 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='right_camera_tf',
         arguments=[
-            '0', '-0.09659880643', '0',
+            '0', '-0.0482994032149552', '0',
             '-0.5', '0.5', '-0.5', '0.5',
             'base_link', 'right_camera_optical_frame',
         ],

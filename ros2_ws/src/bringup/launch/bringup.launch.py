@@ -12,6 +12,7 @@ def generate_launch_description():
     camera_config = PathJoinSubstitution([share, 'config', 'camera.yaml'])
     isp_config = PathJoinSubstitution([share, 'config', 'isp.yaml'])
     topics = PathJoinSubstitution([share, 'config', 'whitelist.yaml'])
+    lidar_config = PathJoinSubstitution([share, 'config', 'lidar.yaml'])
     spatial_launch = PathJoinSubstitution([share, 'launch', 'spatial.launch.py'])
 
     calibration_dir = (
@@ -20,6 +21,29 @@ def generate_launch_description():
 
     spatial = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(spatial_launch)
+    )
+
+    # Independent 2D LiDAR branch; deliberately not connected to nvblox.
+    lidar = Node(
+        package='rplidar_ros',
+        executable='rplidar_node',
+        name='rplidar_node',
+        output='screen',
+        parameters=[lidar_config],
+        remappings=[('scan', '/scan')],
+    )
+
+    # Original calibration is stereo_body-centered. Current base_link is at
+    # the left-camera origin, 0.0482994032149552 m from stereo_body.
+    lidar_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='lidar_tf',
+        arguments=[
+            '-0.034925', '0', '0.028575',
+            '0', '0', '0', '1',
+            'base_link', 'lidar',
+        ],
     )
 
     foxglove = Node(
@@ -36,4 +60,4 @@ def generate_launch_description():
         }],
     )
 
-    return LaunchDescription([spatial, foxglove])
+    return LaunchDescription([spatial, lidar, lidar_tf, foxglove])

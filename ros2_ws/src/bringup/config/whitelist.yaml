@@ -9,6 +9,8 @@ foxglove_bridge:
 
       - /diagnostics
 
+      - /scan
+
       - /visual_slam/status
       - /visual_slam/tracking/odometry
       - /visual_slam/tracking/slam_path

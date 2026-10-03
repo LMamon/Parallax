@@ -3,7 +3,7 @@
     <name>interfaces</name>
     <version>0.1.0</version>
     <description>Parallax typed perception interfaces</description>
-    <maintainer email="dev@parallax.local">Parallax</maintainer>
+    <maintainer email="noreply@noreply.local">LouisM</maintainer>
     <license>Apache-2.0</license>
 
     <buildtool_depend>ament_cmake</buildtool_depend>

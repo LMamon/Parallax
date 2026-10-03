@@ -5,18 +5,7 @@ set(CMAKE_CUDA_ARCHITECTURES 87)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(pybind11 REQUIRED)
-find_package(Python3 REQUIRED COMPONENTS Development)
-find_package(
-    Torch REQUIRED
-    PATHS /usr/local/lib/python3.10/dist-packages/torch/share/cmake
-    NO_DEFAULT_PATH
-)
-find_package(interfaces REQUIRED)
-find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(isaac_ros_managed_nitros REQUIRED)
-find_package(isaac_ros_nitros_image_type REQUIRED)
 
 find_package(OpenCV REQUIRED COMPONENTS core imgcodecs imgproc)
 find_package(CUDAToolkit REQUIRED)
@@ -55,23 +44,21 @@ set(CUDA_SOURCES
 
 add_library(camera STATIC
   ${CAMERA_SOURCES}
+  ${CORE_SOURCES}
   ${ISP_SOURCES}
   ${STEREO_SOURCES}
   ${VPI_SOURCES}
-  ${CORE_SOURCES}
   ${CUDA_SOURCES}
-    src/perception/nanoowl_bridge.cpp
-    src/perception/efficientvit_sam.cpp
-    src/perception/perception_runtime.cpp
-    src/tracking/dcf_tracker.cpp
-    src/perception/efficientvit_sam_cuda.cu
 )
+
+add_library(camera::camera ALIAS camera)
 
 target_compile_features(camera PUBLIC cxx_std_17)
 
 set_target_properties(camera PROPERTIES
   CUDA_ARCHITECTURES 87
   POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME camera
 )
 
 target_include_directories(camera
@@ -81,58 +68,24 @@ target_include_directories(camera
 )
 
 target_link_libraries(camera
-    CUDA::cudart
-    CUDA::nppicc
-    yaml-cpp
-    Threads::Threads
-    vpi
-    dl
-    ${OpenCV_LIBS}
-    ${TORCH_LIBRARIES}
-    Python3::Python
-    pybind11::embed
+  CUDA::cudart
+  CUDA::nppicc
+  yaml-cpp
+  Threads::Threads
+  vpi
+  dl
+  ${OpenCV_LIBS}
 )
 
 ament_target_dependencies(
   camera
   rclcpp
   sensor_msgs
-  interfaces
 )
 
-add_library(stereo_component SHARED
-  src/node/stereo_node.cpp
-  src/node/capture.cpp
-  src/node/compute.cpp
-  src/node/control.cpp
-  src/node/rgb.cpp
-  src/node/preview.cpp
-)
-
-target_compile_features(stereo_component PRIVATE cxx_std_17)
-
-target_include_directories(stereo_component
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-ament_target_dependencies(
-  stereo_component
-  rclcpp
-  rclcpp_components
-  sensor_msgs
-  isaac_ros_managed_nitros
-  isaac_ros_nitros_image_type
-)
-
-target_link_libraries(stereo_component
-    camera
-)
-
-rclcpp_components_register_nodes(
-  stereo_component
-  "parallax::ros::StereoNode"
-)
+# StereoNode is built by the perception package because it owns the
+# in-process PerceptionRuntime. Camera exports only the sensor/core
+# implementation library.
 
 install(
   DIRECTORY include/
@@ -140,12 +93,23 @@ install(
 )
 
 install(
-  TARGETS
-    camera
-    stereo_component
+  TARGETS camera
+  EXPORT export_camera
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
+)
+
+ament_export_targets(
+  export_camera
+  HAS_LIBRARY_TARGET
+  NAMESPACE camera::
+)
+
+ament_export_dependencies(
+  rclcpp
+  sensor_msgs
 )
 
 ament_package()

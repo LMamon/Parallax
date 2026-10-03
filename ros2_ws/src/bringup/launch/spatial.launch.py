@@ -15,7 +15,7 @@ def generate_launch_description():
     )
 
     camera = ComposableNode(
-        package='camera',
+        package='perception',
         plugin='parallax::ros::StereoNode',
         name='stereo_camera',
         parameters=[perception_config, {

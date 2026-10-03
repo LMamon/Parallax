@@ -12,17 +12,17 @@ color_correction:
     - [0.0, 0.0, 1.0]
 statistics:
   sample_stride: 8
-  update_hz: 19.0
+  update_hz: 10.0
 auto_exposure:
-  enable: false
+  enable: true
   min_exposure_us: 100
-  max_exposure_us: 8000
-  target_luma: 0.45
-  deadband: 0.04
-  max_step_ratio: 1.08
+  max_exposure_us: 5000
+  target_luma: 0.42
+  deadband: 0.05
+  max_step_ratio: 1.06
   highlight_fraction: 0.02
 auto_white_balance:
   enable: true
-  smoothing: 0.03
-  min_gain: 0.5
-  max_gain: 3.0
+  smoothing: 0.02
+  min_gain: 0.75
+  max_gain: 2.5

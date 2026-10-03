@@ -10,9 +10,9 @@ namespace parallax::perception {
     using StopTracking = interfaces::srv::StopTracking;
 
     PerceptionRuntime::PerceptionRuntime(rclcpp::Node& n,core::ExecutionContext& c) : n_(n), ctx_(c) {
-        owl_engine_ = n_.declare_parameter<std::string>("perception.nanoowl_engine", "/models/nanoowl/owl_image_encoder_patch32_fp16.engine"); 
-        sam_enc_ = n_.declare_parameter<std::string>("perception.sam_encoder_engine", "/models/efficientvit-sam/l0_encoder_fp16.engine"); 
-        sam_dec_ = n_.declare_parameter<std::string>("perception.sam_decoder_engine", "/models/efficientvit-sam/l0_decoder_fp16.engine");
+        owl_engine_ = n_.declare_parameter<std::string>("perception.nanoowl_engine");
+        sam_enc_ = n_.declare_parameter<std::string>("perception.sam_encoder_engine");
+        sam_dec_ = n_.declare_parameter<std::string>("perception.sam_decoder_engine");
         
         auto q = rclcpp::SensorDataQoS().keep_last(1); 
         det_pub_ = n_.create_publisher<interfaces::msg::DetectionSet>("/perception/detections", q); 

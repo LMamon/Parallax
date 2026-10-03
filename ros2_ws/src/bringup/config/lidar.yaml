@@ -5,5 +5,6 @@ rplidar_node:
     serial_baudrate: 460800
     frame_id: lidar
     inverted: false
+    flip_x_axis: true
     angle_compensate: true
     scan_mode: Standard

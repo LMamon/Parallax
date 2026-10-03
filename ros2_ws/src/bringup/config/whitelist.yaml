@@ -14,6 +14,12 @@ foxglove_bridge:
       
       - /parameter_events
 
+      - /perception/detections
+      - /perception/state
+      - /perception/track
+      - /perception/annotations
+      - /tracking/annotations
+
       - /pose
 
       - /right/image/compressed
@@ -77,9 +83,6 @@ foxglove_bridge:
       - /visual_slam/vis/velocity
 
     service_whitelist:
-      - /perception/detections
-      - /perception/state
-      - /perception/track
       - /perception/set_prompt
       - /perception/clear_prompt
 

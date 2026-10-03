@@ -41,9 +41,16 @@ def generate_launch_description():
         name='lidar_tf',
         arguments=[
             '-0.034925', '0.0', '0.028575',
-            '0.0', '0.0', '1.0', '0.0',
+            '0.0', '0.0', '0.0', '1.0',
             'base_link', 'lidar',
         ],
+    )
+
+    perception_visualizer = Node(
+        package='visualization',
+        executable='perception_visualizer',
+        name='perception_visualizer',
+        output='screen',
     )
 
     foxglove = Node(
@@ -60,4 +67,4 @@ def generate_launch_description():
         }],
     )
 
-    return LaunchDescription([spatial, lidar, lidar_tf, foxglove])
+    return LaunchDescription([spatial, lidar, lidar_tf, perception_visualizer, foxglove])

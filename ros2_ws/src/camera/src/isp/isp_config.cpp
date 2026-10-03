@@ -65,8 +65,8 @@ namespace parallax::isp {
 
             if (const auto ae = root["auto_exposure"]) {
                 if (ae["enable"]) auto_exposure.enable = ae["enable"].as<bool>();
-                if (ae["min_exposure_us"]) auto_exposure.min_exposure_us = ae["min_exposure_us"].as<std::int32_t>();
-                if (ae["max_exposure_us"]) auto_exposure.max_exposure_us = ae["max_exposure_us"].as<std::int32_t>();
+                if (ae["min_exposure"]) auto_exposure.min_exposure = ae["min_exposure"].as<std::int32_t>();
+                if (ae["max_exposure"]) auto_exposure.max_exposure = ae["max_exposure"].as<std::int32_t>();
                 if (ae["target_luma"]) auto_exposure.target_luma = ae["target_luma"].as<float>();
                 if (ae["deadband"]) auto_exposure.deadband = ae["deadband"].as<float>();
                 if (ae["max_step_ratio"]) auto_exposure.max_step_ratio = ae["max_step_ratio"].as<float>();
@@ -87,8 +87,8 @@ namespace parallax::isp {
         if (black_level >= 1023 || !finitePositive(gamma)) return false;
         if (statistics.sample_stride == 0 || !finitePositive(statistics.update_hz)) return false;
 
-        if (auto_exposure.min_exposure_us <= 0 ||
-            auto_exposure.max_exposure_us < auto_exposure.min_exposure_us ||
+        if (auto_exposure.min_exposure <= 0 ||
+            auto_exposure.max_exposure < auto_exposure.min_exposure ||
             !(auto_exposure.target_luma > 0.0F && auto_exposure.target_luma < 1.0F) ||
             !(auto_exposure.deadband >= 0.0F && auto_exposure.deadband < 1.0F) ||
             auto_exposure.max_step_ratio < 1.0F ||

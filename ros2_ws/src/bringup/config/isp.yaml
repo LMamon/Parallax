@@ -15,8 +15,8 @@ statistics:
   update_hz: 10.0
 auto_exposure:
   enable: true
-  min_exposure_us: 100
-  max_exposure_us: 5000
+  min_exposure: 2
+  max_exposure: 1500
   target_luma: 0.42
   deadband: 0.05
   max_step_ratio: 1.06

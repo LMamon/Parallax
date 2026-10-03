@@ -13,8 +13,8 @@ namespace parallax::isp {
 
     struct AutoExposureConfig {
         bool enable = true;
-        std::int32_t min_exposure_us = 100;
-        std::int32_t max_exposure_us = 8000;
+        std::int32_t min_exposure = 2;
+        std::int32_t max_exposure = 2500;
         float target_luma = 0.45F;
         float deadband = 0.04F;
         float max_step_ratio = 1.25F;

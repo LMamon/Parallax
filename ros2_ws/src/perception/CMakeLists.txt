@@ -4,6 +4,7 @@ project(perception LANGUAGES CXX CUDA)
 set(CMAKE_CUDA_ARCHITECTURES 87)
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -104,6 +105,10 @@ rclcpp_components_register_nodes(
 install(
   DIRECTORY include/
   DESTINATION include
+)
+
+ament_python_install_package(parallax_perception
+  PACKAGE_DIR python/parallax_perception
 )
 
 install(

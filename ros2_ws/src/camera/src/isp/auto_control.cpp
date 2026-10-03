@@ -82,6 +82,10 @@ namespace parallax::isp {
             const std::int32_t exposure_min = std::max(exposure_range_.minimum,
                                                     config_.auto_exposure.min_exposure_us);
             
+            // The camera starts at the requested frame rate with initial_exposure.
+            // Do not let runtime AE request a longer driver-native exposure value:
+            // this Arducam path can lengthen physical frame timing when exposure is
+            // increased after STREAMON. Brighten beyond this budget with gain instead.
             const std::int32_t exposure_max = std::min(exposure_range_.maximum,
                                                     config_.auto_exposure.max_exposure_us);
 

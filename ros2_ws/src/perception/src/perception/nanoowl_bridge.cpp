@@ -7,6 +7,9 @@
 
 #include <pybind11/embed.h>
 
+#include <dlfcn.h>
+#include <stdexcept>
+
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -16,6 +19,15 @@
 #include <string>
 
 namespace py = pybind11;
+
+namespace {
+    void makePythonSymbolsGlobal() {
+        static void* handle = ::dlopen("libpython3.10.so.1.0", RTLD_NOW | RTLD_GLOBAL);
+        if (handle == nullptr) {
+            throw std::runtime_error(std::string{"dlopen libpython3.10.so.1.0 failed: "} + ::dlerror());
+        }
+    }
+}
 
 namespace parallax::perception {
 
@@ -39,10 +51,11 @@ namespace parallax::perception {
         // Python stays process-scoped because Torch/CUDA extension state is not
         // safe to finalize through pybind11 during Parallax shutdown.
         try {
+            makePythonSymbolsGlobal();
             if (!Py_IsInitialized()) py::initialize_interpreter();
 
             impl_ = std::make_unique<Impl>();
-            py::module_ module = py::module_::import("parallax.nanoowl_detector");
+            py::module_ module = py::module_::import("parallax_perception.nanoowl_detector");
             py::object detector_type = module.attr("NanoOwlDetector");
 
             impl_->detector = detector_type(engine_path.string());

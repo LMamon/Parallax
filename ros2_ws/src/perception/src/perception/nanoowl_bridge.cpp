@@ -77,6 +77,21 @@ namespace parallax::perception {
         }
     }
 
+    bool NanoOwlBridge::warmup() {
+        if (!initialized_ || !impl_) return false;
+        try {
+            py::gil_scoped_acquire gil;
+            impl_->detector.attr("warmup")();
+            return true;
+        } catch (const py::error_already_set& error) {
+            std::cerr << "NanoOWL warmup failed: " << error.what() << '\n';
+            return false;
+        } catch (const std::exception& error) {
+            std::cerr << "NanoOWL warmup failed: " << error.what() << '\n';
+            return false;
+        }
+    }
+
     bool NanoOwlBridge::setQuery(const std::string& query, std::uint64_t revision) {
         if (!initialized_ || !impl_) return false;
 

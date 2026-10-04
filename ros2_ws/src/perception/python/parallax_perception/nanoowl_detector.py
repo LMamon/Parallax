@@ -65,6 +65,19 @@ class NanoOwlDetector:
     def closed(self) -> bool:
         return self._closed
 
+    @torch.inference_mode()
+    def warmup(self) -> None:
+        self._require_open()
+        height, width = self.image_size
+        dtype = self._predictor.image_preprocessor.mean.dtype
+        warm_text = self._predictor.encode_text(["parallax warmup"])
+        warm_image = torch.zeros((1, 3, height, width), dtype=dtype, device="cuda")
+        image_output = self._predictor.encode_image(warm_image)
+        _ = self._predictor.decode(image_output, warm_text, 0.1)
+        torch.cuda.synchronize()
+        del image_output, warm_image, warm_text
+        torch.cuda.empty_cache()
+
     def set_query(self, query: str, revision: int) -> None:
         self._require_open()
 

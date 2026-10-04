@@ -28,6 +28,7 @@ namespace parallax::perception {
             NanoOwlBridge& operator=(const NanoOwlBridge&) = delete;
 
             bool initialize(const std::filesystem::path& engine_path);
+            bool warmup();
             bool setQuery(const std::string& query, std::uint64_t revision);
 
             /**

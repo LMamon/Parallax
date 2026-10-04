@@ -61,6 +61,7 @@ namespace parallax::perception {
 
             bool initialize(const std::filesystem::path& encoder_engine,
                             const std::filesystem::path& decoder_engine);
+            bool warmup(cudaStream_t stream);
 
             bool segment(const parallax::isp::RectifiedStereoFrame& frame,
                          const cv::Rect2f& box,

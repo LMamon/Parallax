@@ -22,6 +22,12 @@ find_package(
   NO_DEFAULT_PATH
 )
 
+find_library(TORCH_PYTHON_LIBRARY
+  NAMES torch_python
+  PATHS /usr/local/lib/python3.10/dist-packages/torch/lib
+  REQUIRED
+)
+
 find_package(OpenCV REQUIRED COMPONENTS core)
 find_package(CUDAToolkit REQUIRED)
 find_package(Threads REQUIRED)
@@ -58,6 +64,8 @@ target_link_libraries(parallax_perception
   dl
   ${OpenCV_LIBS}
   ${TORCH_LIBRARIES}
+  ${TORCH_PYTHON_LIBRARY}
+  nvinfer
   Python3::Python
   pybind11::embed
 )

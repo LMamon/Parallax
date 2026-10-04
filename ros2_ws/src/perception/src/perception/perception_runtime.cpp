@@ -96,10 +96,26 @@ namespace parallax::perception {
     } 
         
     void PerceptionRuntime::start() {
-        if (running_.exchange(true)) return;worker_ = std::thread(&PerceptionRuntime::loop, this);
+        if (running_.load()) return;
+
+        RCLCPP_INFO(n_.get_logger(), "Loading and warming NanoOWL");
+        if (!owl_.initialize(owl_engine_) || !owl_.warmup()) {
+            owl_.shutdown();
+            throw std::runtime_error("NanoOWL startup failed");
+        }
+
+        RCLCPP_INFO(n_.get_logger(), "Loading and warming EfficientViT-SAM");
+        if (!sam_.initialize(sam_enc_, sam_dec_) || !sam_.warmup(ctx_.neuralCudaLane())) {
+            sam_.shutdown();
+            owl_.shutdown();
+            throw std::runtime_error("EfficientViT-SAM startup failed");
+        }
+
+        running_.store(true);
+        worker_ = std::thread(&PerceptionRuntime::loop, this);
         pubState();
-    } 
-    
+    }
+
     void PerceptionRuntime::stop() {
         if (!running_.exchange(false)) return;
         
@@ -137,11 +153,11 @@ namespace parallax::perception {
         }}
     
     bool PerceptionRuntime::detector() {
-        return owl_.initialized() || owl_.initialize(owl_engine_);
-    } 
-    
+        return owl_.initialized();
+    }
+
     bool PerceptionRuntime::segmenter() {
-        return sam_.initialized() || sam_.initialize(sam_enc_, sam_dec_);
+        return sam_.initialized();
     }
     
     void PerceptionRuntime::process(Frame f) {

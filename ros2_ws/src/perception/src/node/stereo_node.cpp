@@ -114,6 +114,9 @@ namespace parallax::ros {
             throw std::runtime_error("failed to initialize execution context");
         }
 
+        perception_ = std::make_unique<parallax::perception::PerceptionRuntime>(*this, context_);
+        perception_->start();
+
         camera_ = std::make_unique<parallax::camera::StereoCamera>(camera_config_);
         if (!camera_->initialize()) {
             throw std::runtime_error("failed to initialize AR0234 stereo camera");
@@ -139,9 +142,6 @@ namespace parallax::ros {
         isp_seed.reset();
 
         initializeAutoControl();
-
-        perception_ = std::make_unique<parallax::perception::PerceptionRuntime>(*this, context_);
-        perception_->start();
 
         const auto qos = rclcpp::SensorDataQoS().keep_last(1);
 

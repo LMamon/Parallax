@@ -374,6 +374,15 @@ namespace parallax::perception {
                 return decoder_context_ && decoder_context_->enqueueV3(stream);
             }
 
+            bool warmup(cudaStream_t stream) {
+                if (!stream || !encoder_context_ || !decoder_context_) return false;
+                if (cudaMemsetAsync(encoder_input_.data(), 0, encoder_input_.bytes(), stream) != cudaSuccess ||
+                    cudaMemsetAsync(point_coords_.data(), 0, point_coords_.bytes(), stream) != cudaSuccess ||
+                    cudaMemsetAsync(point_labels_.data(), 0, point_labels_.bytes(), stream) != cudaSuccess) return false;
+                if (!execute_encoder(stream) || !execute_decoder(stream)) return false;
+                return cudaStreamSynchronize(stream) == cudaSuccess;
+            }
+
             float* low_res_mask() noexcept { 
                 return static_cast<float*>(low_res_mask_.data()); 
             }
@@ -438,6 +447,10 @@ namespace parallax::perception {
         initialized_ = impl_->initialize(encoder_engine, decoder_engine);
 
         return initialized_;
+    }
+
+    bool EfficientVitSam::warmup(cudaStream_t stream) {
+        return initialized_ && impl_ && impl_->warmup(stream);
     }
 
     bool EfficientVitSam::segment(const parallax::isp::RectifiedStereoFrame& frame, 

@@ -160,7 +160,7 @@ def generate_launch_description():
             'enable_landmarks_view': False,
             'sync_matching_threshold_ms': 5.0,
             'image_qos': 'SENSOR_DATA',
-            'image_buffer_size': 100,
+            'image_buffer_size': 50,
             'publish_map_to_odom_tf': True,
             'publish_odom_to_base_tf': True,
             'map_frame': 'map',
@@ -182,7 +182,7 @@ def generate_launch_description():
         parameters=[spatial_config],
         remappings=[
             ('camera_0/depth/image', '/stereo/depth'),
-            ('camera_0/depth/camera_info', '/spatial/left/camera_info'),
+            ('camera_0/depth/camera_info', '/depth_input/left/camera_info'),
         ],
     )
 

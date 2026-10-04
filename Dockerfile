@@ -3,7 +3,6 @@ FROM dustynv/nanoowl:r36.4.0 AS nanoowl
 FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG NVBLOX_VERSION=v0.0.10
 ARG RPLIDAR_ROS_REF=ros2
 
 # Keep the known-good Parallax toolchain while the ROS workspace replaces
@@ -56,7 +55,6 @@ RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
 
 # Isaac ROS 3.2 uses the release-3 apt channel on Jammy.
 # Install ROS and the accelerated packages as binaries rather than rebuilding
-# NVIDIA's stack inside Parallax.
 RUN wget -qO - https://isaac.download.nvidia.com/isaac-ros/repos.key | apt-key add - \
     && echo "deb https://isaac.download.nvidia.com/isaac-ros/release-3 $(lsb_release -cs) release-3.0" \
        > /etc/apt/sources.list.d/isaac-ros.list \
@@ -113,18 +111,6 @@ RUN mkdir -p /opt/rplidar_ws/src \
         --cmake-args -DCMAKE_BUILD_TYPE=Release \
     && rm -rf /opt/rplidar_ws/build /opt/rplidar_ws/log
 
-RUN git clone --branch "${NVBLOX_VERSION}" \
-        --depth 1 \
-        https://github.com/nvidia-isaac/nvblox.git \
-        /opt/nvblox \
-    && cmake -S /opt/nvblox -B /opt/nvblox/build \
-        -DCMAKE_CUDA_ARCHITECTURES=87 \
-        -DBUILD_PYTORCH_WRAPPER=OFF \
-        -DBUILD_TESTING=OFF \
-        -DBUILD_BENCHMARKS=OFF \
-        -DBUILD_RENDERER=OFF \
-    && cmake --build /opt/nvblox/build -j4
-
 RUN rosdep init 2>/dev/null || true \
     && rosdep update
 
@@ -140,6 +126,12 @@ ENV TENSORRT_ROOT=/opt/tensorrt-10.4 \
     RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
 RUN ldconfig
+
+RUN printf '%s\n' \
+    'source /opt/ros/humble/setup.zsh' \
+    'source /opt/rplidar_ws/install/setup.zsh' \
+    'source /workspace/Parallax/ros2_ws/install/setup.zsh' \
+    >> /root/.zshrc
 
 ENTRYPOINT ["/ros_entrypoint.zsh"]
 CMD ["zsh"]

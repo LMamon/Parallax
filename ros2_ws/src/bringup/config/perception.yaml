@@ -1,6 +1,8 @@
 stereo_camera:
   ros__parameters:
     perception:
+      enable: false
+      
       nanoowl_engine: /workspace/Parallax/models/nanoowl/owl_image_encoder_patch32_fp16.engine
       sam_encoder_engine: /workspace/Parallax/models/efficientvit-sam/engines/l0_encoder_fp16.engine
       sam_decoder_engine: /workspace/Parallax/models/efficientvit-sam/engines/l0_decoder_fp16.engine

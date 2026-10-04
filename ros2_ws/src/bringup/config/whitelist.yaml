@@ -6,9 +6,9 @@ foxglove_bridge:
       - /diagnostics
 
       - /depth_input/left/camera_info
-      - /depth_input/left/image_rect
+      # - /depth_input/left/image_rect
       - /depth_input/right/camera_info
-      - /depth_input/right/image_rect
+      # - /depth_input/right/image_rect
 
       - /left/image/compressed
       
@@ -25,9 +25,9 @@ foxglove_bridge:
       - /right/image/compressed
 
       - /spatial/left/camera_info
-      - /spatial/left/image_rect
+      # - /spatial/left/image_rect
       - /spatial/right/camera_info
-      - /spatial/right/image_rect
+      # - /spatial/right/image_rect
       
       - /stereo/depth
       - /stereo/disparity

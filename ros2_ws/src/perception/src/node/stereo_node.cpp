@@ -114,8 +114,12 @@ namespace parallax::ros {
             throw std::runtime_error("failed to initialize execution context");
         }
 
-        perception_ = std::make_unique<parallax::perception::PerceptionRuntime>(*this, context_);
-        perception_->start();
+        const bool perception_enabled = declare_parameter<bool>("perception.enable", true);
+
+        if (perception_enabled) {
+            perception_ = std::make_unique<parallax::perception::PerceptionRuntime>(*this, context_);
+            perception_->start();
+        }
 
         camera_ = std::make_unique<parallax::camera::StereoCamera>(camera_config_);
         if (!camera_->initialize()) {

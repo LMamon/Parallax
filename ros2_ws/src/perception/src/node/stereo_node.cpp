@@ -175,8 +175,8 @@ namespace parallax::ros {
         preview_right_pub_ = create_publisher<sensor_msgs::msg::CompressedImage>("/right/image/compressed",
                                             rclcpp::SensorDataQoS().keep_last(1));
 
-        left_info_ = makeRectifiedInfo(calibration_, calibration_.P1(), kLeftFrame);
-        right_info_ = makeRectifiedInfo(calibration_, calibration_.P2(), kRightFrame);
+        left_info_ = makeRectifiedInfo(calibration_, calibration_.metricP1(), kLeftFrame);
+        right_info_ = makeRectifiedInfo(calibration_, calibration_.metricP2(), kRightFrame);
         spatial_left_info_ = scaledCameraInfo(left_info_, 960U, 600U);
         spatial_right_info_ = scaledCameraInfo(right_info_, 960U, 600U);
 

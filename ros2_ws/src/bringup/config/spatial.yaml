@@ -23,10 +23,12 @@
     integrate_color_rate_hz: 0.0
     update_mesh_rate_hz: 1.0
     update_esdf_rate_hz: 2.0
+    decay_tsdf_rate_hz: 0.0
+    
     # Layer transport is observability, not the planning interface.
-    publish_layer_rate_hz: 0.1
+    publish_layer_rate_hz: 1.0
     publish_debug_vis_rate_hz: 0.1
-    clear_map_outside_radius_rate_hz: 0.5
+    clear_map_outside_radius_rate_hz: 0.0
 
     map_clearing_radius_m: 5.0
     publish_esdf_distance_slice: true

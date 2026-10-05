@@ -30,6 +30,10 @@ namespace parallax::stereo {
 
             const std::array<double, 12>& P1() const { return p1_; }
             const std::array<double, 12>& P2() const { return p2_; }
+
+            std::array<double, 12> metricP1() const;
+            std::array<double, 12> metricP2() const;
+            
             const std::array<double, 16>& Q()  const { return q_; }
             const std::array<double, 9>& R1()  const { return r1_; }
             const std::array<double, 9>& R2()  const { return r2_; }

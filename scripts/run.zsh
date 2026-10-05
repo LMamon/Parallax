@@ -11,7 +11,8 @@ docker compose exec parallax zsh -lc '
 
     source /opt/ros/humble/setup.zsh
     source /opt/rplidar_ws/install/setup.zsh
-    
+    source /opt/nvblox_ws/install/setup.zsh
+
     cd ros2_ws
 
     colcon build --symlink-install

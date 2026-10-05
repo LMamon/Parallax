@@ -146,4 +146,16 @@ bool StereoCalibration::load(const std::filesystem::path& directory) {
     return true;
 }
 
+std::array<double, 12> StereoCalibration::metricP1() const {
+    auto projection = p1_;
+    projection[3] *= 1e-3;
+    return projection;
+}
+
+std::array<double, 12> StereoCalibration::metricP2() const {
+    auto projection = p2_;
+    projection[3] *= 1e-3;
+    return projection;
+}
+
 }

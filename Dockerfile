@@ -3,6 +3,7 @@ FROM dustynv/nanoowl:r36.4.0 AS nanoowl
 FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG NVBLOX_ROS_REF=fix/nitros-32fc1-depth
 ARG RPLIDAR_ROS_REF=ros2
 
 # Keep the known-good Parallax toolchain while the ROS workspace replaces
@@ -18,12 +19,16 @@ RUN apt-get update && apt-get install -y \
     git-lfs \
     gnupg2 \
     i2c-tools \
+    libbenchmark-dev \
     libeigen3-dev \
+    libgflags-dev \
+    libgoogle-glog-dev \
     libgstreamer1.0-dev \
     libgstreamer-plugins-base1.0-dev \
     libgtest-dev \
     libopenblas0 \
     libopencv-dev \
+    libsqlite3-dev \
     libv4l-dev \
     libyaml-cpp-dev \
     lsb-release \
@@ -53,8 +58,8 @@ RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
         $(. /etc/os-release && echo ${UBUNTU_CODENAME}) main" \
         > /etc/apt/sources.list.d/ros2.list
 
-# Isaac ROS 3.2 uses the release-3 apt channel on Jammy.
-# Install ROS and the accelerated packages as binaries rather than rebuilding
+# Install ROS and the accelerated Isaac ROS stack as the binary baseline.
+# Patched packages are overlaid from source below.
 RUN wget -qO - https://isaac.download.nvidia.com/isaac-ros/repos.key | apt-key add - \
     && echo "deb https://isaac.download.nvidia.com/isaac-ros/release-3 $(lsb_release -cs) release-3.0" \
        > /etc/apt/sources.list.d/isaac-ros.list \
@@ -79,6 +84,7 @@ RUN wget -qO - https://isaac.download.nvidia.com/isaac-ros/repos.key | apt-key a
         ros-humble-nav-msgs \
         ros-humble-ompl \
         ros-humble-ros-base \
+        ros-humble-rviz-default-plugins \
         ros-humble-rosidl-typesupport-fastrtps-c \
         ros-humble-rosidl-typesupport-fastrtps-cpp \
         ros-humble-sensor-msgs \
@@ -127,9 +133,34 @@ ENV TENSORRT_ROOT=/opt/tensorrt-10.4 \
 
 RUN ldconfig
 
+# Patched Isaac ROS nvblox overlay for 32FC1 NITROS depth negotiation.
+RUN mkdir -p /opt/nvblox_ws/src \
+    && git clone --recurse-submodules \
+        --branch "${NVBLOX_ROS_REF}" \
+        --depth 1 \
+        https://github.com/LMamon/isaac_ros_nvblox.git \
+        /opt/nvblox_ws/src/isaac_ros_nvblox \
+    && source /opt/ros/humble/setup.zsh \
+    && cd /opt/nvblox_ws \
+    && colcon build --merge-install \
+        --packages-select nvblox_ros \
+        --packages-ignore \
+            nvblox_msgs \
+            nvblox_ros_common \
+            nvblox_ros_python_utils \
+            nvblox_rviz_plugin \
+        --allow-overriding nvblox_ros \
+        --cmake-args \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CUDA_ARCHITECTURES=87 \
+            -DBUILD_TESTING=OFF \
+            "-DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined" \
+    && rm -rf /opt/nvblox_ws/build /opt/nvblox_ws/log
+
 RUN printf '%s\n' \
     'source /opt/ros/humble/setup.zsh' \
     'source /opt/rplidar_ws/install/setup.zsh' \
+    'source /opt/nvblox_ws/install/setup.zsh' \
     'source /workspace/Parallax/ros2_ws/install/setup.zsh' \
     >> /root/.zshrc
 

@@ -38,7 +38,7 @@ foxglove_bridge:
 
       - /move_base_simple/goal
 
-      - /nvblox_node/back_projected_depth/left_camera_optical_frame
+      # - /nvblox_node/back_projected_depth/left_camera_optical_frame
       - /nvblox_node/color_layer
       - /nvblox_node/color_layer_marker
       - /nvblox_node/combined_occupancy_grid

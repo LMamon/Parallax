@@ -39,10 +39,10 @@ foxglove_bridge:
       - /move_base_simple/goal
 
       # - /nvblox_node/back_projected_depth/left_camera_optical_frame
-      - /nvblox_node/color_layer
+      # - /nvblox_node/color_layer
       - /nvblox_node/color_layer_marker
       - /nvblox_node/combined_occupancy_grid
-      - /nvblox_node/dynamic_occupancy_grid
+      # - /nvblox_node/dynamic_occupancy_grid
       - /nvblox_node/esdf_slice_bounds
       - /nvblox_node/mesh
       - /nvblox_node/pessimistic_static_esdf_pointcloud
@@ -62,13 +62,13 @@ foxglove_bridge:
       
       - /transform
 
-      - /visual_slam/status
+      # - /visual_slam/status
       - /visual_slam/tracking/odometry
       - /visual_slam/tracking/slam_path
       - /visual_slam/tracking/vo_path
       - /visual_slam/tracking/vo_pose
-      - /visual_slam/tracking/vo_pose_covariance
-      - /visual_slam/vis/gravity
+      # - /visual_slam/tracking/vo_pose_covariance
+      # - /visual_slam/vis/gravity
       - /visual_slam/vis/landmarks_cloud
       - /visual_slam/vis/localizer
       - /visual_slam/vis/localizer_loop_closure_cloud
@@ -77,14 +77,34 @@ foxglove_bridge:
       - /visual_slam/vis/loop_closure_cloud
       - /visual_slam/vis/observations_cloud
       - /visual_slam/vis/pose_graph_edges
-      - /visual_slam/vis/pose_graph_edges2
+      # - /visual_slam/vis/pose_graph_edges2
       - /visual_slam/vis/pose_graph_nodes
       - /visual_slam/vis/slam_odometry
       - /visual_slam/vis/velocity
 
     service_whitelist:
+      # Perception
       - /perception/set_prompt
       - /perception/clear_prompt
 
+      # Tracking
       - /tracking/start
       - /tracking/stop
+
+      # LiDAR
+      - /start_motor
+      - /stop_motor
+
+      # nvblox
+      - /nvblox_node/get_esdf_and_gradient
+      - /nvblox_node/load_map
+      - /nvblox_node/save_map
+      - /nvblox_node/save_ply
+
+      # VSLAM
+      - /visual_slam/reset
+      - /visual_slam/get_all_poses
+      - /visual_slam/load_map
+      - /visual_slam/save_map
+      - /visual_slam/localize_in_map
+      - /visual_slam/set_slam_pose

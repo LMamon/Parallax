@@ -7,6 +7,8 @@ build*
 install
 log
 
+/docs/
+
 CMakeFiles
 
 *.md
@@ -15,6 +17,9 @@ CMakeFiles
 *.npy
 
 maps/
+
+/include/parallax/
+/src/
 
 *.engine
 *.onnx

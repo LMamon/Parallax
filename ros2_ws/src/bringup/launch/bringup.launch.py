@@ -14,6 +14,7 @@ def generate_launch_description():
     topics = PathJoinSubstitution([share, 'config', 'whitelist.yaml'])
     lidar_config = PathJoinSubstitution([share, 'config', 'lidar.yaml'])
     spatial_launch = PathJoinSubstitution([share, 'launch', 'spatial.launch.py'])
+    planning_launch = PathJoinSubstitution([share, 'launch', 'planning.launch.py'])
 
     calibration_dir = (
         '/workspace/Parallax/config/camera/calibration/results/rectification'
@@ -22,6 +23,8 @@ def generate_launch_description():
     spatial = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(spatial_launch)
     )
+
+    planning = IncludeLaunchDescription(PythonLaunchDescriptionSource(planning_launch))
 
     # Independent 2D LiDAR branch; deliberately not connected to nvblox.
     lidar = Node(
@@ -67,4 +70,4 @@ def generate_launch_description():
         }],
     )
 
-    return LaunchDescription([spatial, lidar, lidar_tf, perception_visualizer, foxglove])
+    return LaunchDescription([spatial, planning, lidar, lidar_tf, perception_visualizer, foxglove])

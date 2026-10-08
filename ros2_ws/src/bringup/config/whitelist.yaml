@@ -18,6 +18,9 @@ foxglove_bridge:
       - /perception/state
       - /perception/track
       - /perception/annotations
+
+      - /planned_path_3d
+      
       - /tracking/annotations
 
       - /pose

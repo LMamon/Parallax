@@ -1,0 +1,24 @@
+planner:
+  ros__parameters:
+    clearance_m: 0.10 #4"
+
+    aabb_padding_m: 1.0
+
+    solve_time_s: 1.5
+
+    # Validate every proposed OMPL edge at approximately this physical
+    # interval. 0.05 m is half of the current 0.10 m nvblox voxel size.
+    motion_check_resolution_m: 0.05
+
+    global_frame: "map"
+    base_frame: "base_link"
+
+    goal_topic: "/move_base_simple/goal"
+    path_topic: "/planned_path_3d"
+    esdf_service: "/nvblox_node/get_esdf_and_gradient"
+
+    update_esdf: true
+
+    # Planning does not need nvblox to emit additional visualization for each
+    # ESDF service request.
+    visualize_esdf: false

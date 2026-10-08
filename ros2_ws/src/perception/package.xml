@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>perception</name>
+  <version>3.1.0</version>
+  <description>In-process GPU neural perception and single-target tracking for Parallax.</description>
+  <maintainer email="noreply@noreply.local">LouisM</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>rclcpp_components</depend>
+  <depend>isaac_ros_managed_nitros</depend>
+  <depend>isaac_ros_nitros_image_type</depend>
+  <depend>interfaces</depend>
+  <depend>camera</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

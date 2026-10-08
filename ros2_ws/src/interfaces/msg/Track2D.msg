@@ -1,0 +1,15 @@
+std_msgs/Header header
+string target
+uint64 target_revision
+uint64 observation_sequence
+uint64 track_id
+float32 x
+float32 y
+float32 width
+float32 height
+float32 quality
+uint8 lifecycle
+uint8 TENTATIVE=0
+uint8 TRACKING=1
+uint8 LOST=2
+uint8 REACQUIRING=3

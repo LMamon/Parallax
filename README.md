@@ -1,85 +1,71 @@
-# Parallax
+Perception and spatial planning system for autonomous platforms, developed on NVIDIA Jetson hardware.
 
-An unmanned system needs more than a camera feed. It needs to turn
-sensor data into useful spatial information: what is visible, where it
-is, whether it is moving, and how those observations relate to the
-vehicle as it moves through the environment.
+It integrates stereo vision, object detection, segmentation, tracking, visual localization, and persistent 3D mapping to support spatial reasoning and collision-aware path planning.
 
-Parallax is my implementation of that perception and localization layer
-on a Jetson Orin Nano. It uses calibrated stereo cameras and a 2D LiDAR
-to produce depth and geometric observations, adds open-vocabulary
-detection and optional segmentation, can maintain a selected visual
-target, and uses cuVSLAM to place the sensor and observed objects in a
-local world frame.
+## About
 
-The runtime is built around explicit product dependencies rather than
-one fixed processing pipeline. Camera, stereo, neural perception,
-tracking, spatial association, localization, and visualization can run
-at different rates, and optional work only runs when something actually
-requires it. This keeps slower inference and visualization work from
-defining the rate of unrelated sensor processing.
+Parallax combines real-time sensor processing and fusion, semantic perception, and geometric mapping within ROS 2 architecture.
 
-## Current capabilities
+The system processes stereo camera and LiDAR data, maintains a localized representation of the environment, and generates 3D navigation paths using observed geometry.
 
--   stereo capture, ISP, rectification, disparity, confidence, and
-    metric depth;
--   RPLIDAR C1 acquisition with calibrated sensor extrinsics;
--   NanoOWL open-vocabulary object detection;
--   EfficientViT-SAM segmentation when a mask is requested;
--   VPI DCF tracking for a selected target;
--   2D semantic observations associated with stereo/LiDAR measurements
-    to produce 3D object positions;
--   NVIDIA cuVSLAM pose estimation, trajectory history, visual
-    observations, and landmarks;
--   localized semantic observations in a common world frame;
--   command and subscription-driven execution through Foxglove;
--   bounded product history, source provenance, execution policies, and
-    producer-level runtime metrics.
+capabilities:
 
-## Next step
+- Stereo image processing, disparity estimation, and metric depth
+- Open-vocabulary object detection and image segmentation
+- Visual object tracking and 3D spatial association
+- Visual SLAM, localization, and relocalization
+- 3D reconstruction using TSDF and ESDF representations
+- Collision-aware 3D path planning using OMPL
+- Independent 2D LiDAR acquisition
+- Visualization and interaction through Foxglove
 
-Add pathfinding and planning to the existing perception and localization system.
+## Hardware
 
-This work remains on the navigation side of the autonomy stack. Vehicle control and actuation are outside the current scope.
+Developed and tested with:
 
-## Hardware and software
+- Jetson Orin Nano 8 GB
+- Arducam AR0234 global-shutter stereo camera
+- RPLIDAR C1
 
-The current system runs on an NVIDIA Jetson Orin Nano 8 GB with an
-Arducam AR0234 global-shutter stereo pair and an RPLIDAR C1.
+## Software
 
-The runtime is primarily C++17 and uses NVIDIA VPI, CUDA, TensorRT, and
-cuVSLAM for the hardware-accelerated portions of the system. Python is
-used at the NanoOWL boundary. Foxglove provides the remote command,
-debugging, and 2D/3D visualization surface.
+- ROS 2 Humble
+- NVIDIA JetPack 6.2
+- CUDA, TensorRT, and VPI
+- NVIDIA Isaac ROS, cuVSLAM, and nvblox
+- OMPL
+- Docker
+- Foxglove
 
-## Design
+## Installation
 
-The main design constraint is straightforward: expensive or stateful
-perception work should not force the entire system into one lockstep
-frame loop.
+### Requirements
 
-Products and their dependencies are declared ahead of time. At runtime,
-active commands and consumers determine which parts of the graph are
-needed. Most realtime edges prefer the newest compatible observation,
-while consumers that require temporal continuity, such as cuVSLAM, use
-bounded ordered history.
+- NVIDIA Jetson running a compatible JetPack installation
+- Docker with NVIDIA container runtime
+- ROS 2 dependencies provided by the project container
+- Compatible stereo camera and calibration files
 
-This also keeps the sensor and algorithm boundaries useful. Detection
-does not require segmentation. A detection does not need to become a
-persistent track before it can be placed in 3D. Foxglove can request or
-display a product without owning the computation that creates it.
+Clone the repository:
 
-The current architecture and the reasoning behind the dependency-graph
-refactor are documented in
-[`docs/architecture.md`](docs/architecture.md) and
-[`docs/dependency_graph_refactor.md`](docs/dependency_graph_refactor.md).
+```bash
+git clone https://github.com/LMamon/Parallax.git
+cd Parallax
+```
 
-## Scope
+## Usage
+Start the containerized runtime:
 
-Parallax currently ends at perception and localization. It does not
-contain vehicle actuation.
+```bash
+./scripts/run.zsh
+```
 
-The output is the part those systems need first: calibrated sensor data,
-metric depth, semantic observations, target state, and a local spatial
-reference that higher-level autonomy can use to reason about the
-environment.
+The startup script builds the ROS 2 workspace and launches the configured perception, mapping, localization, planning, and visualization nodes.
+
+
+## Under Construction
+
+- Autopilot integration for multicopter + rover
+- Autonomous tasking and mission management
+- Goal management and replanning
+- Multi-platform deployment and validation

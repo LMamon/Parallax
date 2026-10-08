@@ -1,24 +1,29 @@
 name: parallax
+
 services:
   parallax:
-    image: roylvzn/parallax:latest
+    image: roylvzn/parallax:v3.1
     container_name: parallax
     build:
       context: .
       dockerfile: Dockerfile
 
+    runtime: nvidia
     network_mode: host
     ipc: host
 
     stdin_open: true
     tty: true
 
+    # Match the known-good Jetson/Arducam runtime. The Tegra camera path is
+    # not isolated to /dev/video0 even though V4L2 opens that node directly.
     privileged: true
+
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-2}
 
     volumes:
       - .:/workspace/Parallax
       - /tmp/argus_socket:/tmp/argus_socket
 
     working_dir: /workspace/Parallax
-
-    restart: unless-stopped

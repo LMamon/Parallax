@@ -1,0 +1,113 @@
+foxglove_bridge:
+  ros__parameters:
+    topic_whitelist:
+      - /clicked_point
+
+      - /diagnostics
+
+      - /depth_input/left/camera_info
+      # - /depth_input/left/image_rect
+      - /depth_input/right/camera_info
+      # - /depth_input/right/image_rect
+
+      - /left/image/compressed
+      
+      - /parameter_events
+
+      - /perception/detections
+      - /perception/state
+      - /perception/track
+      - /perception/annotations
+
+      - /planned_path_3d
+      
+      - /tracking/annotations
+
+      - /pose
+
+      - /right/image/compressed
+
+      - /spatial/left/camera_info
+      # - /spatial/left/image_rect
+      - /spatial/right/camera_info
+      # - /spatial/right/image_rect
+      
+      - /stereo/depth
+      - /stereo/disparity
+      - /stereo/left/camera_info
+      - /stereo/right/camera_info
+      
+      - /scan
+
+      - /move_base_simple/goal
+
+      # - /nvblox_node/back_projected_depth/left_camera_optical_frame
+      # - /nvblox_node/color_layer
+      - /nvblox_node/color_layer_marker
+      - /nvblox_node/combined_occupancy_grid
+      # - /nvblox_node/dynamic_occupancy_grid
+      - /nvblox_node/esdf_slice_bounds
+      - /nvblox_node/mesh
+      - /nvblox_node/pessimistic_static_esdf_pointcloud
+      - /nvblox_node/pessimistic_static_map_slice
+      - /nvblox_node/shapes_to_clear
+      - /nvblox_node/static_esdf_pointcloud
+      - /nvblox_node/static_map_slice
+      - /nvblox_node/static_occupancy_grid
+      - /nvblox_node/tsdf_layer
+      - /nvblox_node/tsdf_layer_marker
+      - /nvblox_node/workspace_bounds
+
+      - /initialpose
+      
+      - /tf
+      - /tf_static
+      
+      - /transform
+
+      # - /visual_slam/status
+      - /visual_slam/tracking/odometry
+      - /visual_slam/tracking/slam_path
+      - /visual_slam/tracking/vo_path
+      - /visual_slam/tracking/vo_pose
+      # - /visual_slam/tracking/vo_pose_covariance
+      # - /visual_slam/vis/gravity
+      - /visual_slam/vis/landmarks_cloud
+      - /visual_slam/vis/localizer
+      - /visual_slam/vis/localizer_loop_closure_cloud
+      - /visual_slam/vis/localizer_map_cloud
+      - /visual_slam/vis/localizer_observations_cloud
+      - /visual_slam/vis/loop_closure_cloud
+      - /visual_slam/vis/observations_cloud
+      - /visual_slam/vis/pose_graph_edges
+      # - /visual_slam/vis/pose_graph_edges2
+      - /visual_slam/vis/pose_graph_nodes
+      - /visual_slam/vis/slam_odometry
+      - /visual_slam/vis/velocity
+
+    service_whitelist:
+      # Perception
+      - /perception/set_prompt
+      - /perception/clear_prompt
+
+      # Tracking
+      - /tracking/start
+      - /tracking/stop
+
+      # LiDAR
+      - /start_motor
+      - /stop_motor
+
+      # nvblox
+      - /nvblox_node/get_esdf_and_gradient
+      - /nvblox_node/load_map
+      - /nvblox_node/save_map
+      - /nvblox_node/save_ply
+
+      # VSLAM
+      - /visual_slam/reset
+      - /visual_slam/get_all_poses
+      - /visual_slam/load_map
+      - /visual_slam/save_map
+      - /visual_slam/localize_in_map
+      - /visual_slam/set_slam_pose

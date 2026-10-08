@@ -7,12 +7,19 @@ build*
 install
 log
 
+/docs/
+
 CMakeFiles
 
 *.md
 *.png
 *.jpg
 *.npy
+
+maps/
+
+/include/parallax/
+/src/
 
 *.engine
 *.onnx

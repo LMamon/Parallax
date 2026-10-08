@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>bringup</name>
+  <version>3.1.0</version>
+  <description>Top-level ROS 2 bringup for Parallax v3.1.</description>
+  <maintainer email="noreply@noreply.local">LouisM</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rclcpp_components</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
+  <exec_depend>camera</exec_depend>
+  <exec_depend>rplidar_ros</exec_depend>
+  <exec_depend>isaac_ros_image_proc</exec_depend>
+  <exec_depend>isaac_ros_stereo_image_proc</exec_depend>
+  <exec_depend>isaac_ros_visual_slam</exec_depend>
+  <exec_depend>isaac_ros_nvblox</exec_depend>
+
+  <exec_depend>isaac_ros_nitros_topic_tools</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

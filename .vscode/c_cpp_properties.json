@@ -1,0 +1,26 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/workspace/Parallax/ros2_ws/install/visualization/include/**",
+        "/workspace/Parallax/ros2_ws/install/perception/include/**",
+        "/workspace/Parallax/ros2_ws/install/interfaces/include/**",
+        "/workspace/Parallax/ros2_ws/install/camera/include/**",
+        "/opt/nvblox_ws/install/include/**",
+        "/opt/ros/humble/include/**",
+        "/workspace/Parallax/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-arm64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}

@@ -1,0 +1,9 @@
+std_msgs/Header header
+string prompt
+uint64 prompt_revision
+bool detector_active
+bool segmenter_active
+bool tracking_requested
+string tracking_target
+uint64 tracking_revision
+uint8 tracker_lifecycle

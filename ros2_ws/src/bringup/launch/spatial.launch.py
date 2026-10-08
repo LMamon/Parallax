@@ -1,0 +1,232 @@
+from launch import LaunchDescription
+from launch_ros.actions import ComposableNodeContainer, Node
+from launch_ros.descriptions import ComposableNode
+from launch_ros.substitutions import FindPackageShare
+from launch.substitutions import PathJoinSubstitution
+
+
+def generate_launch_description():
+    share = FindPackageShare('bringup')
+    camera_config = PathJoinSubstitution([share, 'config', 'camera.yaml'])
+    isp_config = PathJoinSubstitution([share, 'config', 'isp.yaml'])
+    perception_config = PathJoinSubstitution([share, 'config', 'perception.yaml'])
+    calibration_dir = (
+        '/workspace/Parallax/config/camera/calibration/results/rectification'
+    )
+
+    camera = ComposableNode(
+        package='perception',
+        plugin='parallax::ros::StereoNode',
+        name='stereo_camera',
+        parameters=[perception_config, {
+            'camera_config': camera_config,
+            'isp_config': isp_config,
+            'calibration_dir': calibration_dir,
+            'preview_fps': 12,
+            'jpeg_quality': 80,
+            'diagnostics': True,
+        }],
+    )
+
+    spatial_config = PathJoinSubstitution([
+        FindPackageShare('bringup'), 'config', 'spatial.yaml'
+    ])
+
+    # Computation consumes a bounded, downscaled stereo branch. The full
+    # rectified camera topics remain observation products and never depend on
+    # disparity, SLAM, nvblox, Foxglove, or their queues.
+    left_resize = ComposableNode(
+        package='isaac_ros_image_proc',
+        plugin='nvidia::isaac_ros::image_proc::ResizeNode',
+        name='spatial_left_resize',
+        parameters=[{
+            # ResizeNode resizes; it is not our RGB->mono conversion stage.
+            # Supplying the real input geometry also sizes its GXF pool for
+            # the actual RGB8 960x600 output instead of a mono-sized block.
+            'input_width': 1920,
+            'input_height': 1200,
+            'output_width': 960,
+            'output_height': 600,
+            'keep_aspect_ratio': False,
+            'disable_padding': True,
+            'encoding_desired': 'rgb8',
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
+        }],
+        remappings=[
+            ('image', '/internal/stereo/left/image_rect'),
+            ('camera_info', '/stereo/left/camera_info'),
+            ('resize/image', '/spatial/left/image_rect'),
+            ('resize/camera_info', '/spatial/left/camera_info_unused'),
+        ],
+    )
+
+    right_resize = ComposableNode(
+        package='isaac_ros_image_proc',
+        plugin='nvidia::isaac_ros::image_proc::ResizeNode',
+        name='spatial_right_resize',
+        parameters=[{
+            'input_width': 1920,
+            'input_height': 1200,
+            'output_width': 960,
+            'output_height': 600,
+            'keep_aspect_ratio': False,
+            'disable_padding': True,
+            'encoding_desired': 'rgb8',
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
+        }],
+        remappings=[
+            ('image', '/internal/stereo/right/image_rect'),
+            ('camera_info', '/stereo/right/camera_info'),
+            ('resize/image', '/spatial/right/image_rect'),
+            ('resize/camera_info', '/spatial/right/camera_info_unused'),
+        ],
+    )
+
+    # cuVSLAM remains full-rate. Depth/mapping deliberately admits one
+    # synchronized stereo pair out of every two (~19 Hz from a 38 Hz camera).
+    stereo_rate_gate = ComposableNode(
+        package='isaac_ros_nitros_topic_tools',
+        plugin='nvidia::isaac_ros::nitros::NitrosCameraDropNode',
+        name='stereo_rate_gate',
+        parameters=[{
+            'mode': 'stereo',
+            'X': 1,
+            'Y': 2,
+            'sync_queue_size': 2,
+            'input_queue_size': 2,
+            'output_queue_size': 1,
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
+        }],
+        remappings=[
+            ('image_1', '/spatial/left/image_rect'),
+            ('camera_info_1', '/spatial/left/camera_info'),
+            ('image_2', '/spatial/right/image_rect'),
+            ('camera_info_2', '/spatial/right/camera_info'),
+            ('image_1_drop', '/depth_input/left/image_rect'),
+            ('camera_info_1_drop', '/depth_input/left/camera_info'),
+            ('image_2_drop', '/depth_input/right/image_rect'),
+            ('camera_info_2_drop', '/depth_input/right/camera_info'),
+        ],
+    )
+
+    disparity = ComposableNode(
+        package='isaac_ros_stereo_image_proc',
+        plugin='nvidia::isaac_ros::stereo_image_proc::DisparityNode',
+        name='disparity',
+        parameters=[{
+            'backend': 'CUDA',
+            'max_disparity': 128.0,
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
+        }],
+        remappings=[
+            ('left/image_rect', '/depth_input/left/image_rect'),
+            ('left/camera_info', '/depth_input/left/camera_info'),
+            ('right/image_rect', '/depth_input/right/image_rect'),
+            ('right/camera_info', '/depth_input/right/camera_info'),
+            ('disparity', '/stereo/disparity'),
+        ],
+    )
+
+    disparity_to_depth = ComposableNode(
+        package='isaac_ros_stereo_image_proc',
+        plugin='nvidia::isaac_ros::stereo_image_proc::DisparityToDepthNode',
+        name='disparity_to_depth',
+        parameters=[{
+            'input_qos': 'SENSOR_DATA',
+            'output_qos': 'SENSOR_DATA',
+        }],
+        remappings=[
+            ('disparity', '/stereo/disparity'),
+            ('depth', '/stereo/depth'),
+        ],
+    )
+
+    visual_slam = ComposableNode(
+        package='isaac_ros_visual_slam',
+        plugin='nvidia::isaac_ros::visual_slam::VisualSlamNode',
+        name='visual_slam',
+        parameters=[{
+            'num_cameras': 2,
+            'min_num_images': 2,
+            'rectified_images': True,
+            'enable_image_denoising': False,
+            'enable_imu_fusion': False,
+            'enable_localization_n_mapping': True,
+            'enable_slam_visualization': True,
+            'enable_observations_view': True,
+            'enable_landmarks_view': True,
+            'sync_matching_threshold_ms': 5.0,
+            'image_qos': 'SENSOR_DATA',
+            'image_buffer_size': 50,
+            'publish_map_to_odom_tf': True,
+            'publish_odom_to_base_tf': True,
+            'map_frame': 'map',
+            'odom_frame': 'odom',
+            'base_frame': 'base_link',
+        }],
+        remappings=[
+            ('visual_slam/image_0', '/spatial/left/image_rect'),
+            ('visual_slam/camera_info_0', '/spatial/left/camera_info'),
+            ('visual_slam/image_1', '/spatial/right/image_rect'),
+            ('visual_slam/camera_info_1', '/spatial/right/camera_info'),
+        ],
+    )
+
+    nvblox = ComposableNode(
+        package='nvblox_ros',
+        plugin='nvblox::NvbloxNode',
+        name='nvblox_node',
+        parameters=[spatial_config],
+        remappings=[
+            ('camera_0/depth/image', '/stereo/depth'),
+            ('camera_0/depth/camera_info', '/depth_input/left/camera_info'),
+        ],
+    )
+
+    container = ComposableNodeContainer(
+        name='spatial_container',
+        namespace='',
+        package='rclcpp_components',
+        executable='component_container_mt',
+        composable_node_descriptions=[
+            camera,
+            left_resize,
+            right_resize,
+            stereo_rate_gate,
+            disparity,
+            disparity_to_depth,
+            visual_slam,
+            nvblox,
+        ],
+        output='screen',
+    )
+
+    # Physical camera extrinsics are owned here. cuVSLAM owns map->odom and
+    # odom->base_link; do not add competing dynamic/static world transforms.
+    left_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='left_camera_tf',
+        arguments=[
+            '0', '0.0482994032149552', '0',
+            '-0.5', '0.5', '-0.5', '0.5',
+            'base_link', 'left_camera_optical_frame',
+        ],
+    )
+
+    right_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='right_camera_tf',
+        arguments=[
+            '0', '-0.0482994032149552', '0',
+            '-0.5', '0.5', '-0.5', '0.5',
+            'base_link', 'right_camera_optical_frame',
+        ],
+    )
+
+    return LaunchDescription([left_tf, right_tf, container])

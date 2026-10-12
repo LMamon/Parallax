@@ -1,6 +1,6 @@
-Perception and spatial planning system for autonomous platforms, developed on NVIDIA Jetson hardware.
+Perception and spatial planning system for autonomous mobile robots
 
-It integrates stereo vision, object detection, segmentation, tracking, visual localization, and persistent 3D mapping to support spatial reasoning and collision-aware path planning.
+integrates stereo vision, object detection, segmentation, tracking, visual localization, and persistent 3D mapping to support spatial reasoning and collision-free path planning.
 
 ## About
 
@@ -32,7 +32,7 @@ Developed and tested with:
 - ROS 2 Humble
 - NVIDIA JetPack 6.2
 - CUDA, TensorRT, and VPI
-- NVIDIA Isaac ROS, cuVSLAM, and nvblox
+- NVIDIA Isaac ROS
 - OMPL
 - Docker
 - Foxglove
@@ -64,8 +64,5 @@ The startup script builds the ROS 2 workspace and launches the configured percep
 
 
 ## Under Construction
-
-- Autopilot integration for multicopter + rover
-- Autonomous tasking and mission management
-- Goal management and replanning
-- Multi-platform deployment and validation
+- tasking and mission management
+- MPC for rover and quad
